@@ -1,0 +1,21 @@
+Title: Agentic research systems - overview
+
+Summary:
+This note sketches the lifecycle of an agentic research system.
+Core stages:
+- Intake: capture topic, constraints, and user intent.
+- Memory: store documents and user interests for reuse.
+- Retrieval: match topic and interests to relevant sources.
+- Planning: build a research plan with scope, questions, and gaps.
+- Refinement: iterate plan until it is ready for execution.
+- Outline: produce a structured outline for manuscripts or reports.
+
+Important considerations:
+- Keep the system auditable: each skill should be explicit and inspectable.
+- Avoid hidden heuristics; log decisions in the plan.
+- Separate planning from execution to preserve user control.
+
+Open questions:
+- How to define readiness criteria for the plan?
+- How much retrieval is enough before writing?
+- What parts of the plan should be human-verified?

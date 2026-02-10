@@ -1,3 +1,117 @@
 # mini-NEXEN
 
-A new attempt on NEXEN, starting step-by-step
+Minimal, agentic research backend for generating research plans and detailed outlines from a personal library of documents and URLs.
+
+## What this does
+- Maintains a personal library of documents, URLs, and notes.
+- Tracks user interests (NotebookLM-style memory).
+- Runs a multi-agent pipeline driven by skills.
+- Generates a research plan + detailed outline and saves it as `YYYY_MM_DD_HH_MM_plan.md`.
+- Uses LLM-backed planning and outlining (Gemini or LM Studio required).
+
+## Structure
+- `mini_nexen/`: Core logic (agents, planning, storage).
+- `skills/`: Oh-my-opencode-style skills (`SKILL.md` per skill).
+- `data/`: SQLite database and stored documents.
+- `data/library/`: Stored text copies of ingested content.
+- `data/seeds/`: Seed documents and URLs for quick bootstrapping.
+- `plans/`: Generated research plans.
+
+## Environment
+The project expects a conda environment named `mini-nexen`. A local environment file is provided.
+
+```bash
+conda env create -f environment.yml
+conda activate mini-nexen
+```
+
+If your environment cannot access external channels, you may need to configure local channels or mirrors before creating the env.
+
+Installed dependencies (via pip in `mini-nexen`):
+- `requests`
+- `google-genai`
+
+## Usage
+Ingest documents and URLs:
+
+```bash
+python -m mini_nexen.cli ingest --file /path/to/doc.txt --title "Doc title" --tags "ml, research"
+python -m mini_nexen.cli ingest --url "https://example.com/report" --title "Report" --text "Key excerpt"
+python -m mini_nexen.cli ingest --text "Personal note about the topic" --title "My notes"
+```
+
+Record interests:
+
+```bash
+python -m mini_nexen.cli interest --topic "Agentic research" --notes "Focus on planning and retrieval"
+```
+
+Generate a research plan:
+
+```bash
+python -m mini_nexen.cli research --topic "Agentic research systems" --rounds 2 --top-k 8
+```
+
+Outputs:
+- Plan + outline saved in `plans/YYYY_MM_DD_HH_MM_plan.md` (outline is under `## Detailed Outline`).
+- Ingested document text stored in `data/library/<doc_id>.txt`.
+- Metadata and interests stored in `data/mini_nexen.sqlite3`.
+- LLM call log written to `data/llm_calls.log` (task boundaries, per-agent messages, rate limit events).
+
+### LLM-backed agents
+The planner and outliner run with an LLM. Choose either Gemini or LM Studio.
+
+Gemini (API key required):
+```bash
+export MINI_NEXEN_PROVIDER=gemini
+export GEMINI_API_KEY="your-key"
+export MINI_NEXEN_MODEL="gemini-2.5-flash"
+python -m mini_nexen.cli research --topic "Agentic research systems"
+```
+
+LM Studio (local server):
+```bash
+export MINI_NEXEN_PROVIDER=lmstudio
+export MINI_NEXEN_MODEL="your-local-model"
+export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
+python -m mini_nexen.cli research --topic "Agentic research systems"
+```
+
+You can also override provider/model per run:
+```bash
+python -m mini_nexen.cli research --topic "Agentic research systems" --provider gemini --model gemini-2.5-flash
+```
+
+Additional CLI overrides: `--base-url` (LM Studio), `--temperature`, `--max-tokens`.
+LM Studio model discovery can be disabled with `--no-model-discovery`.
+
+If no provider is set, the CLI prompts you to select a provider and model. If env vars are already set, it asks to confirm or change them.
+
+List stored data:
+
+```bash
+python -m mini_nexen.cli list-docs
+python -m mini_nexen.cli list-interests
+```
+
+Manage interests:
+
+```bash
+python -m mini_nexen.cli delete-interest --id "<INTEREST_ID>"
+python -m mini_nexen.cli clear-interests --yes
+```
+
+Interest IDs are UUIDs shown by `list-interests`.
+
+Seed pack:
+
+```bash
+python -m mini_nexen.cli ingest --file data/seeds/agentic_research_overview.txt --tags "agentic,overview"
+python -m mini_nexen.cli ingest --file data/seeds/retrieval_planning_notes.txt --tags "retrieval,planning"
+python -m mini_nexen.cli ingest --file data/seeds/evaluation_metrics_cheatsheet.txt --tags "evaluation,metrics"
+```
+
+See `data/seeds/seed_urls.txt` for suggested URLs to ingest later with short excerpts.
+
+## Skills
+Skills live in `skills/<skill_name>/SKILL.md`. The agent runtime loads these at startup and only executes registered skills. This keeps the agent behavior explicit and auditable.

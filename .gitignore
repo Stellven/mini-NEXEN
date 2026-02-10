@@ -1,0 +1,7 @@
+.data
+.conda/
+__pycache__/
+*.pyc
+data/mini_nexen.sqlite3
+data/library/
+plans/*.md

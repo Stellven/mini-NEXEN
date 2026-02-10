@@ -1,0 +1,16 @@
+Title: Retrieval + planning notes
+
+Key ideas:
+- Use topical keywords derived from the topic and user interests.
+- Score documents with a lightweight heuristic (TF-IDF style).
+- Prefer diverse source types: reports, surveys, blogs, news.
+
+Planning approach:
+- Scope statement: define boundaries and exclusions.
+- Questions: foundational definitions, current landscape, disagreements.
+- Gaps: explicitly list missing evidence or viewpoints.
+
+Signals that the plan is not ready:
+- Less than 3 sources or sources are all the same type.
+- No contradictions or disagreements identified.
+- Missing evaluation or benchmark discussions.
