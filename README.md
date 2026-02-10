@@ -31,6 +31,9 @@ Installed dependencies (via pip in `mini-nexen`):
 - `requests`
 - `google-genai`
 
+LM Studio is required only if you choose the `lmstudio` provider.
+Gemini requires an API key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`).
+
 ## Usage
 Ingest documents and URLs:
 
@@ -77,6 +80,13 @@ export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
 python -m mini_nexen.cli research --topic "Agentic research systems"
 ```
 
+LM Studio setup checklist:
+- Start the LM Studio server.
+- Ensure a model is loaded.
+- Confirm the OpenAI-compatible endpoint is reachable: `GET /v1/models`.
+- If you are running in WSL and LM Studio is on Windows, enable “Serve on Local Network”
+  in LM Studio and use the Windows IP address in `LMSTUDIO_BASE_URL`.
+
 You can also override provider/model per run:
 ```bash
 python -m mini_nexen.cli research --topic "Agentic research systems" --provider gemini --model gemini-2.5-flash
@@ -86,6 +96,8 @@ Additional CLI overrides: `--base-url` (LM Studio), `--temperature`, `--max-toke
 LM Studio model discovery can be disabled with `--no-model-discovery`.
 
 If no provider is set, the CLI prompts you to select a provider and model. If env vars are already set, it asks to confirm or change them.
+
+Note: The system performs retrieval only from the local library (no internet fetching).
 
 List stored data:
 
