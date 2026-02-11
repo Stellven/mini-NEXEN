@@ -31,6 +31,19 @@ def run_research(
     temperature: float | None = None,
     max_tokens: int | None = None,
     discover_model: bool | None = None,
+    web_enabled: bool = False,
+    web_modes: list[str] | None = None,
+    web_max_results: int = 5,
+    web_timeout: int = 15,
+    web_fetch_pages: bool = True,
+    web_hybrid: bool = False,
+    web_embed_provider: str | None = None,
+    web_embed_model: str | None = None,
+    web_embed_base_url: str | None = None,
+    web_embed_timeout: int | None = None,
+    web_embed_api_key: str | None = None,
+    web_expand_queries: bool = True,
+    web_max_queries: int = 4,
 ) -> ResearchResult:
     ensure_dirs()
     db.init_db()
@@ -51,7 +64,25 @@ def run_research(
     )
     llm_client = build_client(llm_config)
 
-    ctx = SkillContext(topic=topic, max_rounds=rounds, top_k=top_k, llm=llm_client)
+    ctx = SkillContext(
+        topic=topic,
+        max_rounds=rounds,
+        top_k=top_k,
+        llm=llm_client,
+        web_enabled=web_enabled,
+        web_modes=web_modes or [],
+        web_max_results=web_max_results,
+        web_timeout=web_timeout,
+        web_fetch_pages=web_fetch_pages,
+        web_hybrid=web_hybrid,
+        web_embed_provider=web_embed_provider,
+        web_embed_model=web_embed_model,
+        web_embed_base_url=web_embed_base_url,
+        web_embed_timeout=web_embed_timeout,
+        web_embed_api_key=web_embed_api_key,
+        web_expand_queries=web_expand_queries,
+        web_max_queries=web_max_queries,
+    )
     ctx = supervisor.run(ctx)
 
     plan_md = ctx.plan_md

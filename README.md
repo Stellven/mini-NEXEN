@@ -55,6 +55,32 @@ Generate a research plan:
 python -m mini_nexen.cli research --topic "Agentic research systems" --rounds 2 --top-k 8
 ```
 
+Enable internet retrieval (tech/blog/news/forums + literature):
+
+```bash
+python -m mini_nexen.cli research --topic "Agentic research systems" --web --rounds 2 --top-k 8
+```
+
+Internet retrieval options:
+- `--web` enables both tech and literature sources.
+- `--web-tech` enables tech/blog/news/forums sources only.
+- `--web-lit` enables literature sources only.
+- `--web-max-results` controls max results per source (default: 5).
+- `--web-timeout` sets the fetch timeout in seconds (default: 15).
+- `--web-no-fetch` skips fetching full pages (stores only metadata/abstracts when available).
+- `--web-hybrid` forces semantic reranking on.
+- `--web-no-hybrid` disables semantic reranking.
+- Semantic reranking defaults to on when web retrieval is enabled and uses LM Studio embeddings if available.
+- `--web-embed-model` sets the embedding model (auto-detected from LM Studio if omitted).
+- `--web-embed-base-url` sets the embedding endpoint (defaults to `LMSTUDIO_BASE_URL`).
+- `--web-embed-timeout` sets the embedding timeout in seconds.
+- `--web-no-expand` disables query expansion (enabled by default).
+- `--web-max-queries` sets the max expanded queries (default: 4).
+
+Current sources:
+- Tech/web: DuckDuckGo HTML results.
+- Literature: arXiv, Semantic Scholar, Crossref.
+
 Outputs:
 - Plan + outline saved in `plans/YYYY_MM_DD_HH_MM_plan.md` (outline is under `## Detailed Outline`).
 - Ingested document text stored in `data/library/<doc_id>.txt`.
@@ -103,8 +129,15 @@ python -m mini_nexen.cli research --topic "Agentic research systems" --provider 
 ```
 
 Additional CLI overrides: `--base-url` (LM Studio), `--temperature`, `--max-tokens`.
-Use the global `--verbose` flag to echo LLM log events to stdout (raw LLM responses remain in `data/llm_calls.log` only).
-`--verbose` can be placed before or after the subcommand.
+Log echoing is enabled by default. Use `--quiet` to disable.
+Use `--verbose` to explicitly enable (it can be placed before or after the subcommand).
+You can also set `MINI_NEXEN_VERBOSE=1` (or `0`) to control the default.
+
+Embedding selection:
+- When web retrieval is enabled, the CLI will prompt for an embedding model based on the selected provider.
+- Gemini defaults to `gemini-embedding-001`.
+- LM Studio defaults to auto-detecting an embedding model from `/v1/models`.
+- LM Studio LLM selection uses `auto-detect` (internally `your-local-model`) or a custom model name.
 LM Studio model discovery can be disabled with `--no-model-discovery`.
 
 If no provider is set, the CLI prompts you to select a provider and model. If env vars are already set, it asks to confirm or change them.

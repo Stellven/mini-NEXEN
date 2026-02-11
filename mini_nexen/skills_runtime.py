@@ -7,7 +7,7 @@ from typing import Callable, Optional
 
 from . import db
 from .config import DEFAULT_ROUNDS, DEFAULT_TOP_K, SKILLS_DIR, ensure_dirs
-from .llm import LLMClient, log_task_event
+from .llm import LLMClient, log_task_event, log_task_event_quiet
 from .planning import (
     PlanDraft,
     is_ready,
@@ -17,6 +17,7 @@ from .planning import (
     render_plan_md,
 )
 from .text_utils import score_documents, tokenize
+from .web_retrieval import expand_queries, run_web_retrieval
 
 
 @dataclass
@@ -44,6 +45,19 @@ class SkillContext:
     query_hints: list[str] = field(default_factory=list)
     active_skills: list[str] = field(default_factory=list)
     skill_guidance: list[str] = field(default_factory=list)
+    web_enabled: bool = False
+    web_modes: list[str] = field(default_factory=list)
+    web_max_results: int = 5
+    web_timeout: int = 15
+    web_fetch_pages: bool = True
+    web_hybrid: bool = True
+    web_embed_provider: str | None = None
+    web_embed_model: str | None = None
+    web_embed_base_url: str | None = None
+    web_embed_timeout: int | None = None
+    web_embed_api_key: str | None = None
+    web_expand_queries: bool = True
+    web_max_queries: int = 4
     llm: Optional[LLMClient] = None
 
 
@@ -98,7 +112,7 @@ class SkillRunner:
             raise ValueError(f"Skill '{name}' is not registered")
         if name not in self.registry.skills:
             raise ValueError(f"Skill '{name}' not found in skills registry")
-        log_task_event(f"*Skill activated: {name}*")
+        log_task_event(f"***Skill activated: {name}***")
         return self.handlers[name](ctx)
 
 
@@ -134,6 +148,67 @@ def _matches_triggers(texts: list[str], triggers: list[str]) -> bool:
         if trigger.casefold() in haystack:
             return True
     return False
+
+
+def _extract_json_payload(text: str) -> object:
+    if not text:
+        return {}
+    start_obj = text.find("{")
+    end_obj = text.rfind("}")
+    start_arr = text.find("[")
+    end_arr = text.rfind("]")
+
+    candidate = None
+    if start_obj != -1 and end_obj != -1 and end_obj > start_obj:
+        candidate = text[start_obj : end_obj + 1]
+    elif start_arr != -1 and end_arr != -1 and end_arr > start_arr:
+        candidate = text[start_arr : end_arr + 1]
+    if not candidate:
+        return {}
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return {}
+
+
+def _clean_query_list(value: object) -> list[str]:
+    if isinstance(value, dict):
+        value = value.get("queries") or []
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    seen = set()
+    for item in value:
+        text = str(item).strip()
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        cleaned.append(text)
+        seen.add(key)
+    return cleaned
+
+
+def _expand_queries_with_llm(ctx: SkillContext, query: str, modes: list[str]) -> list[str]:
+    if not ctx.llm:
+        return []
+    prompt = {
+        "query": query,
+        "modes": modes,
+        "instructions": (
+            "Generate 3-6 alternative search queries using synonyms, related terms, and alternate phrasings. "
+            "Return JSON only as either a list of strings or {\"queries\": [...]}."
+        ),
+    }
+    response = ctx.llm.generate(
+        system_prompt="You generate search query expansions. Return JSON only.",
+        user_prompt=json.dumps(prompt, indent=2),
+        task="query expansion",
+        agent="Retriever",
+    )
+    payload = _extract_json_payload(response)
+    return _clean_query_list(payload)
 
 def skill_collect_interests(ctx: SkillContext) -> SkillContext:
     ensure_dirs()
@@ -171,6 +246,87 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
             continue
         selected.append(docs[idx])
     ctx.documents = selected
+    return ctx
+
+
+def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
+    if not ctx.web_enabled:
+        return ctx
+
+    seen = set()
+    query_parts = []
+    for item in [ctx.topic] + [interest.topic for interest in ctx.interests]:
+        text = (item or "").strip()
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        query_parts.append(text)
+    query = " ".join(query_parts).strip()
+    if not query:
+        return ctx
+
+    log_task_event(
+        "Web retrieval: "
+        f"modes={','.join(ctx.web_modes) or 'tech,lit'} "
+        f"max_results={ctx.web_max_results} "
+        f"max_queries={ctx.web_max_queries} "
+        f"expand={ctx.web_expand_queries}"
+    )
+    log_task_event_quiet(f"Web retrieval query: {query}")
+    modes = ctx.web_modes or ["tech", "lit"]
+    extra_queries: list[str] = []
+    if ctx.web_expand_queries:
+        extra_queries = _expand_queries_with_llm(ctx, query, modes)
+        expanded = expand_queries(
+            query,
+            modes,
+            max_queries=ctx.web_max_queries,
+            extra_queries=extra_queries,
+        )
+        if expanded:
+            log_task_event_quiet(f"Web retrieval expanded queries: {expanded}")
+    results = run_web_retrieval(
+        query=query,
+        modes=modes,
+        max_results=ctx.web_max_results,
+        timeout=ctx.web_timeout,
+        fetch_pages=ctx.web_fetch_pages,
+        hybrid=ctx.web_hybrid,
+        embed_provider=ctx.web_embed_provider,
+        embed_model=ctx.web_embed_model,
+        embed_base_url=ctx.web_embed_base_url,
+        embed_timeout=ctx.web_embed_timeout,
+        embed_api_key=ctx.web_embed_api_key,
+        expand_query_flag=ctx.web_expand_queries,
+        max_queries=ctx.web_max_queries,
+        extra_queries=extra_queries,
+    )
+
+    added = 0
+    for result in results:
+        if not result.text:
+            continue
+        if db.document_exists(result.url):
+            continue
+        tags = ["web", result.source]
+        if "lit" in modes or "literature" in modes:
+            if result.source in {"arxiv", "semantic_scholar", "crossref"}:
+                tags.append("literature")
+        if "tech" in modes or "web" in modes:
+            if result.source == "duckduckgo":
+                tags.append("tech")
+        db.add_document(
+            title=result.title,
+            source_type="web",
+            source=result.url,
+            content_text=result.text,
+            tags=tags,
+        )
+        added += 1
+    log_task_event(f"Web retrieval: added {added} sources")
     return ctx
 
 
@@ -262,6 +418,7 @@ def build_default_runner() -> SkillRunner:
         return ctx
     runner.register("collect_interests", skill_collect_interests)
     runner.register("systems-engineering", skill_systems_engineering)
+    runner.register("web_retrieve", skill_web_retrieve)
     runner.register("retrieve_sources", skill_retrieve_sources)
     runner.register("plan_research", skill_plan_research)
     runner.register("refine_plan", skill_refine_plan)

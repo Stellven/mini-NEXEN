@@ -131,6 +131,16 @@ def list_documents(limit: int = 200) -> list[Document]:
     return docs
 
 
+def document_exists(source: str) -> bool:
+    init_db()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM documents WHERE source = ? LIMIT 1",
+            (source,),
+        ).fetchone()
+    return row is not None
+
+
 def load_document_text(doc: Document) -> str:
     path = Path(doc.content_path)
     if not path.exists():

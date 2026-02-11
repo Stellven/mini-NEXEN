@@ -20,16 +20,19 @@ Example:
 {"scope":["..."],"key_questions":["..."],"keywords":["..."],"gaps":["..."],"notes":["..."],"readiness":"draft"}
 """
 
-SYSTEM_OUTLINE_PROMPT = """You are an outlining agent. Produce a detailed outline suitable for a manuscript or report.
+SYSTEM_OUTLINE_PROMPT = """You are a research planning agent. Produce a research plan (not a report outline).
 Return ONE valid JSON object only. No markdown, no commentary, no extra text.
 
 Requirements:
 - Must include key: outline
 - outline MUST be a non-empty array (>= 6 items)
+- Each item must be an actionable research step or investigation direction.
+- Use imperative phrasing (e.g., "Search...", "Compare...", "Investigate...").
+- Do not write report section headings.
 - Output must be strict JSON (double quotes, no trailing commas)
 
 Example:
-{"outline":["Section 1","Section 2","Section 3","Section 4","Section 5","Section 6"]}
+{"outline":["Search for official technical reports and release blogs to extract architecture and training details.","Compare context window sizes and long-context accuracy across models.","Collect benchmark results (e.g., HumanEval, MMLU, GSM8K) for both models.","Investigate code-specific features like multi-file reasoning and repo-level understanding.","Analyze pricing, latency, and regional availability for each model.","Review safety and security frameworks and independent third-party evaluations."]}
 """
 
 

@@ -18,7 +18,8 @@ def set_log_echo(enabled: bool = True) -> None:
 
 
 def _should_echo(line: str) -> bool:
-    return "raw response" not in line.lower()
+    lowered = line.lower()
+    return "raw response" not in lowered and "[log-only]" not in lowered
 
 
 def _write_log_line(line: str) -> None:
@@ -140,11 +141,20 @@ class LMStudioClient(LLMClient):
             data = response.json()
             models = data.get("data") if isinstance(data, dict) else None
             if isinstance(models, list) and models:
-                model_id = models[0].get("id") if isinstance(models[0], dict) else None
-                if model_id:
+                for item in models:
+                    if not isinstance(item, dict):
+                        continue
+                    model_id = item.get("id")
+                    if not model_id:
+                        continue
+                    lowered = str(model_id).lower()
+                    if "embed" in lowered or "embedding" in lowered:
+                        continue
                     self.config.model = model_id
                     self._log(agent, f"LM Studio resolved model to {model_id}.")
                     return
+                self._log(agent, "LM Studio returned only embedding models; using configured model.")
+                return
             self._log(agent, "LM Studio returned no models; using configured model.")
         except Exception as exc:
             self._log(agent, f"LM Studio model discovery error: {exc}")
@@ -212,6 +222,11 @@ class LMStudioClient(LLMClient):
 def log_task_event(message: str) -> None:
     stamp = datetime.now(timezone.utc).isoformat()
     _write_log_line(f"{stamp} | {message}")
+
+
+def log_task_event_quiet(message: str) -> None:
+    stamp = datetime.now(timezone.utc).isoformat()
+    _write_log_line(f"{stamp} | [log-only] {message}")
 
 
 def load_llm_config(

@@ -72,11 +72,23 @@ def create_source_briefs(
     keywords: Iterable[str],
     highlights_per_doc: int = 3,
 ) -> list[SourceBrief]:
+    from .llm import log_task_event
+
     briefs = []
+    total_highlights = 0
+    counts: dict[str, int] = {}
     for doc in documents:
         text = load_document_text(doc)
         highlights = top_sentences(text, keywords, limit=highlights_per_doc)
+        total_highlights += len(highlights)
         briefs.append(SourceBrief(doc=doc, highlights=highlights))
+        counts[doc.source_type] = counts.get(doc.source_type, 0) + 1
+    log_task_event(
+        f"Source briefs: docs={len(briefs)} highlights={total_highlights} per_doc={highlights_per_doc}"
+    )
+    if counts:
+        breakdown = " ".join(f"{key}={value}" for key, value in sorted(counts.items()))
+        log_task_event(f"Source briefs by source_type: {breakdown}")
     return briefs
 
 
@@ -261,41 +273,6 @@ def llm_build_outline(
     raise LLMClientError("LLM returned invalid JSON for outline.")
 
 
-def build_outline(
-    topic: str,
-    documents: list[Document],
-    interests: list[Interest],
-    keywords: list[str],
-) -> list[str]:
-    outline = [
-        f"Thesis framing for {topic}",
-        "Background and definitions to establish scope",
-        "Current landscape and key actors",
-        "Core mechanisms, methods, or technologies",
-        "Evidence summary and strongest claims",
-        "Points of disagreement or uncertainty",
-        "Implications, risks, and ethical considerations",
-        "Open research questions and validation needs",
-        "Recommended next retrieval targets",
-    ]
-
-    interest_summary = summarize_interests(interests)
-    if interest_summary:
-        outline.append("Connections to recorded interests")
-
-    highlights = []
-    for doc in documents:
-        text = load_document_text(doc)
-        for sentence in top_sentences(text, keywords, limit=2):
-            highlights.append(f"{doc.title}: {sentence}")
-
-    if highlights:
-        outline.append("Source-backed bullets")
-        outline.extend(highlights[:12])
-
-    return outline
-
-
 def render_plan_md(
     plan: PlanDraft,
     outline: list[str],
@@ -367,9 +344,9 @@ def render_plan_md(
         lines.append("- None")
 
     lines.append("")
-    lines.append("## Detailed Outline")
-    for item in outline:
-        lines.append(f"- {item}")
+    lines.append("## Research Plan")
+    for idx, item in enumerate(outline, start=1):
+        lines.append(f"{idx}. {item}")
 
     lines.append("")
     lines.append("## Next Actions")
