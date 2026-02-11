@@ -9,6 +9,25 @@ from typing import Optional
 
 from .config import LLM_LOG_PATH, ensure_dirs
 
+_ECHO_LOG = False
+
+
+def set_log_echo(enabled: bool = True) -> None:
+    global _ECHO_LOG
+    _ECHO_LOG = enabled
+
+
+def _should_echo(line: str) -> bool:
+    return "raw response" not in line.lower()
+
+
+def _write_log_line(line: str) -> None:
+    ensure_dirs()
+    with LLM_LOG_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+    if _ECHO_LOG and _should_echo(line):
+        print(line, flush=True)
+
 @dataclass
 class LLMConfig:
     provider: str
@@ -29,11 +48,9 @@ class LLMClient:
         self.config = config
 
     def _log(self, agent: str, message: str) -> None:
-        ensure_dirs()
         stamp = datetime.now(timezone.utc).isoformat()
         message = f"{stamp} | {agent} | {message}"
-        with LLM_LOG_PATH.open("a", encoding="utf-8") as handle:
-            handle.write(message + "\n")
+        _write_log_line(message)
 
     def generate(
         self,
@@ -165,7 +182,7 @@ class LMStudioClient(LLMClient):
                     agent,
                     f"Model {self.config.model} retrying {task} (attempt {attempt}/{max_attempts})."
                 )
-            response = self._requests.post(url, headers=headers, data=json.dumps(payload), timeout=90)
+            response = self._requests.post(url, headers=headers, data=json.dumps(payload), timeout=600)
             if response.status_code == 429:
                 self._log(agent, f"Model {self.config.model} rate limit on {task}.")
                 if attempt < max_attempts:
@@ -193,10 +210,8 @@ class LMStudioClient(LLMClient):
 
 
 def log_task_event(message: str) -> None:
-    ensure_dirs()
     stamp = datetime.now(timezone.utc).isoformat()
-    with LLM_LOG_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(f"{stamp} | {message}\n")
+    _write_log_line(f"{stamp} | {message}")
 
 
 def load_llm_config(

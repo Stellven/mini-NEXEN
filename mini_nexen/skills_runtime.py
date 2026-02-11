@@ -7,7 +7,7 @@ from typing import Callable, Optional
 
 from . import db
 from .config import DEFAULT_ROUNDS, DEFAULT_TOP_K, SKILLS_DIR, ensure_dirs
-from .llm import LLMClient
+from .llm import LLMClient, log_task_event
 from .planning import (
     PlanDraft,
     is_ready,
@@ -42,6 +42,8 @@ class SkillContext:
     plan_path: Optional[Path] = None
     notes: list[str] = field(default_factory=list)
     query_hints: list[str] = field(default_factory=list)
+    active_skills: list[str] = field(default_factory=list)
+    skill_guidance: list[str] = field(default_factory=list)
     llm: Optional[LLMClient] = None
 
 
@@ -96,10 +98,42 @@ class SkillRunner:
             raise ValueError(f"Skill '{name}' is not registered")
         if name not in self.registry.skills:
             raise ValueError(f"Skill '{name}' not found in skills registry")
+        log_task_event(f"*Skill activated: {name}*")
         return self.handlers[name](ctx)
 
 
 # Skill implementations
+
+SYSTEMS_ENGINEERING_TRIGGERS = [
+    "system design",
+    "requirements",
+    "architecture",
+    "v&v",
+    "mbse",
+    "icd",
+    "trade study",
+    "trade-off",
+    "trade off",
+    "fmea",
+    "conops",
+    "system integration",
+    "dodaf",
+    "sysml",
+    "三一工程",
+    "五看三定",
+    "四化设计",
+    "系统融合",
+    "作战地图",
+    "产业投资",
+]
+
+
+def _matches_triggers(texts: list[str], triggers: list[str]) -> bool:
+    haystack = " ".join(text for text in texts if text).casefold()
+    for trigger in triggers:
+        if trigger.casefold() in haystack:
+            return True
+    return False
 
 def skill_collect_interests(ctx: SkillContext) -> SkillContext:
     ensure_dirs()
@@ -149,6 +183,7 @@ def skill_plan_research(ctx: SkillContext) -> SkillContext:
         interests=ctx.interests,
         documents=ctx.documents,
         round_number=ctx.round_number,
+        skill_guidance=ctx.skill_guidance,
     )
     return ctx
 
@@ -172,6 +207,7 @@ def skill_refine_plan(ctx: SkillContext) -> SkillContext:
         documents=ctx.documents,
         interests=ctx.interests,
         round_number=ctx.round_number,
+        skill_guidance=ctx.skill_guidance,
     )
     ctx.plan.readiness = "refined"
     return ctx
@@ -188,6 +224,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         documents=ctx.documents,
         interests=ctx.interests,
         keywords=ctx.plan.keywords,
+        skill_guidance=ctx.skill_guidance,
     )
     return ctx
 
@@ -205,7 +242,26 @@ def build_default_runner() -> SkillRunner:
     registry.load()
 
     runner = SkillRunner(registry)
+
+    def skill_systems_engineering(ctx: SkillContext) -> SkillContext:
+        spec = registry.skills.get("systems-engineering")
+        if not spec:
+            return ctx
+        if spec.name in ctx.active_skills:
+            return ctx
+        texts = [ctx.topic]
+        for interest in ctx.interests:
+            texts.append(interest.topic)
+            if interest.notes:
+                texts.append(interest.notes)
+        if not _matches_triggers(texts, SYSTEMS_ENGINEERING_TRIGGERS):
+            return ctx
+        content = spec.path.read_text(encoding="utf-8")
+        ctx.active_skills.append(spec.name)
+        ctx.skill_guidance.append(content)
+        return ctx
     runner.register("collect_interests", skill_collect_interests)
+    runner.register("systems-engineering", skill_systems_engineering)
     runner.register("retrieve_sources", skill_retrieve_sources)
     runner.register("plan_research", skill_plan_research)
     runner.register("refine_plan", skill_refine_plan)

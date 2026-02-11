@@ -19,7 +19,7 @@ class Agent:
 class SupervisorAgent:
     def __init__(self, runner: SkillRunner):
         self.runner = runner
-        self.retriever = Agent("retriever", ["collect_interests", "retrieve_sources"])
+        self.retriever = Agent("retriever", ["collect_interests", "systems-engineering", "retrieve_sources"])
         self.planner = Agent("planner", ["plan_research", "refine_plan"])
         self.outliner = Agent("outliner", ["build_outline", "persist_plan"])
 

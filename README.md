@@ -87,12 +87,24 @@ LM Studio setup checklist:
 - If you are running in WSL and LM Studio is on Windows, enable “Serve on Local Network”
   in LM Studio and use the Windows IP address in `LMSTUDIO_BASE_URL`.
 
+WSL convenience (auto-detect Windows host IP from the WSL default gateway):
+```bash
+export LMSTUDIO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):1234/v1"
+```
+
+Persist that setting for new shells:
+```bash
+echo 'export LMSTUDIO_BASE_URL="http://$(ip route | awk '\''/default/ {print $3}'\''):1234/v1"' >> ~/.bashrc
+```
+
 You can also override provider/model per run:
 ```bash
 python -m mini_nexen.cli research --topic "Agentic research systems" --provider gemini --model gemini-2.5-flash
 ```
 
 Additional CLI overrides: `--base-url` (LM Studio), `--temperature`, `--max-tokens`.
+Use the global `--verbose` flag to echo LLM log events to stdout (raw LLM responses remain in `data/llm_calls.log` only).
+`--verbose` can be placed before or after the subcommand.
 LM Studio model discovery can be disabled with `--no-model-discovery`.
 
 If no provider is set, the CLI prompts you to select a provider and model. If env vars are already set, it asks to confirm or change them.

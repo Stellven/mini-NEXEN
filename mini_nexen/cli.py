@@ -8,7 +8,7 @@ import os
 import sys
 
 from .config import DEFAULT_ROUNDS, DEFAULT_TOP_K, ensure_dirs
-from .llm import LLMClientError, load_llm_config, log_task_event
+from .llm import LLMClientError, load_llm_config, log_task_event, set_log_echo
 from .research import run_research
 
 
@@ -148,7 +148,8 @@ def _research(args: argparse.Namespace) -> None:
             discover_model=not args.no_model_discovery,
         )
         print(f"Saved plan: {result.plan_path}")
-        print(result.plan_markdown)
+        # print(result.plan_markdown)
+        print(f"Research outline completed. Saved in {result.plan_path.parent}")
     except LLMClientError as exc:
         print(f"LLM error: {exc}")
         raise SystemExit(1) from exc
@@ -284,9 +285,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Gemini requires GEMINI_API_KEY. LM Studio uses LMSTUDIO_BASE_URL."
         ),
     )
+    parser.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     sub = parser.add_subparsers(dest="command", required=True)
 
     ingest = sub.add_parser("ingest", help="Add a file, URL, or note to the library")
+    ingest.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     ingest.add_argument("--file", help="Path to a text file")
     ingest.add_argument("--url", help="URL to record")
     ingest.add_argument("--text", help="Inline text content")
@@ -295,25 +298,31 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.set_defaults(func=_ingest)
 
     interest = sub.add_parser("interest", help="Record an interest topic")
+    interest.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     interest.add_argument("--topic", required=True)
     interest.add_argument("--notes")
     interest.set_defaults(func=_add_interest)
 
     del_interest = sub.add_parser("delete-interest", help="Delete a single interest by id")
+    del_interest.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     del_interest.add_argument("--id", required=True, help="Interest id to remove")
     del_interest.set_defaults(func=_delete_interest)
 
     clear_interests = sub.add_parser("clear-interests", help="Delete all interests")
+    clear_interests.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     clear_interests.add_argument("--yes", action="store_true", help="Confirm deletion")
     clear_interests.set_defaults(func=_clear_interests)
 
     list_docs = sub.add_parser("list-docs", help="List documents")
+    list_docs.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     list_docs.set_defaults(func=_list_docs)
 
     list_interests = sub.add_parser("list-interests", help="List interests")
+    list_interests.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     list_interests.set_defaults(func=_list_interests)
 
     research = sub.add_parser("research", help="Generate a research plan")
+    research.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     research.add_argument("--topic", required=True)
     research.add_argument("--rounds", type=int, default=DEFAULT_ROUNDS)
     research.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
@@ -335,6 +344,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    set_log_echo(bool(getattr(args, "verbose", False)))
     args.func(args)
 
 

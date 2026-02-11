@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from .db import Document, Interest, load_document_text
-from .llm import LLMClient, LLMClientError
+from .llm import LLMClient, LLMClientError, log_task_event
 from .llm_prompts import SYSTEM_OUTLINE_PROMPT, SYSTEM_PLAN_PROMPT, outline_prompt, plan_prompt, refine_prompt
 from .text_utils import top_sentences, tokenize
 
@@ -101,6 +101,19 @@ def _extract_json(text: str) -> dict:
         return {}
 
 
+def _truncate_text(text: str, limit: int = 2000) -> str:
+    if not text:
+        return "<empty>"
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}... [truncated {len(text) - limit} chars]"
+
+
+def _log_llm_failure(agent: str, stage: str, response: str) -> None:
+    snippet = _truncate_text(response).replace("\r", "\\r").replace("\n", "\\n")
+    log_task_event(f"{agent} | LLM {stage} raw response (truncated): {snippet}")
+
+
 def _clean_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -168,16 +181,22 @@ def llm_draft_plan(
     interests: list[Interest],
     documents: list[Document],
     round_number: int,
+    skill_guidance: list[str] | None = None,
 ) -> PlanDraft:
     keywords_seed = build_keywords(topic, interests)
     base_plan = _base_plan(topic, interests, documents, round_number, keywords_seed)
-    prompt = plan_prompt(topic, interests, documents, keywords_seed)
+    prompt = plan_prompt(topic, interests, documents, keywords_seed, skill_guidance=skill_guidance)
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan draft", agent="Planner")
     payload = _extract_json(response)
     if not payload:
+        _log_llm_failure("Planner", "plan draft", response)
         raise LLMClientError("LLM returned invalid JSON for plan draft.")
     plan = _apply_llm_fields(base_plan, payload)
-    _validate_llm_plan(plan)
+    try:
+        _validate_llm_plan(plan)
+    except LLMClientError as exc:
+        _log_llm_failure("Planner", "plan draft", response)
+        raise LLMClientError(str(exc)) from exc
     return plan
 
 
@@ -187,6 +206,7 @@ def llm_refine_plan(
     documents: list[Document],
     interests: list[Interest],
     round_number: int,
+    skill_guidance: list[str] | None = None,
 ) -> PlanDraft:
     keywords_seed = plan.keywords or build_keywords(plan.topic, interests)
     base_plan = _base_plan(plan.topic, interests, documents, round_number, keywords_seed)
@@ -199,13 +219,25 @@ def llm_refine_plan(
         "notes": plan.notes,
         "readiness": plan.readiness,
     }
-    prompt = refine_prompt(plan.topic, prior_plan, interests, documents, keywords_seed)
+    prompt = refine_prompt(
+        plan.topic,
+        prior_plan,
+        interests,
+        documents,
+        keywords_seed,
+        skill_guidance=skill_guidance,
+    )
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan refinement", agent="Planner")
     payload = _extract_json(response)
     if not payload:
+        _log_llm_failure("Planner", "plan refinement", response)
         raise LLMClientError("LLM returned invalid JSON for plan refinement.")
     refined = _apply_llm_fields(base_plan, payload)
-    _validate_llm_plan(refined)
+    try:
+        _validate_llm_plan(refined)
+    except LLMClientError as exc:
+        _log_llm_failure("Planner", "plan refinement", response)
+        raise LLMClientError(str(exc)) from exc
     return refined
 
 
@@ -215,8 +247,9 @@ def llm_build_outline(
     documents: list[Document],
     interests: list[Interest],
     keywords: list[str],
+    skill_guidance: list[str] | None = None,
 ) -> list[str]:
-    prompt = outline_prompt(topic, interests, documents, keywords)
+    prompt = outline_prompt(topic, interests, documents, keywords, skill_guidance=skill_guidance)
     response = llm.generate(SYSTEM_OUTLINE_PROMPT, prompt, task="outline", agent="Outliner")
     payload = _extract_json(response)
     outline = payload.get("outline")
@@ -224,6 +257,7 @@ def llm_build_outline(
         cleaned = _clean_list(outline)
         if cleaned:
             return cleaned
+    _log_llm_failure("Outliner", "outline", response)
     raise LLMClientError("LLM returned invalid JSON for outline.")
 
 
