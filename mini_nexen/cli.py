@@ -9,6 +9,7 @@ import sys
 
 from .config import DEFAULT_ROUNDS, DEFAULT_TOP_K, ensure_dirs
 from .llm import LLMClientError, load_llm_config, log_task_event, set_log_echo
+from .web_retrieval import RetrievalRateLimitError
 from .research import run_research
 
 
@@ -190,7 +191,17 @@ def _research(args: argparse.Namespace) -> None:
         )
         print(f"Saved plan: {result.plan_path}")
         # print(result.plan_markdown)
-        print(f"Research outline completed. Saved in {result.plan_path.parent}")
+        print(
+            "Research outline completed. "
+            f"Saved in {result.plan_path.parent} "
+            f"(outline words: {result.outline_word_count})"
+        )
+    except RetrievalRateLimitError as exc:
+        print(
+            "Retrieval error: rate limit exceeded. "
+            f"{exc.label} attempts={exc.attempts} elapsed={exc.elapsed:.0f}s"
+        )
+        raise SystemExit(1) from exc
     except LLMClientError as exc:
         print(f"LLM error: {exc}")
         raise SystemExit(1) from exc

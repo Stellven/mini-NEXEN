@@ -8,6 +8,7 @@ from . import db
 from .agents import SupervisorAgent
 from .config import PLANS_DIR, ensure_dirs
 from .llm import build_client, load_llm_config
+from .planning import outline_word_count
 from .skills_runtime import SkillContext, build_default_runner
 
 
@@ -15,6 +16,7 @@ from .skills_runtime import SkillContext, build_default_runner
 class ResearchResult:
     plan_path: Path
     plan_markdown: str
+    outline_word_count: int
 
 
 def _plan_filename(now: datetime) -> str:
@@ -90,4 +92,8 @@ def run_research(
     plan_path = PLANS_DIR / _plan_filename(now)
     plan_path.write_text(plan_md, encoding="utf-8")
 
-    return ResearchResult(plan_path=plan_path, plan_markdown=plan_md)
+    return ResearchResult(
+        plan_path=plan_path,
+        plan_markdown=plan_md,
+        outline_word_count=outline_word_count(ctx.outline),
+    )

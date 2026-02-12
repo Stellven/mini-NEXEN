@@ -11,12 +11,26 @@ from xml.etree import ElementTree
 
 import math
 import os
+import time
 import requests
 
 
 USER_AGENT = "mini-nexen/0.1 (+https://example.com)"
 DEFAULT_TIMEOUT = 15
 MAX_CONTENT_CHARS = 20000
+RETRY_MAX_SECONDS = 180
+RETRY_BASE_SLEEP = 2
+RETRY_MAX_SLEEP = 30
+
+
+class RetrievalRateLimitError(RuntimeError):
+    def __init__(self, label: str, attempts: int, elapsed: float):
+        self.label = label
+        self.attempts = attempts
+        self.elapsed = elapsed
+        super().__init__(
+            f"Rate limit from {label} after {attempts} attempts over {elapsed:.0f}s"
+        )
 
 
 @dataclass
@@ -34,6 +48,45 @@ def _clean_text(text: str) -> str:
     return cleaned
 
 
+def _request_with_retries(
+    method: str,
+    url: str,
+    timeout: int,
+    headers: dict[str, str] | None = None,
+    data: str | None = None,
+    label: str = "request",
+    max_retry_seconds: int = RETRY_MAX_SECONDS,
+) -> requests.Response:
+    from .llm import log_task_event
+
+    start = time.monotonic()
+    attempt = 0
+    while True:
+        resp = requests.request(method, url, headers=headers, data=data, timeout=timeout)
+        if resp.status_code != 429:
+            return resp
+        attempt += 1
+        elapsed = time.monotonic() - start
+        if elapsed >= max_retry_seconds:
+            log_task_event(
+                f"Web retrieval rate limit from {label}; giving up after {attempt} attempts"
+            )
+            raise RetrievalRateLimitError(label=label, attempts=attempt, elapsed=elapsed)
+        retry_after = resp.headers.get("Retry-After")
+        if retry_after and retry_after.isdigit():
+            sleep_for = int(retry_after)
+        else:
+            sleep_for = min(RETRY_MAX_SLEEP, RETRY_BASE_SLEEP * (2 ** (attempt - 1)))
+        remaining = max_retry_seconds - elapsed
+        if sleep_for > remaining:
+            sleep_for = remaining
+        if sleep_for > 0:
+            log_task_event(
+                f"Web retrieval rate limit from {label}; retrying (attempt {attempt}) in {sleep_for}s"
+            )
+            time.sleep(sleep_for)
+
+
 def _strip_html(text: str) -> str:
     text = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", text)
     text = re.sub(r"(?is)<[^>]+>", " ", text)
@@ -42,7 +95,7 @@ def _strip_html(text: str) -> str:
 
 def fetch_url_text(url: str, timeout: int = DEFAULT_TIMEOUT) -> str:
     headers = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"}
-    resp = requests.get(url, headers=headers, timeout=timeout)
+    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="fetch_url")
     resp.raise_for_status()
     content_type = resp.headers.get("Content-Type", "")
     if "text/html" in content_type or "application/xhtml+xml" in content_type:
@@ -70,7 +123,14 @@ def _embed_texts(
     url = base_url.rstrip("/") + "/embeddings"
     headers = {"Content-Type": "application/json"}
     payload = {"model": model, "input": texts}
-    resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=timeout)
+    resp = _request_with_retries(
+        "POST",
+        url,
+        headers=headers,
+        data=json.dumps(payload),
+        timeout=timeout,
+        label="lmstudio_embeddings",
+    )
     resp.raise_for_status()
     data = resp.json()
     results = []
@@ -259,7 +319,7 @@ def expand_queries(
 def search_duckduckgo(query: str, max_results: int = 5, timeout: int = DEFAULT_TIMEOUT) -> list[WebResult]:
     url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
     headers = {"User-Agent": USER_AGENT}
-    resp = requests.get(url, headers=headers, timeout=timeout)
+    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="duckduckgo")
     resp.raise_for_status()
     html_text = resp.text
 
@@ -283,7 +343,7 @@ def search_arxiv(query: str, max_results: int = 5, timeout: int = DEFAULT_TIMEOU
     q = quote_plus(query)
     url = f"https://export.arxiv.org/api/query?search_query=all:{q}&start=0&max_results={max_results}"
     headers = {"User-Agent": USER_AGENT}
-    resp = requests.get(url, headers=headers, timeout=timeout)
+    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="arxiv")
     resp.raise_for_status()
     feed = ElementTree.fromstring(resp.text)
     ns = {"atom": "http://www.w3.org/2005/Atom"}
@@ -312,7 +372,7 @@ def search_semantic_scholar(query: str, max_results: int = 5, timeout: int = DEF
         f"?query={q}&limit={max_results}&fields=title,abstract,url,venue,year"
     )
     headers = {"User-Agent": USER_AGENT}
-    resp = requests.get(url, headers=headers, timeout=timeout)
+    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="semantic_scholar")
     resp.raise_for_status()
     data = resp.json()
     results: list[WebResult] = []
@@ -330,7 +390,7 @@ def search_crossref(query: str, max_results: int = 5, timeout: int = DEFAULT_TIM
     q = quote_plus(query)
     url = f"https://api.crossref.org/works?query={q}&rows={max_results}"
     headers = {"User-Agent": USER_AGENT}
-    resp = requests.get(url, headers=headers, timeout=timeout)
+    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="crossref")
     resp.raise_for_status()
     data = resp.json()
     items = data.get("message", {}).get("items", [])

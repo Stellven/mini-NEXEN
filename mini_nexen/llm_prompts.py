@@ -25,14 +25,15 @@ Return ONE valid JSON object only. No markdown, no commentary, no extra text.
 
 Requirements:
 - Must include key: outline
-- outline MUST be a non-empty array (>= 6 items)
-- Each item must be an actionable research step or investigation direction.
+- outline MUST be a non-empty array (6-10 major steps).
+- Each major step must include 1-2 sub-layers (substeps and optional sub-substeps).
 - Use imperative phrasing (e.g., "Search...", "Compare...", "Investigate...").
 - Do not write report section headings.
+- Total outline length must be 1000-2000 words across titles and substeps.
 - Output must be strict JSON (double quotes, no trailing commas)
 
 Example:
-{"outline":["Search for official technical reports and release blogs to extract architecture and training details.","Compare context window sizes and long-context accuracy across models.","Collect benchmark results (e.g., HumanEval, MMLU, GSM8K) for both models.","Investigate code-specific features like multi-file reasoning and repo-level understanding.","Analyze pricing, latency, and regional availability for each model.","Review safety and security frameworks and independent third-party evaluations."]}
+{"outline":[{"title":"Search for official technical reports and release blogs to extract architecture and training details.","substeps":["List official sources and release pages to target.","Extract training scale, data sources, and capability summaries.",{"text":"Capture deployment context and version history.","substeps":["Note release cadence and changelogs.","Record published caveats or limitations."]}]},{"title":"Compare context window sizes and long-context accuracy across models.","substeps":["Collect vendor claims and independent benchmarks.","Analyze long-context recall and retrieval performance.",{"text":"Identify failure cases.","substeps":["Summarize common error patterns.","Note mitigation strategies reported by practitioners."]}]}]}
 """
 
 

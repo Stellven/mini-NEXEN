@@ -144,6 +144,11 @@ If no provider is set, the CLI prompts you to select a provider and model. If en
 
 Note: The system performs retrieval only from the local library (no internet fetching).
 
+Outline format:
+- Generated outlines are research plans (not report outlines).
+- Target length is 1000-2000 words with 1-2 sub-layers under each major step.
+  The length is a soft target; the system reports the final word count.
+
 List stored data:
 
 ```bash

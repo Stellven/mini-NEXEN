@@ -132,6 +132,51 @@ def _clean_list(value: object) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def _normalize_outline(outline: list[object]) -> list[str]:
+    normalized: list[str] = []
+    for item in outline:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                normalized.append(text)
+            continue
+        if isinstance(item, dict):
+            title = str(item.get("title") or item.get("step") or item.get("name") or "").strip()
+            if not title:
+                continue
+            lines = [title]
+            substeps = item.get("substeps") or item.get("steps") or item.get("items") or []
+            if isinstance(substeps, list):
+                for sub in substeps:
+                    if isinstance(sub, str):
+                        sub_text = sub.strip()
+                        if sub_text:
+                            lines.append(f"- {sub_text}")
+                        continue
+                    if isinstance(sub, dict):
+                        sub_text = str(sub.get("text") or sub.get("title") or "").strip()
+                        if sub_text:
+                            lines.append(f"- {sub_text}")
+                        sub_sub = sub.get("substeps") or sub.get("items") or []
+                        if isinstance(sub_sub, list):
+                            for sub_item in sub_sub:
+                                if isinstance(sub_item, str):
+                                    sub_item_text = sub_item.strip()
+                                    if sub_item_text:
+                                        lines.append(f"  - {sub_item_text}")
+            normalized.append("\n".join(lines))
+    return normalized
+
+
+def _count_words(text: str) -> int:
+    tokens = tokenize(text)
+    return len([token for token in tokens if token])
+
+
+def outline_word_count(outline: list[str]) -> int:
+    return _count_words(" ".join(outline))
+
+
 def _apply_llm_fields(plan: PlanDraft, payload: dict) -> PlanDraft:
     plan.scope = _clean_list(payload.get("scope")) or plan.scope
     plan.key_questions = _clean_list(payload.get("key_questions")) or plan.key_questions
@@ -266,7 +311,7 @@ def llm_build_outline(
     payload = _extract_json(response)
     outline = payload.get("outline")
     if isinstance(outline, list):
-        cleaned = _clean_list(outline)
+        cleaned = _normalize_outline(outline)
         if cleaned:
             return cleaned
     _log_llm_failure("Outliner", "outline", response)
@@ -346,7 +391,12 @@ def render_plan_md(
     lines.append("")
     lines.append("## Research Plan")
     for idx, item in enumerate(outline, start=1):
-        lines.append(f"{idx}. {item}")
+        parts = [part for part in str(item).splitlines() if part.strip()]
+        if not parts:
+            continue
+        lines.append(f"{idx}. {parts[0]}")
+        for extra in parts[1:]:
+            lines.append(f"   {extra}")
 
     lines.append("")
     lines.append("## Next Actions")

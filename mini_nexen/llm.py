@@ -19,14 +19,14 @@ def set_log_echo(enabled: bool = True) -> None:
 
 def _should_echo(line: str) -> bool:
     lowered = line.lower()
-    return "raw response" not in lowered and "[log-only]" not in lowered
+    return "raw response" not in lowered
 
 
-def _write_log_line(line: str) -> None:
+def _write_log_line(line: str, echo: bool = True) -> None:
     ensure_dirs()
     with LLM_LOG_PATH.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
-    if _ECHO_LOG and _should_echo(line):
+    if echo and _ECHO_LOG and _should_echo(line):
         print(line, flush=True)
 
 @dataclass
@@ -226,7 +226,7 @@ def log_task_event(message: str) -> None:
 
 def log_task_event_quiet(message: str) -> None:
     stamp = datetime.now(timezone.utc).isoformat()
-    _write_log_line(f"{stamp} | [log-only] {message}")
+    _write_log_line(f"{stamp} | {message}", echo=False)
 
 
 def load_llm_config(
