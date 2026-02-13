@@ -8,6 +8,7 @@ import os
 import sys
 
 from .config import DEFAULT_ROUNDS, DEFAULT_TOP_K, ensure_dirs
+from .file_ingest import load_text_from_file
 from .llm import LLMClientError, load_llm_config, log_task_event, set_log_echo
 from .web_retrieval import RetrievalRateLimitError
 from .research import run_research
@@ -23,7 +24,7 @@ def _ingest(args: argparse.Namespace) -> None:
         file_path = Path(args.file)
         if not file_path.exists():
             raise SystemExit(f"File not found: {file_path}")
-        content = file_path.read_text(encoding="utf-8")
+        content = load_text_from_file(file_path)
         title = args.title or file_path.name
         doc = db.add_document(
             title=title,
@@ -91,6 +92,24 @@ def _clear_interests(args: argparse.Namespace) -> None:
     print(f"Cleared interests: {deleted}")
 
 
+def _clear_library(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    db.init_db()
+    if not args.yes:
+        raise SystemExit("Refusing to clear library without --yes")
+    result = db.clear_library_and_graph(clear_files=True)
+    print(
+        "Cleared library + graph: "
+        f"documents={result['documents']} "
+        f"document_stats={result['document_stats']} "
+        f"chunks={result['chunks']} "
+        f"clusters={result['clusters']} "
+        f"topic_cluster_map={result['topic_cluster_map']} "
+        f"graph_meta={result['graph_meta']} "
+        f"files_removed={result['files_removed']}"
+    )
+
+
 def _list_docs(_: argparse.Namespace) -> None:
     ensure_dirs()
     docs = db.list_documents(limit=50)
@@ -127,10 +146,14 @@ def _research(args: argparse.Namespace) -> None:
         raise SystemExit("LLM configuration failed. Check provider/model settings.")
 
     web_modes = []
-    if args.web or args.web_tech:
-        web_modes.append("tech")
-    if args.web or args.web_lit:
-        web_modes.append("lit")
+    if not args.no_web:
+        if args.web or args.web_tech or args.web_lit:
+            if args.web or args.web_tech:
+                web_modes.append("tech")
+            if args.web or args.web_lit:
+                web_modes.append("lit")
+        else:
+            web_modes = ["tech", "lit"]
     web_enabled = bool(web_modes)
     web_hybrid = web_enabled and not args.web_no_hybrid
     if args.web_hybrid:
@@ -188,6 +211,12 @@ def _research(args: argparse.Namespace) -> None:
             web_embed_api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
             web_expand_queries=not args.web_no_expand,
             web_max_queries=args.web_max_queries,
+            web_max_new_sources=args.web_max_new,
+            web_max_per_query=args.web_max_per_query,
+            web_relevance_threshold=args.web_relevance_threshold,
+            ingest_seeds=args.ingest_seeds,
+            auto_interest=args.auto_interest,
+            graph_semantic_labels=not args.no_graph_semantic_labels or args.graph_semantic_labels,
         )
         print(f"Saved plan: {result.plan_path}")
         # print(result.plan_markdown)
@@ -457,6 +486,12 @@ def build_parser() -> argparse.ArgumentParser:
     clear_interests.add_argument("--yes", action="store_true", help="Confirm deletion")
     clear_interests.set_defaults(func=_clear_interests)
 
+    clear_library = sub.add_parser("clear-library", help="Delete all documents + graph data")
+    clear_library.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
+    clear_library.add_argument("--quiet", action="store_true", help="Disable log echoing")
+    clear_library.add_argument("--yes", action="store_true", help="Confirm deletion")
+    clear_library.set_defaults(func=_clear_library)
+
     list_docs = sub.add_parser("list-docs", help="List documents")
     list_docs.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     list_docs.add_argument("--quiet", action="store_true", help="Disable log echoing")
@@ -481,6 +516,21 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument("--web", action="store_true", help="Enable web retrieval (tech + literature)")
     research.add_argument("--web-tech", action="store_true", help="Enable tech/news/forums retrieval")
     research.add_argument("--web-lit", action="store_true", help="Enable literature retrieval")
+    research.add_argument("--no-web", action="store_true", help="Disable web retrieval (default: on)")
+    research.add_argument(
+        "--ingest", "--ingest-seeds", dest="ingest_seeds", action="store_true", help="Ingest seed files"
+    )
+    research.add_argument("--auto-interest", action="store_true", help="Add research topic to interests")
+    research.add_argument(
+        "--graph-semantic-labels",
+        action="store_true",
+        help="Use LLM to label clusters (default: on)",
+    )
+    research.add_argument(
+        "--no-graph-semantic-labels",
+        action="store_true",
+        help="Disable LLM cluster labels",
+    )
     research.add_argument("--web-max-results", type=int, default=5, help="Max results per source")
     research.add_argument("--web-timeout", type=int, default=15, help="Web fetch timeout (seconds)")
     research.add_argument("--web-no-fetch", action="store_true", help="Skip fetching full pages")
@@ -490,7 +540,22 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument("--web-embed-base-url", help="Embedding base URL (defaults to LMSTUDIO_BASE_URL)")
     research.add_argument("--web-embed-timeout", type=int, help="Embedding timeout (seconds)")
     research.add_argument("--web-no-expand", action="store_true", help="Disable query expansion")
-    research.add_argument("--web-max-queries", type=int, default=4, help="Max expanded queries (default: 4)")
+    research.add_argument("--web-max-queries", type=int, default=10, help="Max expanded queries (default: 10)")
+    research.add_argument("--web-max-new", type=int, default=50, help="Max new sources per run (default: 50)")
+    research.add_argument(
+        "--web-max-per-query",
+        "--web-max-per-interest",
+        dest="web_max_per_query",
+        type=int,
+        default=10,
+        help="Max sources per query seed (default: 10)",
+    )
+    research.add_argument(
+        "--web-relevance-threshold",
+        type=float,
+        default=0.25,
+        help="Minimum relevance score when reranking (default: 0.25)",
+    )
     research.add_argument(
         "--no-model-discovery",
         action="store_true",

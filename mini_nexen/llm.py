@@ -7,9 +7,13 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional
 
-from .config import LLM_LOG_PATH, ensure_dirs
+from .config import TASK_LOG_PATH, ensure_dirs
 
 _ECHO_LOG = False
+PLANNING_THROTTLE_BASE_SECONDS = 2
+PLANNING_THROTTLE_MAX_SECONDS = 30
+PLANNING_THROTTLE_IDLE_RESET_SECONDS = 60.0
+PLANNING_RETRY_MAX_SECONDS = 90.0
 
 
 def set_log_echo(enabled: bool = True) -> None:
@@ -24,7 +28,7 @@ def _should_echo(line: str) -> bool:
 
 def _write_log_line(line: str, echo: bool = True) -> None:
     ensure_dirs()
-    with LLM_LOG_PATH.open("a", encoding="utf-8") as handle:
+    with TASK_LOG_PATH.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
     if echo and _ECHO_LOG and _should_echo(line):
         print(line, flush=True)
@@ -74,6 +78,8 @@ class GeminiClient(LLMClient):
                 "google-genai is not installed. Install it to use Gemini models."
             ) from exc
         self._types = types
+        self._planning_last_call = 0.0
+        self._planning_call_count = 0
 
         api_key = config.api_key
         if api_key:
@@ -88,15 +94,28 @@ class GeminiClient(LLMClient):
         task: str = "content",
         agent: str = "Agent",
     ) -> str:
-        max_attempts = 3
-        for attempt in range(1, max_attempts + 1):
+        self._maybe_throttle_planning(agent, task)
+        use_time_budget = agent in {"Planner", "Outliner"}
+        started_at = time.time()
+        attempt = 0
+        while True:
+            attempt += 1
             if attempt == 1:
                 self._log(agent, f"Model {self.config.model} is generating {task}...")
             else:
-                self._log(
-                    agent,
-                    f"Model {self.config.model} retrying {task} (attempt {attempt}/{max_attempts})."
-                )
+                if use_time_budget:
+                    elapsed = time.time() - started_at
+                    remaining = max(0.0, PLANNING_RETRY_MAX_SECONDS - elapsed)
+                    self._log(
+                        agent,
+                        f"Model {self.config.model} retrying {task} (attempt {attempt}, "
+                        f"{remaining:.0f}s budget remaining)."
+                    )
+                else:
+                    self._log(
+                        agent,
+                        f"Model {self.config.model} retrying {task} (attempt {attempt}/3)."
+                    )
             try:
                 response = self.client.models.generate_content(
                     model=self.config.model,
@@ -110,12 +129,34 @@ class GeminiClient(LLMClient):
                 message = str(exc)
                 if "429" in message or "rate" in message.lower() or "resourceexhausted" in message.lower():
                     self._log(agent, f"Model {self.config.model} rate limit on {task}.")
-                    if attempt < max_attempts:
+                    if use_time_budget:
+                        elapsed = time.time() - started_at
+                        if elapsed >= PLANNING_RETRY_MAX_SECONDS:
+                            raise LLMClientError("Planning retry budget exceeded")
+                        sleep_for = 2**attempt
+                        remaining = PLANNING_RETRY_MAX_SECONDS - elapsed
+                        time.sleep(min(sleep_for, max(0.0, remaining)))
+                        continue
+                    if attempt < 3:
                         time.sleep(2**attempt)
                         continue
                     raise LLMClientError("Rate limit reached")
                 self._log(agent, f"Model {self.config.model} failed {task}: {message}")
                 raise LLMClientError(message) from exc
+
+    def _maybe_throttle_planning(self, agent: str, task: str) -> None:
+        if agent not in {"Planner", "Outliner"}:
+            return
+        now = time.time()
+        if self._planning_last_call and now - self._planning_last_call > PLANNING_THROTTLE_IDLE_RESET_SECONDS:
+            self._planning_call_count = 0
+        if self._planning_last_call:
+            self._planning_call_count += 1
+            power = min(self._planning_call_count, 5)
+            delay = min(PLANNING_THROTTLE_MAX_SECONDS, PLANNING_THROTTLE_BASE_SECONDS**power)
+            self._log(agent, f"Planner throttle: sleeping {delay}s before {task}.")
+            time.sleep(delay)
+        self._planning_last_call = time.time()
 
 
 class LMStudioClient(LLMClient):
@@ -166,7 +207,8 @@ class LMStudioClient(LLMClient):
         task: str = "content",
         agent: str = "Agent",
     ) -> str:
-        max_attempts = 3
+        use_time_budget = agent in {"Planner", "Outliner"}
+        started_at = time.time()
         base_url = self.config.base_url or "http://localhost:1234/v1"
         self._resolve_model(agent, base_url)
         url = base_url.rstrip("/") + "/chat/completions"
@@ -184,18 +226,38 @@ class LMStudioClient(LLMClient):
             "max_tokens": self.config.max_tokens,
         }
 
-        for attempt in range(1, max_attempts + 1):
+        attempt = 0
+        while True:
+            attempt += 1
             if attempt == 1:
                 self._log(agent, f"Model {self.config.model} is generating {task}...")
             else:
-                self._log(
-                    agent,
-                    f"Model {self.config.model} retrying {task} (attempt {attempt}/{max_attempts})."
-                )
+                if use_time_budget:
+                    elapsed = time.time() - started_at
+                    remaining = max(0.0, PLANNING_RETRY_MAX_SECONDS - elapsed)
+                    self._log(
+                        agent,
+                        f"Model {self.config.model} retrying {task} (attempt {attempt}, "
+                        f"{remaining:.0f}s budget remaining)."
+                    )
+                else:
+                    self._log(
+                        agent,
+                        f"Model {self.config.model} retrying {task} (attempt {attempt}/3)."
+                    )
             response = self._requests.post(url, headers=headers, data=json.dumps(payload), timeout=600)
             if response.status_code == 429:
                 self._log(agent, f"Model {self.config.model} rate limit on {task}.")
-                if attempt < max_attempts:
+                if use_time_budget:
+                    elapsed = time.time() - started_at
+                    if elapsed >= PLANNING_RETRY_MAX_SECONDS:
+                        raise LLMClientError("Planning retry budget exceeded")
+                    retry_after = response.headers.get("Retry-After")
+                    sleep_for = int(retry_after) if retry_after and retry_after.isdigit() else 2**attempt
+                    remaining = PLANNING_RETRY_MAX_SECONDS - elapsed
+                    time.sleep(min(sleep_for, max(0.0, remaining)))
+                    continue
+                if attempt < 3:
                     retry_after = response.headers.get("Retry-After")
                     sleep_for = int(retry_after) if retry_after and retry_after.isdigit() else 2**attempt
                     time.sleep(sleep_for)

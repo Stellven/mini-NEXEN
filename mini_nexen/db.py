@@ -30,6 +30,21 @@ class Interest:
     created_at: str
 
 
+@dataclass
+class DocumentStats:
+    doc_id: str
+    relevance_score: float
+    last_used_at: str | None
+    last_seen_at: str | None
+    archived: bool
+
+
+@dataclass
+class DecayResult:
+    updated: int
+    archived: int
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
     doc_id TEXT PRIMARY KEY,
@@ -47,6 +62,57 @@ CREATE TABLE IF NOT EXISTS interests (
     notes TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS document_stats (
+    doc_id TEXT PRIMARY KEY,
+    relevance_score REAL NOT NULL,
+    last_used_at TEXT,
+    last_seen_at TEXT,
+    last_used_run INTEGER,
+    last_seen_run INTEGER,
+    archived INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS chunks (
+    chunk_id TEXT PRIMARY KEY,
+    doc_id TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    token_count INTEGER NOT NULL,
+    embedding_json TEXT,
+    cluster_id TEXT,
+    similarity REAL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(doc_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_cluster ON chunks(cluster_id);
+
+CREATE TABLE IF NOT EXISTS clusters (
+    cluster_id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    centroid_json TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS topic_cluster_map (
+    map_id TEXT PRIMARY KEY,
+    topic TEXT NOT NULL,
+    cluster_id TEXT NOT NULL,
+    similarity REAL NOT NULL,
+    run_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_topic_cluster_topic ON topic_cluster_map(topic);
+CREATE INDEX IF NOT EXISTS idx_topic_cluster_run ON topic_cluster_map(run_id);
+
+CREATE TABLE IF NOT EXISTS graph_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
@@ -60,6 +126,7 @@ def _connect() -> sqlite3.Connection:
 def init_db() -> None:
     with _connect() as conn:
         conn.executescript(SCHEMA)
+    _ensure_document_stats_schema()
 
 
 def _now_iso() -> str:
@@ -90,6 +157,15 @@ def add_document(
             """,
             (doc_id, title, source_type, source, content_path, added_at, json.dumps(tags_list)),
         )
+        initial_score = 0.6 if source_type == "web" else 1.0
+        run_id = get_current_run_id()
+        conn.execute(
+            """
+            INSERT INTO document_stats (doc_id, relevance_score, last_seen_at, last_seen_run, archived)
+            VALUES (?, ?, ?, ?, 0)
+            """,
+            (doc_id, initial_score, added_at, run_id),
+        )
 
     return Document(
         doc_id=doc_id,
@@ -104,12 +180,15 @@ def add_document(
 
 def list_documents(limit: int = 200) -> list[Document]:
     init_db()
+    _ensure_document_stats()
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT doc_id, title, source_type, source, content_path, added_at, tags_json
-            FROM documents
-            ORDER BY added_at DESC
+            SELECT d.doc_id, d.title, d.source_type, d.source, d.content_path, d.added_at, d.tags_json
+            FROM documents d
+            JOIN document_stats s ON d.doc_id = s.doc_id
+            WHERE s.archived = 0
+            ORDER BY d.added_at DESC
             LIMIT ?
             """,
             (limit,),
@@ -131,6 +210,162 @@ def list_documents(limit: int = 200) -> list[Document]:
     return docs
 
 
+def _ensure_document_stats() -> None:
+    _ensure_document_stats_schema()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO document_stats (doc_id, relevance_score, last_seen_at, archived)
+            SELECT d.doc_id,
+                   CASE WHEN d.source_type = 'web' THEN 0.6 ELSE 1.0 END,
+                   d.added_at,
+                   0
+            FROM documents d
+            WHERE d.doc_id NOT IN (SELECT doc_id FROM document_stats)
+            """
+        )
+        conn.execute(
+            """
+            UPDATE document_stats
+            SET last_seen_run = COALESCE(last_seen_run, 0),
+                last_used_run = COALESCE(last_used_run, 0)
+            """
+        )
+
+
+def _ensure_document_stats_schema() -> None:
+    with _connect() as conn:
+        rows = conn.execute("PRAGMA table_info(document_stats)").fetchall()
+        cols = {row["name"] for row in rows}
+        if "last_used_run" not in cols:
+            conn.execute("ALTER TABLE document_stats ADD COLUMN last_used_run INTEGER")
+        if "last_seen_run" not in cols:
+            conn.execute("ALTER TABLE document_stats ADD COLUMN last_seen_run INTEGER")
+
+
+def mark_documents_seen(doc_ids: Iterable[str]) -> None:
+    init_db()
+    _ensure_document_stats()
+    now = _now_iso()
+    run_id = get_current_run_id()
+    with _connect() as conn:
+        for doc_id in doc_ids:
+            conn.execute(
+                """
+                UPDATE document_stats
+                SET last_seen_at = ?, last_seen_run = ?
+                WHERE doc_id = ?
+                """,
+                (now, run_id, doc_id),
+            )
+
+
+def mark_documents_used(doc_ids: Iterable[str], boost: float = 0.2) -> None:
+    init_db()
+    _ensure_document_stats()
+    now = _now_iso()
+    run_id = get_current_run_id()
+    with _connect() as conn:
+        for doc_id in doc_ids:
+            row = conn.execute(
+                "SELECT relevance_score FROM document_stats WHERE doc_id = ?",
+                (doc_id,),
+            ).fetchone()
+            score = float(row["relevance_score"]) if row else 0.0
+            new_score = min(1.0, score + boost)
+            conn.execute(
+                """
+                UPDATE document_stats
+                SET relevance_score = ?, last_used_at = ?, last_used_run = ?
+                WHERE doc_id = ?
+                """,
+                (new_score, now, run_id, doc_id),
+            )
+
+
+def update_document_stats(
+    doc_id: str,
+    relevance_score: float | None = None,
+    last_seen_at: str | None = None,
+    archived: int | None = None,
+    last_seen_run: int | None = None,
+    last_used_run: int | None = None,
+) -> None:
+    init_db()
+    _ensure_document_stats()
+    updates = []
+    params: list[object] = []
+    if relevance_score is not None:
+        updates.append("relevance_score = ?")
+        params.append(relevance_score)
+    if last_seen_at is not None:
+        updates.append("last_seen_at = ?")
+        params.append(last_seen_at)
+    if archived is not None:
+        updates.append("archived = ?")
+        params.append(archived)
+    if last_seen_run is not None:
+        updates.append("last_seen_run = ?")
+        params.append(last_seen_run)
+    if last_used_run is not None:
+        updates.append("last_used_run = ?")
+        params.append(last_used_run)
+    if not updates:
+        return
+    params.append(doc_id)
+    with _connect() as conn:
+        conn.execute(
+            f"UPDATE document_stats SET {', '.join(updates)} WHERE doc_id = ?",
+            tuple(params),
+        )
+
+
+def decay_web_documents(
+    decay_per_run: float,
+    archive_threshold: float,
+    archive_runs_unused: int,
+) -> DecayResult:
+    init_db()
+    _ensure_document_stats()
+    current_run = get_current_run_id()
+    updated = 0
+    archived = 0
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT d.doc_id, d.added_at, d.source_type,
+                   s.relevance_score, s.last_used_run, s.last_seen_run, s.archived
+            FROM documents d
+            JOIN document_stats s ON d.doc_id = s.doc_id
+            WHERE d.source_type = 'web' AND s.archived = 0
+            """
+        ).fetchall()
+
+        for row in rows:
+            score = float(row["relevance_score"] or 0.0)
+            last_used_run = int(row["last_used_run"] or 0)
+            last_seen_run = int(row["last_seen_run"] or 0)
+            anchor_run = last_used_run or last_seen_run or current_run
+            runs_since = max(0, current_run - anchor_run)
+            decayed = score * (decay_per_run ** runs_since)
+            archive = 0
+            if decayed < archive_threshold:
+                if runs_since >= archive_runs_unused:
+                    archive = 1
+            if archive:
+                archived += 1
+            conn.execute(
+                """
+                UPDATE document_stats
+                SET relevance_score = ?, archived = ?
+                WHERE doc_id = ?
+                """,
+                (decayed, archive, row["doc_id"]),
+            )
+            updated += 1
+    return DecayResult(updated=updated, archived=archived)
+
+
 def document_exists(source: str) -> bool:
     init_db()
     with _connect() as conn:
@@ -139,6 +374,43 @@ def document_exists(source: str) -> bool:
             (source,),
         ).fetchone()
     return row is not None
+
+
+def get_documents_by_ids(doc_ids: Iterable[str]) -> list[Document]:
+    init_db()
+    _ensure_document_stats()
+    doc_ids = [doc_id for doc_id in doc_ids if doc_id]
+    if not doc_ids:
+        return []
+    placeholders = ",".join("?" for _ in doc_ids)
+    with _connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT d.doc_id, d.title, d.source_type, d.source, d.content_path, d.added_at, d.tags_json
+            FROM documents d
+            JOIN document_stats s ON d.doc_id = s.doc_id
+            WHERE s.archived = 0 AND d.doc_id IN ({placeholders})
+            """,
+            tuple(doc_ids),
+        ).fetchall()
+
+    docs = []
+    for row in rows:
+        docs.append(
+            Document(
+                doc_id=row["doc_id"],
+                title=row["title"],
+                source_type=row["source_type"],
+                source=row["source"],
+                content_path=row["content_path"],
+                added_at=row["added_at"],
+                tags=json.loads(row["tags_json"]),
+            )
+        )
+    # Preserve input ordering when possible
+    order = {doc_id: idx for idx, doc_id in enumerate(doc_ids)}
+    docs.sort(key=lambda doc: order.get(doc.doc_id, len(order)))
+    return docs
 
 
 def load_document_text(doc: Document) -> str:
@@ -203,3 +475,75 @@ def clear_interests() -> int:
     with _connect() as conn:
         cur = conn.execute("DELETE FROM interests")
     return int(cur.rowcount or 0)
+
+
+def clear_library_and_graph(clear_files: bool = True) -> dict[str, int]:
+    init_db()
+    removed_files = 0
+    if clear_files:
+        for path in LIBRARY_DIR.glob("*"):
+            if path.is_file():
+                path.unlink()
+                removed_files += 1
+    with _connect() as conn:
+        chunks = conn.execute("DELETE FROM chunks").rowcount
+        clusters = conn.execute("DELETE FROM clusters").rowcount
+        topic_maps = conn.execute("DELETE FROM topic_cluster_map").rowcount
+        graph_meta = conn.execute("DELETE FROM graph_meta").rowcount
+        stats = conn.execute("DELETE FROM document_stats").rowcount
+        docs = conn.execute("DELETE FROM documents").rowcount
+    return {
+        "documents": int(docs or 0),
+        "document_stats": int(stats or 0),
+        "chunks": int(chunks or 0),
+        "clusters": int(clusters or 0),
+        "topic_cluster_map": int(topic_maps or 0),
+        "graph_meta": int(graph_meta or 0),
+        "files_removed": removed_files,
+    }
+
+
+def get_meta(key: str) -> str | None:
+    init_db()
+    with _connect() as conn:
+        row = conn.execute("SELECT value FROM graph_meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_meta(key: str, value: str) -> None:
+    init_db()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO graph_meta (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+
+
+def get_current_run_id() -> int:
+    value = get_meta("research_run_count")
+    try:
+        return int(value) if value is not None else 0
+    except Exception:
+        return 0
+
+
+def increment_research_run() -> int:
+    current = get_current_run_id()
+    current += 1
+    set_meta("research_run_count", str(current))
+    return current
+
+
+def add_topic_cluster_map(topic: str, cluster_id: str, similarity: float, run_id: int) -> str:
+    init_db()
+    map_id = str(uuid.uuid4())
+    created_at = _now_iso()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO topic_cluster_map (map_id, topic, cluster_id, similarity, run_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (map_id, topic, cluster_id, float(similarity), int(run_id), created_at),
+        )
+    return map_id

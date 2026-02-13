@@ -6,7 +6,24 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from . import db
-from .config import DEFAULT_ROUNDS, DEFAULT_TOP_K, SKILLS_DIR, ensure_dirs
+from .config import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_ROUNDS,
+    DEFAULT_TOP_K,
+    GRAPH_ASSIGN_SIMILARITY_MIN,
+    GRAPH_AVG_SIMILARITY_THRESHOLD,
+    GRAPH_NOISE_RATIO_THRESHOLD,
+    GRAPH_REBUILD_RATIO,
+    GRAPH_UNASSIGNED_RATIO_THRESHOLD,
+    SKILLS_DIR,
+    WEB_MAX_NEW_SOURCES,
+    WEB_MAX_PER_QUERY,
+    WEB_RELEVANCE_THRESHOLD,
+    ensure_dirs,
+)
+from .embeddings import EmbeddingClient, EmbeddingConfig, cosine_similarity
+from .graph import GraphManager
 from .llm import LLMClient, log_task_event, log_task_event_quiet
 from .planning import (
     PlanDraft,
@@ -46,6 +63,7 @@ class SkillContext:
     active_skills: list[str] = field(default_factory=list)
     skill_guidance: list[str] = field(default_factory=list)
     web_enabled: bool = False
+    run_id: int = 0
     web_modes: list[str] = field(default_factory=list)
     web_max_results: int = 5
     web_timeout: int = 15
@@ -57,7 +75,18 @@ class SkillContext:
     web_embed_timeout: int | None = None
     web_embed_api_key: str | None = None
     web_expand_queries: bool = True
-    web_max_queries: int = 4
+    web_max_queries: int = 10
+    web_max_new_sources: int = WEB_MAX_NEW_SOURCES
+    web_max_per_query: int = WEB_MAX_PER_QUERY
+    web_relevance_threshold: float = WEB_RELEVANCE_THRESHOLD
+    graph_chunk_size: int = DEFAULT_CHUNK_SIZE
+    graph_chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
+    graph_rebuild_ratio: float = GRAPH_REBUILD_RATIO
+    graph_noise_ratio_threshold: float = GRAPH_NOISE_RATIO_THRESHOLD
+    graph_avg_similarity_threshold: float = GRAPH_AVG_SIMILARITY_THRESHOLD
+    graph_unassigned_ratio_threshold: float = GRAPH_UNASSIGNED_RATIO_THRESHOLD
+    graph_assign_similarity_min: float = GRAPH_ASSIGN_SIMILARITY_MIN
+    graph_semantic_labels: bool = True
     llm: Optional[LLMClient] = None
 
 
@@ -210,6 +239,65 @@ def _expand_queries_with_llm(ctx: SkillContext, query: str, modes: list[str]) ->
     payload = _extract_json_payload(response)
     return _clean_query_list(payload)
 
+
+def _build_embedding_config(ctx: SkillContext) -> EmbeddingConfig | None:
+    provider = ctx.web_embed_provider
+    if not provider and ctx.llm:
+        provider = ctx.llm.config.provider
+    if not provider:
+        return None
+    base_url = ctx.web_embed_base_url
+    if not base_url and ctx.llm and ctx.llm.config.provider == "lmstudio":
+        base_url = ctx.llm.config.base_url
+    timeout = ctx.web_embed_timeout or ctx.web_timeout
+    api_key = ctx.web_embed_api_key or (ctx.llm.config.api_key if ctx.llm else None)
+    return EmbeddingConfig(
+        provider=provider,
+        model=ctx.web_embed_model,
+        base_url=base_url,
+        timeout=timeout,
+        api_key=api_key,
+    )
+
+
+def _score_web_results(
+    query: str,
+    results: list[object],
+    ctx: SkillContext,
+) -> list[tuple[float, object]]:
+    if not results:
+        return []
+    embed_config = _build_embedding_config(ctx) if ctx.web_hybrid else None
+    scored: list[tuple[float, object]] = []
+    texts = []
+    for result in results:
+        title = getattr(result, "title", "") or ""
+        text = getattr(result, "text", "") or ""
+        if len(text) > 2000:
+            text = text[:2000]
+        texts.append(f"{title}\n{text}".strip())
+    if embed_config:
+        client = EmbeddingClient(embed_config)
+        try:
+            embeddings = client.embed_texts([query] + texts)
+        except Exception as exc:
+            log_task_event(f"Web retrieval scoring: embedding failed, falling back to lexical ({exc})")
+            embeddings = []
+        if len(embeddings) == len(texts) + 1:
+            query_vec = embeddings[0]
+            for idx, result in enumerate(results, start=1):
+                sim = cosine_similarity(query_vec, embeddings[idx])
+                scored.append((sim, result))
+            return scored
+
+    query_tokens = tokenize(query)
+    doc_texts = [(str(idx), text) for idx, text in enumerate(texts)]
+    scores = score_documents(query_tokens, doc_texts)
+    for idx, score in scores:
+        if idx < len(results):
+            scored.append((score, results[idx]))
+    return scored
+
 def skill_collect_interests(ctx: SkillContext) -> SkillContext:
     ensure_dirs()
     db.init_db()
@@ -224,14 +312,65 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
         ctx.documents = []
         return ctx
 
-    query_tokens = tokenize(ctx.topic)
+    query_parts = [ctx.topic]
     for interest in ctx.interests:
-        query_tokens.extend(tokenize(interest.topic))
+        if interest.topic:
+            query_parts.append(interest.topic)
         if interest.notes:
-            query_tokens.extend(tokenize(interest.notes))
-    for hint in ctx.query_hints:
-        query_tokens.extend(tokenize(hint))
+            query_parts.append(interest.notes)
+    query_parts.extend(ctx.query_hints)
+    query = " ".join(part for part in query_parts if part).strip()
 
+    graph = GraphManager(
+        embed_config=_build_embedding_config(ctx),
+        llm=ctx.llm if ctx.graph_semantic_labels else None,
+        semantic_labels=ctx.graph_semantic_labels,
+        chunk_size=ctx.graph_chunk_size,
+        chunk_overlap=ctx.graph_chunk_overlap,
+        rebuild_ratio=ctx.graph_rebuild_ratio,
+        noise_ratio_threshold=ctx.graph_noise_ratio_threshold,
+        avg_similarity_threshold=ctx.graph_avg_similarity_threshold,
+        unassigned_ratio_threshold=ctx.graph_unassigned_ratio_threshold,
+        assign_similarity_min=ctx.graph_assign_similarity_min,
+    )
+    graph_result = graph.update_graph(docs)
+    if graph_result:
+        stats = graph_result.stats
+        log_task_event(
+            "Graph stats: "
+            f"chunks_total={stats.total_chunks} "
+            f"chunks_new={graph_result.new_chunks} "
+            f"chunks_pruned={graph_result.pruned_chunks} "
+            f"clusters={stats.cluster_count} "
+            f"assigned={stats.assigned_chunks} "
+            f"noise_ratio={stats.noise_ratio:.2f} "
+            f"avg_sim={stats.avg_similarity:.2f}"
+        )
+        if graph_result.rebuild_attempted:
+            log_task_event(
+                f"Graph rebuild: attempted=yes success={'yes' if graph_result.rebuild_succeeded else 'no'}"
+            )
+            if graph_result.labels_added:
+                added = ", ".join(graph_result.labels_added[:8])
+                log_task_event(f"Graph rebuild: labels added ({len(graph_result.labels_added)}): {added}")
+            if graph_result.labels_removed:
+                removed = ", ".join(graph_result.labels_removed[:8])
+                log_task_event(f"Graph rebuild: labels removed ({len(graph_result.labels_removed)}): {removed}")
+
+    mapped = graph.map_topic_to_cluster(ctx.topic)
+    if mapped:
+        cluster_id, label, sim = mapped
+        db.add_topic_cluster_map(ctx.topic, cluster_id, sim, ctx.run_id)
+        log_task_event(
+            f"Topic mapped to cluster: label='{label}' similarity={sim:.2f}"
+        )
+    graph_docs = graph.search_documents(query, ctx.top_k)
+    if graph_docs:
+        ctx.documents = graph_docs
+        db.mark_documents_used([doc.doc_id for doc in graph_docs])
+        return ctx
+
+    query_tokens = tokenize(query)
     doc_texts = []
     for doc in docs:
         text = db.load_document_text(doc)
@@ -246,6 +385,7 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
             continue
         selected.append(docs[idx])
     ctx.documents = selected
+    db.mark_documents_used([doc.doc_id for doc in selected])
     return ctx
 
 
@@ -253,9 +393,38 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
     if not ctx.web_enabled:
         return ctx
 
+    log_task_event(
+        "Web retrieval: "
+        f"modes={','.join(ctx.web_modes) or 'tech,lit'} "
+        f"max_results={ctx.web_max_results} "
+        f"max_queries={ctx.web_max_queries} "
+        f"expand={ctx.web_expand_queries} "
+        f"per_query={ctx.web_max_per_query} "
+        f"max_new={ctx.web_max_new_sources}"
+    )
+    modes = ctx.web_modes or ["tech", "lit"]
+    interest_queries = []
     seen = set()
-    query_parts = []
-    for item in [ctx.topic] + [interest.topic for interest in ctx.interests]:
+    cluster_interests: list[str] = []
+    graph = GraphManager(
+        embed_config=_build_embedding_config(ctx),
+        llm=ctx.llm if ctx.graph_semantic_labels else None,
+        semantic_labels=ctx.graph_semantic_labels,
+        chunk_size=ctx.graph_chunk_size,
+        chunk_overlap=ctx.graph_chunk_overlap,
+        rebuild_ratio=ctx.graph_rebuild_ratio,
+        noise_ratio_threshold=ctx.graph_noise_ratio_threshold,
+        avg_similarity_threshold=ctx.graph_avg_similarity_threshold,
+        unassigned_ratio_threshold=ctx.graph_unassigned_ratio_threshold,
+        assign_similarity_min=ctx.graph_assign_similarity_min,
+    )
+    cluster_interests = graph.suggest_interests(ctx.topic, limit=3)
+    for item in (
+        [ctx.topic]
+        + [interest.topic for interest in ctx.interests]
+        + cluster_interests
+        + ctx.query_hints
+    ):
         text = (item or "").strip()
         if not text:
             continue
@@ -263,53 +432,84 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         if key in seen:
             continue
         seen.add(key)
-        query_parts.append(text)
-    query = " ".join(query_parts).strip()
-    if not query:
+        interest_queries.append(text)
+    if not interest_queries:
         return ctx
 
-    log_task_event(
-        "Web retrieval: "
-        f"modes={','.join(ctx.web_modes) or 'tech,lit'} "
-        f"max_results={ctx.web_max_results} "
-        f"max_queries={ctx.web_max_queries} "
-        f"expand={ctx.web_expand_queries}"
-    )
-    log_task_event_quiet(f"Web retrieval query: {query}")
-    modes = ctx.web_modes or ["tech", "lit"]
-    extra_queries: list[str] = []
-    if ctx.web_expand_queries:
-        extra_queries = _expand_queries_with_llm(ctx, query, modes)
-        expanded = expand_queries(
-            query,
-            modes,
+    scored_results: list[tuple[float, object]] = []
+    raw_count = 0
+    scored_count = 0
+    filtered_count = 0
+    for query in interest_queries:
+        log_task_event_quiet(f"Web retrieval query: {query}")
+        extra_queries: list[str] = []
+        if ctx.web_expand_queries:
+            extra_queries = _expand_queries_with_llm(ctx, query, modes)
+            expanded = expand_queries(
+                query,
+                modes,
+                max_queries=ctx.web_max_queries,
+                extra_queries=extra_queries,
+            )
+            if expanded:
+                log_task_event_quiet(f"Web retrieval expanded queries: {expanded}")
+        results = run_web_retrieval(
+            query=query,
+            modes=modes,
+            max_results=ctx.web_max_results,
+            timeout=ctx.web_timeout,
+            fetch_pages=ctx.web_fetch_pages,
+            hybrid=ctx.web_hybrid,
+            embed_provider=ctx.web_embed_provider,
+            embed_model=ctx.web_embed_model,
+            embed_base_url=ctx.web_embed_base_url,
+            embed_timeout=ctx.web_embed_timeout,
+            embed_api_key=ctx.web_embed_api_key,
+            expand_query_flag=ctx.web_expand_queries,
             max_queries=ctx.web_max_queries,
             extra_queries=extra_queries,
         )
-        if expanded:
-            log_task_event_quiet(f"Web retrieval expanded queries: {expanded}")
-    results = run_web_retrieval(
-        query=query,
-        modes=modes,
-        max_results=ctx.web_max_results,
-        timeout=ctx.web_timeout,
-        fetch_pages=ctx.web_fetch_pages,
-        hybrid=ctx.web_hybrid,
-        embed_provider=ctx.web_embed_provider,
-        embed_model=ctx.web_embed_model,
-        embed_base_url=ctx.web_embed_base_url,
-        embed_timeout=ctx.web_embed_timeout,
-        embed_api_key=ctx.web_embed_api_key,
-        expand_query_flag=ctx.web_expand_queries,
-        max_queries=ctx.web_max_queries,
-        extra_queries=extra_queries,
-    )
+        raw_count += len(results)
+        scored = _score_web_results(query, results, ctx)
+        if scored:
+            scored.sort(key=lambda item: item[0], reverse=True)
+            filtered: list[tuple[float, object]] = []
+            for score, result in scored:
+                if ctx.web_relevance_threshold and ctx.web_hybrid:
+                    if score < ctx.web_relevance_threshold:
+                        continue
+                elif score <= 0:
+                    continue
+                filtered.append((score, result))
+                if len(filtered) >= ctx.web_max_per_query:
+                    break
+            scored_count += len(scored)
+            filtered_count += len(filtered)
+            scored_results.extend(filtered)
+
+    if not scored_results:
+        return ctx
+
+    deduped: dict[str, tuple[float, object]] = {}
+    for score, result in scored_results:
+        url = getattr(result, "url", "") or ""
+        if not url:
+            continue
+        current = deduped.get(url)
+        if not current or score > current[0]:
+            deduped[url] = (score, result)
+    final = sorted(deduped.values(), key=lambda item: item[0], reverse=True)
+    final = final[: ctx.web_max_new_sources]
 
     added = 0
-    for result in results:
-        if not result.text:
+    skipped_existing = 0
+    skipped_empty = 0
+    for score, result in final:
+        if not getattr(result, "text", ""):
+            skipped_empty += 1
             continue
         if db.document_exists(result.url):
+            skipped_existing += 1
             continue
         tags = ["web", result.source]
         if "lit" in modes or "literature" in modes:
@@ -318,15 +518,31 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         if "tech" in modes or "web" in modes:
             if result.source == "duckduckgo":
                 tags.append("tech")
-        db.add_document(
+        doc = db.add_document(
             title=result.title,
             source_type="web",
             source=result.url,
             content_text=result.text,
             tags=tags,
         )
+        db.update_document_stats(
+            doc.doc_id,
+            relevance_score=max(0.1, min(1.0, score)),
+            last_seen_at=doc.added_at,
+            last_seen_run=ctx.run_id,
+        )
         added += 1
-    log_task_event(f"Web retrieval: added {added} sources")
+    log_task_event(
+        "Web retrieval summary: "
+        f"queries={len(interest_queries)} "
+        f"raw={raw_count} "
+        f"scored={scored_count} "
+        f"accepted={len(final)} "
+        f"added={added} "
+        f"skipped_existing={skipped_existing} "
+        f"skipped_empty={skipped_empty} "
+        f"filtered={filtered_count}"
+    )
     return ctx
 
 
@@ -389,7 +605,7 @@ def skill_persist_plan(ctx: SkillContext) -> SkillContext:
     if not ctx.plan:
         return ctx
 
-    ctx.plan_md = render_plan_md(ctx.plan, ctx.outline, ctx.interests)
+    ctx.plan_md = render_plan_md(ctx.plan, ctx.outline, ctx.interests, llm=ctx.llm)
     return ctx
 
 

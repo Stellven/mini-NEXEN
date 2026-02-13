@@ -5,10 +5,17 @@ from datetime import datetime
 from pathlib import Path
 
 from . import db
-from .agents import SupervisorAgent
-from .config import PLANS_DIR, ensure_dirs
-from .llm import build_client, load_llm_config
+from .agents import Orchestrator
+from .config import (
+    PLANS_DIR,
+    WEB_ARCHIVE_RUNS_UNUSED,
+    WEB_ARCHIVE_SCORE_THRESHOLD,
+    WEB_DECAY_PER_RUN,
+    ensure_dirs,
+)
+from .llm import build_client, load_llm_config, log_task_event
 from .planning import outline_word_count
+from .seeds import ingest_seed_pack
 from .skills_runtime import SkillContext, build_default_runner
 
 
@@ -33,7 +40,7 @@ def run_research(
     temperature: float | None = None,
     max_tokens: int | None = None,
     discover_model: bool | None = None,
-    web_enabled: bool = False,
+    web_enabled: bool = True,
     web_modes: list[str] | None = None,
     web_max_results: int = 5,
     web_timeout: int = 15,
@@ -45,16 +52,36 @@ def run_research(
     web_embed_timeout: int | None = None,
     web_embed_api_key: str | None = None,
     web_expand_queries: bool = True,
-    web_max_queries: int = 4,
+    web_max_queries: int = 10,
+    web_max_new_sources: int = 50,
+    web_max_per_query: int = 10,
+    web_relevance_threshold: float = 0.25,
+    ingest_seeds: bool = False,
+    auto_interest: bool = False,
+    graph_semantic_labels: bool = True,
 ) -> ResearchResult:
     ensure_dirs()
     db.init_db()
+    run_id = db.increment_research_run()
+    if ingest_seeds:
+        ingest_seed_pack()
+    decay_result = db.decay_web_documents(
+        decay_per_run=WEB_DECAY_PER_RUN,
+        archive_threshold=WEB_ARCHIVE_SCORE_THRESHOLD,
+        archive_runs_unused=WEB_ARCHIVE_RUNS_UNUSED,
+    )
+    log_task_event(
+        "Decay summary: "
+        f"processed={decay_result.updated} "
+        f"archived={decay_result.archived} "
+        f"run_id={run_id}"
+    )
 
-    # Record the topic as a user interest for continuity.
-    db.add_interest(topic=topic, notes="auto: research query")
+    if auto_interest:
+        db.add_interest(topic=topic, notes="auto: research query")
 
     runner = build_default_runner()
-    supervisor = SupervisorAgent(runner)
+    supervisor = Orchestrator(runner)
 
     llm_config = load_llm_config(
         provider=provider,
@@ -70,6 +97,7 @@ def run_research(
         topic=topic,
         max_rounds=rounds,
         top_k=top_k,
+        run_id=run_id,
         llm=llm_client,
         web_enabled=web_enabled,
         web_modes=web_modes or [],
@@ -84,6 +112,10 @@ def run_research(
         web_embed_api_key=web_embed_api_key,
         web_expand_queries=web_expand_queries,
         web_max_queries=web_max_queries,
+        web_max_new_sources=web_max_new_sources,
+        web_max_per_query=web_max_per_query,
+        web_relevance_threshold=web_relevance_threshold,
+        graph_semantic_labels=graph_semantic_labels,
     )
     ctx = supervisor.run(ctx)
 

@@ -16,7 +16,7 @@ class Agent:
         return ctx
 
 
-class SupervisorAgent:
+class Orchestrator:
     def __init__(self, runner: SkillRunner):
         self.runner = runner
         self.retriever = Agent(

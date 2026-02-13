@@ -1,9 +1,16 @@
 name: mini-nexen
 channels:
   - defaults
+  - conda-forge
 dependencies:
   - python=3.11
   - requests
+  - numpy
+  - scipy
+  - scikit-learn
+  - hdbscan
   - pip
   - pip:
       - google-genai
+      - pypdf
+      - python-docx

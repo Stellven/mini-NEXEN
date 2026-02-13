@@ -1,94 +1,54 @@
 # mini-NEXEN
 
-Minimal, agentic research backend for generating research plans and detailed outlines from a personal library of documents and URLs.
+Minimal, local-first research backend for generating research plans and detailed outlines from a personal library of documents and URLs.
 
-## What this does
+**What It Does**
 - Maintains a personal library of documents, URLs, and notes.
 - Tracks user interests (NotebookLM-style memory).
-- Runs a multi-agent pipeline driven by skills.
+- Builds a lightweight topic graph from document chunks and embeddings.
+- Uses cluster-aware local retrieval plus optional external web sources (guardrails on by default).
 - Generates a research plan + detailed outline and saves it as `YYYY_MM_DD_HH_MM_plan.md`.
-- Uses LLM-backed planning and outlining (Gemini or LM Studio required).
 
-## Structure
+**Project Structure**
 - `mini_nexen/`: Core logic (agents, planning, storage).
-- `skills/`: Oh-my-opencode-style skills (`SKILL.md` per skill).
-- `data/`: SQLite database and stored documents.
+- `skills/`: Skills definitions (`SKILL.md` per skill).
+- `data/`: SQLite DB + logs + stored documents.
 - `data/library/`: Stored text copies of ingested content.
 - `data/seeds/`: Seed documents and URLs for quick bootstrapping.
 - `plans/`: Generated research plans.
 
-## Environment
-The project expects a conda environment named `mini-nexen`. A local environment file is provided.
+**Environment Setup**
+The project expects a conda environment named `mini-nexen`.
 
 ```bash
 conda env create -f environment.yml
 conda activate mini-nexen
 ```
 
-If your environment cannot access external channels, you may need to configure local channels or mirrors before creating the env.
+Installed dependencies (via conda in `mini-nexen`):
+- `numpy`
+- `scipy`
+- `scikit-learn`
 
 Installed dependencies (via pip in `mini-nexen`):
 - `requests`
 - `google-genai`
+- `hdbscan`
+- `pypdf` (PDF ingestion)
+- `python-docx` (DOCX ingestion)
 
-LM Studio is required only if you choose the `lmstudio` provider.
-Gemini requires an API key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`).
+LLM providers:
+- Gemini requires `GEMINI_API_KEY` or `GOOGLE_API_KEY`.
+- LM Studio requires a local server with an OpenAI-compatible endpoint.
 
-## Usage
-Ingest documents and URLs:
+**Usage**
 
+**Minimal command (prompts you to select an LLM if not configured):**
 ```bash
-python -m mini_nexen.cli ingest --file /path/to/doc.txt --title "Doc title" --tags "ml, research"
-python -m mini_nexen.cli ingest --url "https://example.com/report" --title "Report" --text "Key excerpt"
-python -m mini_nexen.cli ingest --text "Personal note about the topic" --title "My notes"
+python -m mini_nexen.cli research --topic "Agentic research systems"
 ```
 
-Record interests:
-
-```bash
-python -m mini_nexen.cli interest --topic "Agentic research" --notes "Focus on planning and retrieval"
-```
-
-Generate a research plan:
-
-```bash
-python -m mini_nexen.cli research --topic "Agentic research systems" --rounds 2 --top-k 8
-```
-
-Enable internet retrieval (tech/blog/news/forums + literature):
-
-```bash
-python -m mini_nexen.cli research --topic "Agentic research systems" --web --rounds 2 --top-k 8
-```
-
-Internet retrieval options:
-- `--web` enables both tech and literature sources.
-- `--web-tech` enables tech/blog/news/forums sources only.
-- `--web-lit` enables literature sources only.
-- `--web-max-results` controls max results per source (default: 5).
-- `--web-timeout` sets the fetch timeout in seconds (default: 15).
-- `--web-no-fetch` skips fetching full pages (stores only metadata/abstracts when available).
-- `--web-hybrid` forces semantic reranking on.
-- `--web-no-hybrid` disables semantic reranking.
-- Semantic reranking defaults to on when web retrieval is enabled and uses LM Studio embeddings if available.
-- `--web-embed-model` sets the embedding model (auto-detected from LM Studio if omitted).
-- `--web-embed-base-url` sets the embedding endpoint (defaults to `LMSTUDIO_BASE_URL`).
-- `--web-embed-timeout` sets the embedding timeout in seconds.
-- `--web-no-expand` disables query expansion (enabled by default).
-- `--web-max-queries` sets the max expanded queries (default: 4).
-
-Current sources:
-- Tech/web: DuckDuckGo HTML results.
-- Literature: arXiv, Semantic Scholar, Crossref.
-
-Outputs:
-- Plan + outline saved in `plans/YYYY_MM_DD_HH_MM_plan.md` (outline is under `## Detailed Outline`).
-- Ingested document text stored in `data/library/<doc_id>.txt`.
-- Metadata and interests stored in `data/mini_nexen.sqlite3`.
-- LLM call log written to `data/llm_calls.log` (task boundaries, per-agent messages, rate limit events).
-
-### LLM-backed agents
-The planner and outliner run with an LLM. Choose either Gemini or LM Studio.
+**Configure backend LLMs**
 
 Gemini (API key required):
 ```bash
@@ -110,63 +70,118 @@ LM Studio setup checklist:
 - Start the LM Studio server.
 - Ensure a model is loaded.
 - Confirm the OpenAI-compatible endpoint is reachable: `GET /v1/models`.
-- If you are running in WSL and LM Studio is on Windows, enable “Serve on Local Network”
-  in LM Studio and use the Windows IP address in `LMSTUDIO_BASE_URL`.
 
-WSL convenience (auto-detect Windows host IP from the WSL default gateway):
+**Additional arguments (grouped by functionality)**
+
+**Ingestion**
+- `ingest --file` / `--url` / `--text`: Create a document record and store raw text in `data/library/`.
+- `ingest --title`: Set a custom title.
+- `ingest --tags`: Comma-separated tags stored in the DB.
+- `research --ingest` (or `--ingest-seeds`): Ingest new `.txt`, `.md`, `.markdown`, `.pdf`, `.docx` files from `data/seeds/`.
+
+**Agentic workflow**
+- `research --rounds`: Number of plan refinement rounds (default: 2).
+- `research --auto-interest`: Add the research topic to stored interests (default: off).
+
+**Graph + Retrieval**
+- Graph build is automatic during `research` runs (chunking + clustering + rebuilds based on quality metrics).
+- Web retrieval is enabled by default (tech + literature). Use `--no-web` to disable.
+- `--web` / `--web-tech` / `--web-lit`: Choose web sources.
+- `--web-max-results`: Max results per source (default: 5).
+- `--web-timeout`: Web fetch timeout in seconds (default: 15).
+- `--web-no-fetch`: Skip fetching full pages (store metadata/abstracts only).
+- `--web-hybrid`: Force semantic reranking on.
+- `--web-no-hybrid`: Disable semantic reranking.
+- `--web-embed-model`: Embedding model for reranking (auto-detects if omitted).
+- `--web-embed-base-url`: Embedding endpoint (defaults to `LMSTUDIO_BASE_URL`).
+- `--web-embed-timeout`: Embedding timeout in seconds.
+- `--web-no-expand`: Disable query expansion (LLM expansion only).
+- `--web-max-queries`: Max expanded queries (default: 10).
+- `--web-max-new`: Max new sources per run (default: 50).
+- `--web-max-per-query`: Cap results per query seed (default: 10).
+- `--web-relevance-threshold`: Filter low-relevance results when reranking (default: 0.25).
+- `--top-k`: Max local documents pulled into planning (default: 8).
+- `--no-graph-semantic-labels`: Disable LLM-based cluster labels.
+
+**Planning**
+- `--temperature`: Sampling temperature for the LLM.
+- `--max-tokens`: Max tokens to generate.
+
+**Outline**
+- Outline is generated from the plan automatically; no explicit flags.
+
+**Model selection**
+- `--provider` / `--model` / `--base-url`: Override LLM provider/model per run.
+- `--no-model-discovery`: Disable LM Studio model discovery.
+
+**Logging**
+- `--verbose`: Echo log events to stdout.
+- `--quiet`: Disable log echoing.
+- `MINI_NEXEN_VERBOSE=1|0`: Default logging behavior.
+
+**Defaults & Diagnostics (what’s on/off by default)**
+Defaults (can be changed via flags):
+- Web retrieval is **on** by default (tech + literature). Use `--no-web` to disable.
+- Query expansion is **on** by default (LLM-based only). Use `--web-no-expand` to disable.
+- Semantic reranking is **on** by default when web retrieval is enabled. Use `--web-no-hybrid` to disable.
+- Seed ingestion is **off** by default. Use `--ingest` on `research` to ingest `data/seeds/`.
+- Auto-adding research topics to interests is **off** by default. Use `--auto-interest` to enable.
+- LM Studio model discovery is **on** by default. Use `--no-model-discovery` to disable.
+- Semantic cluster labeling is **on** by default when an LLM is available. Use `--no-graph-semantic-labels` to disable.
+- Task event logging to `data/task_events.log` is always **on**; CLI echoing is on unless `--quiet` or `MINI_NEXEN_VERBOSE=0`.
+
+Development / diagnostic behaviors to be aware of:
+- Topic-to-cluster mappings are written to `topic_cluster_map` for traceability.
+- Web source decay + archiving runs at the start of each `research` run (based on run count).
+- Graph rebuilds are triggered automatically by quality thresholds and growth ratio.
+- Per-source web retrieval success/failure and counts are logged in `data/task_events.log`.
+
+**Outputs**
+- Plan + outline saved in `plans/YYYY_MM_DD_HH_MM_plan.md`.
+- Ingested document text stored in `data/library/<doc_id>.txt`.
+- Metadata, interests, and graph stored in `data/mini_nexen.sqlite3`.
+- Task event log written to `data/task_events.log`.
+- Web sources decay per research run and may be archived if unused; local user documents are retained.
+- Research topics are mapped to clusters and stored in `topic_cluster_map` for traceability.
+
+**Graph & Debugging**
+
+Check cluster sizes:
 ```bash
-export LMSTUDIO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):1234/v1"
+sqlite3 data/mini_nexen.sqlite3 "SELECT label, size, updated_at FROM clusters ORDER BY size DESC LIMIT 20;"
 ```
 
-Persist that setting for new shells:
+Check cluster quality metrics:
 ```bash
-echo 'export LMSTUDIO_BASE_URL="http://$(ip route | awk '\''/default/ {print $3}'\''):1234/v1"' >> ~/.bashrc
+sqlite3 data/mini_nexen.sqlite3 "SELECT value FROM graph_meta WHERE key='metrics';"
 ```
 
-You can also override provider/model per run:
+See unassigned chunk ratio:
 ```bash
-python -m mini_nexen.cli research --topic "Agentic research systems" --provider gemini --model gemini-2.5-flash
+sqlite3 data/mini_nexen.sqlite3 "SELECT COUNT(*) AS total, SUM(CASE WHEN cluster_id IS NULL THEN 1 ELSE 0 END) AS unassigned FROM chunks;"
 ```
 
-Additional CLI overrides: `--base-url` (LM Studio), `--temperature`, `--max-tokens`.
-Log echoing is enabled by default. Use `--quiet` to disable.
-Use `--verbose` to explicitly enable (it can be placed before or after the subcommand).
-You can also set `MINI_NEXEN_VERBOSE=1` (or `0`) to control the default.
+Inspect top chunks for a cluster:
+```bash
+sqlite3 data/mini_nexen.sqlite3 "SELECT text FROM chunks WHERE cluster_id = (SELECT cluster_id FROM clusters ORDER BY size DESC LIMIT 1) LIMIT 5;"
+```
 
-Embedding selection:
-- When web retrieval is enabled, the CLI will prompt for an embedding model based on the selected provider.
-- Gemini defaults to `gemini-embedding-001`.
-- LM Studio defaults to auto-detecting an embedding model from `/v1/models`.
-- LM Studio LLM selection uses `auto-detect` (internally `your-local-model`) or a custom model name.
-LM Studio model discovery can be disabled with `--no-model-discovery`.
+Inspect topic-to-cluster mappings:
+```bash
+sqlite3 data/mini_nexen.sqlite3 "SELECT topic, cluster_id, similarity, run_id, created_at FROM topic_cluster_map ORDER BY created_at DESC LIMIT 10;"
+```
 
-If no provider is set, the CLI prompts you to select a provider and model. If env vars are already set, it asks to confirm or change them.
-
-Note: The system performs retrieval only from the local library (no internet fetching).
-
-Outline format:
-- Generated outlines are research plans (not report outlines).
-- Target length is 1000-2000 words with 1-2 sub-layers under each major step.
-  The length is a soft target; the system reports the final word count.
-
-List stored data:
-
+**List/Manage Stored Data**
 ```bash
 python -m mini_nexen.cli list-docs
 python -m mini_nexen.cli list-interests
-```
-
-Manage interests:
-
-```bash
 python -m mini_nexen.cli delete-interest --id "<INTEREST_ID>"
 python -m mini_nexen.cli clear-interests --yes
 ```
 
-Interest IDs are UUIDs shown by `list-interests`.
+Clearing interests removes only the `interests` table entries; it does not delete documents, chunks, or clusters.
 
-Seed pack:
-
+**Seed Pack**
 ```bash
 python -m mini_nexen.cli ingest --file data/seeds/agentic_research_overview.txt --tags "agentic,overview"
 python -m mini_nexen.cli ingest --file data/seeds/retrieval_planning_notes.txt --tags "retrieval,planning"
@@ -175,5 +190,5 @@ python -m mini_nexen.cli ingest --file data/seeds/evaluation_metrics_cheatsheet.
 
 See `data/seeds/seed_urls.txt` for suggested URLs to ingest later with short excerpts.
 
-## Skills
-Skills live in `skills/<skill_name>/SKILL.md`. The agent runtime loads these at startup and only executes registered skills. This keeps the agent behavior explicit and auditable.
+**Skills**
+Skills live in `skills/<skill_name>/SKILL.md`. The runtime loads these at startup and only executes registered skills.

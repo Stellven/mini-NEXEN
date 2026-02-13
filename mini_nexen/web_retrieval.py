@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import json
 import re
 import time
 from dataclasses import dataclass
@@ -9,11 +8,12 @@ from typing import Iterable
 from urllib.parse import quote_plus
 from xml.etree import ElementTree
 
-import math
 import os
 import time
 import requests
 
+from .embeddings import EmbeddingClient, EmbeddingConfig, cosine_similarity
+from .llm import log_task_event
 
 USER_AGENT = "mini-nexen/0.1 (+https://example.com)"
 DEFAULT_TIMEOUT = 15
@@ -103,96 +103,10 @@ def fetch_url_text(url: str, timeout: int = DEFAULT_TIMEOUT) -> str:
     return _clean_text(resp.text)
 
 
-def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
-    if not vec_a or not vec_b or len(vec_a) != len(vec_b):
-        return 0.0
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
-    norm_a = math.sqrt(sum(a * a for a in vec_a))
-    norm_b = math.sqrt(sum(b * b for b in vec_b))
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    return dot / (norm_a * norm_b)
-
-
-def _embed_texts(
-    texts: list[str],
-    model: str,
-    base_url: str,
-    timeout: int,
-) -> list[list[float]]:
-    url = base_url.rstrip("/") + "/embeddings"
-    headers = {"Content-Type": "application/json"}
-    payload = {"model": model, "input": texts}
-    resp = _request_with_retries(
-        "POST",
-        url,
-        headers=headers,
-        data=json.dumps(payload),
-        timeout=timeout,
-        label="lmstudio_embeddings",
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    results = []
-    for item in data.get("data", []):
-        embedding = item.get("embedding")
-        if isinstance(embedding, list):
-            results.append([float(x) for x in embedding])
-    return results
-
-
-def _embed_texts_gemini(
-    texts: list[str],
-    model: str,
-    api_key: str | None = None,
-) -> list[list[float]]:
-    try:
-        from google import genai  # type: ignore
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError("google-genai is required for Gemini embeddings.") from exc
-
-    client = genai.Client(api_key=api_key) if api_key else genai.Client()
-    result = client.models.embed_content(model=model, contents=texts)
-    embeddings = getattr(result, "embeddings", None) or []
-    output: list[list[float]] = []
-    for embedding in embeddings:
-        values = None
-        if isinstance(embedding, dict):
-            values = embedding.get("values") or embedding.get("embedding")
-        else:
-            values = getattr(embedding, "values", None)
-        if values is None and isinstance(embedding, list):
-            values = embedding
-        if values:
-            output.append([float(x) for x in values])
-    return output
-
-
-def _resolve_embed_model(base_url: str, timeout: int) -> str | None:
-    url = base_url.rstrip("/") + "/models"
-    headers = {"User-Agent": USER_AGENT}
-    resp = requests.get(url, headers=headers, timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
-    models = data.get("data") if isinstance(data, dict) else None
-    if not isinstance(models, list):
-        return None
-    for item in models:
-        if not isinstance(item, dict):
-            continue
-        model_id = str(item.get("id") or "")
-        lowered = model_id.lower()
-        if "embed" in lowered or "embedding" in lowered:
-            return model_id
-    return None
-
-
 def _semantic_rerank(
     query: str,
     results: list[WebResult],
-    model: str,
-    base_url: str,
-    timeout: int,
+    config: EmbeddingConfig,
 ) -> list[WebResult]:
     if not results:
         return results
@@ -202,39 +116,14 @@ def _semantic_rerank(
         if len(text) > 2000:
             text = text[:2000]
         texts.append(f"{result.title}\n{text}".strip())
-    embeddings = _embed_texts(texts, model=model, base_url=base_url, timeout=timeout)
+    client = EmbeddingClient(config)
+    embeddings = client.embed_texts(texts)
     if len(embeddings) != len(texts):
         return results
     query_vec = embeddings[0]
     scored = []
     for idx, result in enumerate(results, start=1):
-        sim = _cosine_similarity(query_vec, embeddings[idx])
-        scored.append((sim, result))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [item[1] for item in scored]
-
-
-def _semantic_rerank_gemini(
-    query: str,
-    results: list[WebResult],
-    model: str,
-    api_key: str | None,
-) -> list[WebResult]:
-    if not results:
-        return results
-    texts = [query]
-    for result in results:
-        text = result.text or ""
-        if len(text) > 2000:
-            text = text[:2000]
-        texts.append(f"{result.title}\n{text}".strip())
-    embeddings = _embed_texts_gemini(texts, model=model, api_key=api_key)
-    if len(embeddings) != len(texts):
-        return results
-    query_vec = embeddings[0]
-    scored = []
-    for idx, result in enumerate(results, start=1):
-        sim = _cosine_similarity(query_vec, embeddings[idx])
+        sim = cosine_similarity(query_vec, embeddings[idx])
         scored.append((sim, result))
     scored.sort(key=lambda item: item[0], reverse=True)
     return [item[1] for item in scored]
@@ -267,30 +156,6 @@ def expand_queries(
     if max_queries <= 1:
         return [base]
 
-    modes_set = {mode.strip().lower() for mode in modes}
-    tech_suffixes = [
-        "technical report",
-        "whitepaper",
-        "release blog",
-        "blog",
-        "documentation",
-        "forum",
-    ]
-    lit_suffixes = [
-        "paper",
-        "preprint",
-        "arxiv",
-        "conference",
-        "journal",
-        "survey",
-    ]
-
-    candidates: list[str] = []
-    if "tech" in modes_set or "web" in modes_set:
-        candidates.extend([f"{base} {suffix}" for suffix in tech_suffixes])
-    if "lit" in modes_set or "literature" in modes_set:
-        candidates.extend([f"{base} {suffix}" for suffix in lit_suffixes])
-
     queries = [base]
     seen = {base.casefold()}
     if extra_queries:
@@ -305,14 +170,6 @@ def expand_queries(
             seen.add(key)
             if len(queries) >= max_queries:
                 return queries
-    for item in candidates:
-        key = item.casefold()
-        if key in seen:
-            continue
-        queries.append(item)
-        seen.add(key)
-        if len(queries) >= max_queries:
-            break
     return queries
 
 
@@ -426,6 +283,15 @@ def run_web_retrieval(
     results: list[WebResult] = []
     modes_set = {mode.strip().lower() for mode in modes}
 
+    def _safe_search(label: str, fn: callable, query_text: str) -> list[WebResult]:
+        try:
+            items = fn(query_text, max_results=max_results, timeout=timeout)
+            log_task_event(f"Success: source={label} query='{query_text}' results={len(items)}")
+            return items
+        except Exception as exc:
+            log_task_event(f"Failure: source={label} query='{query_text}' error={exc}")
+            return []
+
     queries = [query]
     if expand_query_flag:
         queries = expand_queries(query, modes_set, max_queries=max_queries, extra_queries=extra_queries)
@@ -434,12 +300,12 @@ def run_web_retrieval(
 
     for q in queries:
         if "tech" in modes_set or "web" in modes_set:
-            results.extend(search_duckduckgo(q, max_results=max_results, timeout=timeout))
+            results.extend(_safe_search("duckduckgo", search_duckduckgo, q))
 
         if "lit" in modes_set or "literature" in modes_set:
-            results.extend(search_arxiv(q, max_results=max_results, timeout=timeout))
-            results.extend(search_semantic_scholar(q, max_results=max_results, timeout=timeout))
-            results.extend(search_crossref(q, max_results=max_results, timeout=timeout))
+            results.extend(_safe_search("arxiv", search_arxiv, q))
+            results.extend(_safe_search("semantic_scholar", search_semantic_scholar, q))
+            results.extend(_safe_search("crossref", search_crossref, q))
 
     fetched: list[WebResult] = []
     for result in results:
@@ -458,37 +324,19 @@ def run_web_retrieval(
 
     provider = (embed_provider or os.getenv("MINI_NEXEN_EMBED_PROVIDER") or "lmstudio").lower()
     model = embed_model or os.getenv("MINI_NEXEN_EMBED_MODEL")
-    if provider == "gemini":
-        if not model:
-            model = "gemini-embedding-001"
-        try:
-            return _semantic_rerank_gemini(
-                query=query,
-                results=merged,
-                model=model,
-                api_key=embed_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
-            )
-        except Exception:
-            return merged
-
     base_url = embed_base_url or os.getenv("MINI_NEXEN_EMBED_BASE_URL") or os.getenv("LMSTUDIO_BASE_URL")
-    if not base_url:
-        return merged
-    if not model:
-        try:
-            model = _resolve_embed_model(base_url, timeout=embed_timeout or timeout)
-        except Exception:
-            return merged
-    if not model:
+    api_key = embed_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if provider != "gemini" and not base_url:
         return merged
 
+    config = EmbeddingConfig(
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        timeout=embed_timeout or timeout,
+        api_key=api_key,
+    )
     try:
-        return _semantic_rerank(
-            query=query,
-            results=merged,
-            model=model,
-            base_url=base_url,
-            timeout=embed_timeout or timeout,
-        )
+        return _semantic_rerank(query=query, results=merged, config=config)
     except Exception:
         return merged
