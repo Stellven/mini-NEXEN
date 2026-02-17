@@ -370,13 +370,18 @@ class GraphManager:
             if not rows:
                 return
             texts = [row["text"] for row in rows]
-        log_task_event(f"Graph: embedding missing chunks count={len(texts)}")
+        pending_count = len(texts)
+        log_task_event(f"Graph: embedding pending chunks count={pending_count}")
         try:
             embeddings = batch_embed(client, texts, batch_size=32)
         except Exception as exc:
             log_task_event(f"Graph: embedding failed; leaving chunks unembedded. error={exc}")
             return
         if len(embeddings) != len(texts):
+            log_task_event(
+                "Graph: embedding incomplete; expected=%s got=%s"
+                % (len(texts), len(embeddings))
+            )
             return
         with db._connect() as conn:
             for row, embedding in zip(rows, embeddings):
@@ -384,6 +389,13 @@ class GraphManager:
                     "UPDATE chunks SET embedding_json = ? WHERE chunk_id = ?",
                     (json.dumps(embedding), row["chunk_id"]),
                 )
+            remaining = conn.execute(
+                "SELECT COUNT(*) FROM chunks WHERE embedding_json IS NULL"
+            ).fetchone()[0]
+        if remaining:
+            log_task_event(f"Graph: embedding still missing chunks count={remaining}")
+        else:
+            log_task_event(f"Graph: embedding completed chunks count={pending_count}")
 
     def _rebuild_clusters(self) -> bool:
         client = self._client()
@@ -406,13 +418,19 @@ class GraphManager:
                 missing_texts.append(row["text"])
                 missing_indices.append(idx)
         if missing_texts:
-            log_task_event(f"Graph: embedding missing chunks for clustering count={len(missing_texts)}")
+            log_task_event(
+                "Graph: embedding required for clustering count=%s" % len(missing_texts)
+            )
             try:
                 extra = batch_embed(client, missing_texts, batch_size=32)
             except Exception as exc:
                 log_task_event(f"Graph: embedding failed during clustering. error={exc}")
                 return False
             if len(extra) != len(missing_texts):
+                log_task_event(
+                    "Graph: embedding incomplete during clustering; expected=%s got=%s"
+                    % (len(missing_texts), len(extra))
+                )
                 return False
             with db._connect() as conn:
                 for offset, emb in zip(missing_indices, extra):
@@ -421,7 +439,11 @@ class GraphManager:
                         "UPDATE chunks SET embedding_json = ? WHERE chunk_id = ?",
                         (json.dumps(emb), rows[offset]["chunk_id"]),
                     )
-        if any(vec is None for vec in embeddings):
+        remaining = sum(1 for vec in embeddings if vec is None)
+        if remaining:
+            log_task_event(
+                "Graph: embedding still missing chunks for clustering count=%s" % remaining
+            )
             return False
         embedding_vectors = [vec for vec in embeddings if vec is not None]
 

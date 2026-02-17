@@ -603,7 +603,7 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument("--web-embed-timeout", type=int, help="Embedding timeout (seconds)")
     research.add_argument("--web-no-expand", action="store_true", help="Disable query expansion")
     research.add_argument("--web-max-queries", type=int, default=10, help="Max expanded queries (default: 10)")
-    research.add_argument("--web-max-new", type=int, default=50, help="Max new sources per run (default: 50)")
+    research.add_argument("--web-max-new", type=int, default=200, help="Max new sources per run (default: 200)")
     research.add_argument(
         "--web-max-per-query",
         "--web-max-per-interest",

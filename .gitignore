@@ -4,5 +4,5 @@ __pycache__/
 *.pyc
 data/mini_nexen.sqlite3
 data/library/
-data/seeds/
+# data/seeds/
 plans/*.md

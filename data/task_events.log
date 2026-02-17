@@ -271,3 +271,685 @@
 2026-02-17T19:05:46.367355+00:00 | Web retrieval fetch done: fetched=14 failed=1 elapsed=72.3s
 2026-02-17T19:05:46.367589+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=14
 2026-02-17T19:10:14.742565+00:00 | ---------- Task Ends ----------
+2026-02-17T19:36:55.890381+00:00 | --------- Task Starts ----------
+2026-02-17T19:36:55.893130+00:00 | Topic: Finetuning of SOTA LMs
+2026-02-17T19:36:55.893222+00:00 | Provider: gemini | Model: gemini-3-pro-preview
+2026-02-17T19:37:03.515488+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-17T19:37:03.517758+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-17T19:37:04.200929+00:00 | === Round 1/2 ===
+2026-02-17T19:37:04.201113+00:00 | ***Skill activated: collect_interests***
+2026-02-17T19:37:04.201883+00:00 | ***Skill activated: collect_methods***
+2026-02-17T19:37:04.202575+00:00 | ***Skill activated: systems-engineering***
+2026-02-17T19:37:04.202732+00:00 | ***Skill activated: web_retrieve***
+2026-02-17T19:37:04.202766+00:00 | Web retrieval: modes=lit max_results=5 max_queries=10 expand=False per_query=10 max_new=50
+2026-02-17T19:37:04.202918+00:00 | Web retrieval query: Finetuning of SOTA LMs
+2026-02-17T19:37:04.202956+00:00 | Web retrieval start: query='Finetuning of SOTA LMs' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10
+2026-02-17T19:37:04.968612+00:00 | Success: source=arxiv query='Finetuning of SOTA LMs' results=5
+2026-02-17T19:37:05.831855+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T19:37:08.745901+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T19:37:13.338652+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T19:37:22.178446+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T19:37:39.056574+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-17T19:38:10.448119+00:00 | Success: source=semantic_scholar query='Finetuning of SOTA LMs' results=4
+2026-02-17T19:38:11.574074+00:00 | Success: source=crossref query='Finetuning of SOTA LMs' results=5
+2026-02-17T19:38:11.574306+00:00 | Web retrieval fetch pages: total=14
+2026-02-17T19:38:22.504126+00:00 | Web retrieval fetch done: fetched=14 failed=0 elapsed=10.9s
+2026-02-17T19:38:22.505557+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=14
+2026-02-17T19:38:24.125423+00:00 | Web retrieval rerank done: elapsed=1.6s items=14
+2026-02-17T19:38:25.813466+00:00 | Web retrieval summary: queries=1 raw=14 scored=14 accepted=10 added=9 skipped_existing=0 skipped_empty=1 filtered=10
+2026-02-17T19:38:25.813551+00:00 | ***Skill activated: retrieve_sources***
+2026-02-17T19:38:26.022253+00:00 | Graph: embedding missing chunks count=829
+2026-02-17T19:38:46.645662+00:00 | ---------- Task Ends ----------
+2026-02-17T19:40:35.770868+00:00 | --------- Task Starts ----------
+2026-02-17T19:40:35.771102+00:00 | Topic: AI agent 驱动的 workflow 最近技术分析报告
+2026-02-17T19:40:35.771267+00:00 | Provider: gemini | Model: gemini-3-pro-preview
+2026-02-17T19:40:43.074727+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-17T19:40:43.079290+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-17T19:40:43.505741+00:00 | === Round 1/2 ===
+2026-02-17T19:40:43.505865+00:00 | ***Skill activated: collect_interests***
+2026-02-17T19:40:43.506583+00:00 | ***Skill activated: collect_methods***
+2026-02-17T19:40:43.507506+00:00 | ***Skill activated: systems-engineering***
+2026-02-17T19:40:43.507674+00:00 | ***Skill activated: web_retrieve***
+2026-02-17T19:40:43.507722+00:00 | Web retrieval: modes=lit max_results=5 max_queries=10 expand=False per_query=10 max_new=50
+2026-02-17T19:40:43.507936+00:00 | Web retrieval query: AI agent 驱动的 workflow 最近技术分析报告
+2026-02-17T19:40:43.507995+00:00 | Web retrieval start: query='AI agent 驱动的 workflow 最近技术分析报告' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10
+2026-02-17T19:40:44.590968+00:00 | Success: source=arxiv query='AI agent 驱动的 workflow 最近技术分析报告' results=5
+2026-02-17T19:40:45.444861+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T19:40:48.304813+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T19:40:53.196583+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T19:41:02.012779+00:00 | Success: source=semantic_scholar query='AI agent 驱动的 workflow 最近技术分析报告' results=0
+2026-02-17T19:41:02.950434+00:00 | Success: source=crossref query='AI agent 驱动的 workflow 最近技术分析报告' results=5
+2026-02-17T19:41:02.950611+00:00 | Web retrieval fetch pages: total=10
+2026-02-17T19:41:10.684283+00:00 | Web retrieval fetch done: fetched=10 failed=1 elapsed=8.2s
+2026-02-17T19:41:10.685633+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=10
+2026-02-17T19:41:11.913278+00:00 | Web retrieval rerank done: elapsed=1.2s items=10
+2026-02-17T19:41:13.199290+00:00 | Web retrieval summary: queries=1 raw=10 scored=10 accepted=10 added=9 skipped_existing=0 skipped_empty=1 filtered=10
+2026-02-17T19:41:13.199380+00:00 | ***Skill activated: retrieve_sources***
+2026-02-17T19:41:13.406214+00:00 | Graph: embedding missing chunks count=808
+2026-02-17T19:42:13.217926+00:00 | Graph: rebuilding clusters
+2026-02-17T19:42:16.069141+00:00 | Graph: HDBSCAN produced no clusters; falling back to KMeans.
+2026-02-17T19:42:16.325017+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:42:35.190479+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:42:35.198468+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:42:58.248438+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:42:58.252296+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:43:35.495378+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:43:35.501027+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:43:55.771346+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:43:55.772805+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:44:15.707759+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:44:15.716332+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:44:35.644505+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:44:35.656730+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:44:45.558931+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:44:45.562429+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:44:47.614872+00:00 | ---------- Task Ends ----------
+2026-02-17T19:47:57.225123+00:00 | --------- Task Starts ----------
+2026-02-17T19:47:57.225383+00:00 | Topic: AI agent 驱动的 workflow 最近技术分析报告
+2026-02-17T19:47:57.225505+00:00 | Provider: gemini | Model: gemini-3-pro-preview
+2026-02-17T19:48:04.402590+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-17T19:48:04.407197+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-17T19:48:05.036976+00:00 | === Round 1/2 ===
+2026-02-17T19:48:05.037088+00:00 | ***Skill activated: collect_interests***
+2026-02-17T19:48:05.037829+00:00 | ***Skill activated: collect_methods***
+2026-02-17T19:48:05.038499+00:00 | ***Skill activated: systems-engineering***
+2026-02-17T19:48:05.038644+00:00 | ***Skill activated: web_retrieve***
+2026-02-17T19:48:05.038690+00:00 | Web retrieval: modes=lit max_results=5 max_queries=10 expand=True per_query=10 max_new=50
+2026-02-17T19:48:05.038848+00:00 | Web retrieval query: AI agent 驱动的 workflow 最近技术分析报告
+2026-02-17T19:48:05.038908+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T19:48:13.438268+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T19:48:13.438461+00:00 | Web retrieval expanded queries: ['AI agent 驱动的 workflow 最近技术分析报告', 'AI agent driven workflow automation state of the art survey', 'LLM-based agentic workflow patterns and frameworks review', 'Multi-agent system workflow orchestration technical report', 'Generative AI agents for business process automation analysis', '基于大语言模型的Agent工作流编排技术综述', 'Autonomous agents workflow optimization recent advances']
+2026-02-17T19:48:13.438511+00:00 | Web retrieval start: query='AI agent 驱动的 workflow 最近技术分析报告' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T19:48:13.438558+00:00 | Web retrieval expanded queries: ['AI agent 驱动的 workflow 最近技术分析报告', 'AI agent driven workflow automation state of the art survey', 'LLM-based agentic workflow patterns and frameworks review', 'Multi-agent system workflow orchestration technical report', 'Generative AI agents for business process automation analysis', '基于大语言模型的Agent工作流编排技术综述', 'Autonomous agents workflow optimization recent advances']
+2026-02-17T19:48:13.910190+00:00 | Success: source=arxiv query='AI agent 驱动的 workflow 最近技术分析报告' results=5
+2026-02-17T19:48:14.789983+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T19:48:17.545261+00:00 | Success: source=semantic_scholar query='AI agent 驱动的 workflow 最近技术分析报告' results=0
+2026-02-17T19:48:18.493151+00:00 | Success: source=crossref query='AI agent 驱动的 workflow 最近技术分析报告' results=5
+2026-02-17T19:48:19.682090+00:00 | Success: source=arxiv query='AI agent driven workflow automation state of the art survey' results=5
+2026-02-17T19:48:20.541786+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T19:48:23.152723+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T19:48:27.781046+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T19:48:36.173278+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T19:48:53.048580+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-17T19:49:23.499934+00:00 | Success: source=semantic_scholar query='AI agent driven workflow automation state of the art survey' results=1
+2026-02-17T19:49:24.511465+00:00 | Success: source=crossref query='AI agent driven workflow automation state of the art survey' results=5
+2026-02-17T19:49:25.527238+00:00 | Success: source=arxiv query='LLM-based agentic workflow patterns and frameworks review' results=5
+2026-02-17T19:49:26.382518+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T19:49:29.521644+00:00 | Success: source=semantic_scholar query='LLM-based agentic workflow patterns and frameworks review' results=5
+2026-02-17T19:49:30.463742+00:00 | Success: source=crossref query='LLM-based agentic workflow patterns and frameworks review' results=5
+2026-02-17T19:49:31.701885+00:00 | Success: source=arxiv query='Multi-agent system workflow orchestration technical report' results=5
+2026-02-17T19:49:32.557718+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T19:49:35.416721+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T19:49:39.746126+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T19:49:49.448087+00:00 | Success: source=semantic_scholar query='Multi-agent system workflow orchestration technical report' results=5
+2026-02-17T19:49:50.416074+00:00 | Success: source=crossref query='Multi-agent system workflow orchestration technical report' results=5
+2026-02-17T19:49:53.062505+00:00 | Success: source=arxiv query='Generative AI agents for business process automation analysis' results=5
+2026-02-17T19:49:53.917511+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T19:49:56.522364+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T19:50:01.384499+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T19:50:09.479024+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T19:50:26.385359+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-17T19:50:56.783448+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 6) in 30s
+2026-02-17T19:51:28.261592+00:00 | Success: source=semantic_scholar query='Generative AI agents for business process automation analysis' results=5
+2026-02-17T19:51:29.232141+00:00 | Success: source=crossref query='Generative AI agents for business process automation analysis' results=5
+2026-02-17T19:51:30.163238+00:00 | Success: source=arxiv query='基于大语言模型的Agent工作流编排技术综述' results=0
+2026-02-17T19:51:30.756607+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T19:51:33.627722+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T19:51:38.495339+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T19:51:47.051946+00:00 | Success: source=semantic_scholar query='基于大语言模型的Agent工作流编排技术综述' results=0
+2026-02-17T19:51:47.993257+00:00 | Success: source=crossref query='基于大语言模型的Agent工作流编排技术综述' results=5
+2026-02-17T19:51:48.944839+00:00 | Success: source=arxiv query='Autonomous agents workflow optimization recent advances' results=5
+2026-02-17T19:51:49.560657+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T19:51:52.164718+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T19:51:57.033329+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T19:52:06.491648+00:00 | Success: source=semantic_scholar query='Autonomous agents workflow optimization recent advances' results=5
+2026-02-17T19:52:07.403875+00:00 | Success: source=crossref query='Autonomous agents workflow optimization recent advances' results=5
+2026-02-17T19:52:07.404234+00:00 | Web retrieval fetch pages: total=86
+2026-02-17T19:52:21.853628+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 1) in 2s
+2026-02-17T19:52:24.844435+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 2) in 4s
+2026-02-17T19:52:29.879052+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 3) in 8s
+2026-02-17T19:52:38.732532+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 4) in 16s
+2026-02-17T19:52:55.043614+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 5) in 30s
+2026-02-17T19:53:25.428680+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 6) in 30s
+2026-02-17T19:53:55.807793+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 7) in 30s
+2026-02-17T19:54:26.183690+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 8) in 30s
+2026-02-17T19:54:56.557045+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 9) in 21.20630634200006s
+2026-02-17T19:55:18.654666+00:00 | Web retrieval rate limit from fetch_url; giving up after 10 attempts
+2026-02-17T19:55:50.951187+00:00 | Web retrieval fetch done: fetched=86 failed=6 elapsed=227.3s
+2026-02-17T19:55:50.952321+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=79
+2026-02-17T19:55:53.826240+00:00 | Web retrieval rerank done: elapsed=2.9s items=79
+2026-02-17T19:55:56.830563+00:00 | Web retrieval summary: queries=1 raw=79 scored=79 accepted=10 added=10 skipped_existing=0 skipped_empty=0 filtered=10
+2026-02-17T19:55:56.830837+00:00 | ***Skill activated: retrieve_sources***
+2026-02-17T19:55:57.049833+00:00 | Graph: embedding pending chunks count=809
+2026-02-17T19:56:56.406104+00:00 | Graph: embedding completed chunks count=809
+2026-02-17T19:56:56.419782+00:00 | Graph: rebuilding clusters
+2026-02-17T19:56:59.403213+00:00 | Graph: HDBSCAN produced no clusters; falling back to KMeans.
+2026-02-17T19:56:59.703779+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:57:21.874719+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:57:21.880548+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:57:42.148877+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:57:42.154275+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:57:51.186390+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:57:51.190561+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:58:05.176381+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:58:05.180351+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:58:21.983388+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:58:21.990057+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:58:33.376230+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:58:33.380139+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:58:55.945023+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:58:55.947876+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:59:23.158201+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:59:23.161200+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T19:59:46.606123+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T19:59:46.610480+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:00:01.873159+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:00:01.879660+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:00:19.327436+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:00:19.332618+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:00:30.157740+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:00:30.160843+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:00:43.405877+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:00:43.408458+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:00:55.023816+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:00:55.026156+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:01:13.563537+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:01:13.567469+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:01:40.432504+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:01:40.439056+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:01:51.043263+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:01:51.046203+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:02:15.677667+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:02:15.681359+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:02:28.484745+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:02:28.489017+00:00 | Clusterer | Model gemini-3-pro-preview is generating cluster label...
+2026-02-17T20:02:38.144427+00:00 | Clusterer | Model gemini-3-pro-preview finished generating cluster label.
+2026-02-17T20:02:39.192552+00:00 | Graph stats: chunks_total=809 chunks_new=809 chunks_pruned=0 clusters=20 assigned=809 noise_ratio=0.00 avg_sim=0.89
+2026-02-17T20:02:39.192687+00:00 | Graph rebuild: attempted=yes success=yes
+2026-02-17T20:02:39.192760+00:00 | Graph rebuild: labels added (19): AI Agents for Scientific Discovery, AI Generated Scientific Research Papers, ART Clinic Performance and Success Rates, Asteroid Data Analysis and Machine Learning, Astrophysical Data Analysis And Modeling, Bat Neuroscience and Aging Research, Computational Protein Modeling and Analysis, Cosmological Structure and Merger Trees
+2026-02-17T20:02:40.674145+00:00 | Topic mapped to cluster: label='LLM Based Agentic Systems' similarity=0.77
+2026-02-17T20:02:41.396594+00:00 | Cluster scores (query='AI agent 驱动的 workflow 最近技术分析报告' total=20 selected=10):
+* 0.77 | LLM Based Agentic Systems | d621c73d [selected]
+* 0.75 | LLM and NLP Research Papers | 0ef24e07 [selected]
+* 0.74 | AI Agents for Scientific Discovery | f30bc626 [selected]
+* 0.72 | AI Agents for Scientific Discovery | 74fbf066 [selected]
+* 0.70 | Grounded Long-Form Article Generation | 435900b6 [selected]
+* 0.70 | Language Agents Scientific Knowledge Synthesis | 1a38aada [selected]
+* 0.69 | Denario AI Research Platform | 69517f04 [selected]
+* 0.68 | Multi Agent AI for Mass Spectrometry | 669fb2b6 [selected]
+* 0.67 | AI Generated Scientific Research Papers | aff34b3c [selected]
+* 0.66 | Taylor Hawkins Musical Career and Style | fb40b0a1 [selected]
+  0.64 | Impact of Label Noise on Calibration | 49fdb98b
+  0.63 | Computational Protein Modeling and Analysis | 0b246dbe
+  0.62 | Wearable Accelerometer Step Counting Algorithms | f80396e0
+  0.61 | Bat Neuroscience and Aging Research | 8820c482
+  0.60 | ART Clinic Performance and Success Rates | c6f6b666
+  0.60 | Cosmological Structure and Merger Trees | b29fcb1a
+  0.59 | Asteroid Data Analysis and Machine Learning | 5ebe18c7
+  0.58 | Astrophysical Data Analysis And Modeling | f627d093
+  0.58 | Physics Informed Neural Networks | de05fbed
+  0.55 | Mass Transfer In Binary Star Systems | 28b33c4d
+2026-02-17T20:02:42.244476+00:00 | Retrieved docs: total=12 web=9 file=3
+2026-02-17T20:02:42.244644+00:00 | ***Skill activated: plan_research***
+2026-02-17T20:02:42.245070+00:00 | Source briefs: docs=12 highlights=25 per_doc=10
+2026-02-17T20:02:42.245137+00:00 | Source briefs by source_type: file=3 web=9
+2026-02-17T20:02:42.249332+00:00 | Planner | Model gemini-3-pro-preview is generating plan draft...
+2026-02-17T20:03:06.119919+00:00 | Planner | Model gemini-3-pro-preview finished generating plan draft.
+2026-02-17T20:03:06.120365+00:00 | ***Skill activated: refine_plan***
+2026-02-17T20:03:06.120489+00:00 | Retriever | Model gemini-3-pro-preview is generating gap query rewrite...
+2026-02-17T20:03:15.720949+00:00 | Retriever | Model gemini-3-pro-preview finished generating gap query rewrite.
+2026-02-17T20:03:15.721616+00:00 | Source briefs: docs=12 highlights=8 per_doc=10
+2026-02-17T20:03:15.721725+00:00 | Source briefs by source_type: file=3 web=9
+2026-02-17T20:03:15.722389+00:00 | Planner | Planner throttle: sleeping 2s before plan refinement.
+2026-02-17T20:03:17.722766+00:00 | Planner | Model gemini-3-pro-preview is generating plan refinement...
+2026-02-17T20:03:50.151479+00:00 | Planner | Model gemini-3-pro-preview finished generating plan refinement.
+2026-02-17T20:03:50.151780+00:00 | === Round 2/2 ===
+2026-02-17T20:03:50.151885+00:00 | ***Skill activated: collect_interests***
+2026-02-17T20:03:50.152932+00:00 | ***Skill activated: collect_methods***
+2026-02-17T20:03:50.153756+00:00 | ***Skill activated: systems-engineering***
+2026-02-17T20:03:50.153841+00:00 | ***Skill activated: web_retrieve***
+2026-02-17T20:03:50.154025+00:00 | Web retrieval: modes=lit max_results=5 max_queries=10 expand=True per_query=10 max_new=50
+2026-02-17T20:03:50.894100+00:00 | Web retrieval query: AI agent 驱动的 workflow 最近技术分析报告
+2026-02-17T20:03:50.894246+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T20:03:56.602542+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T20:03:56.602753+00:00 | Web retrieval expanded queries: ['AI agent 驱动的 workflow 最近技术分析报告', 'Agentic workflow technology trends 2024 2025 report', 'LLM-based autonomous agent workflow automation survey', 'Multi-agent systems workflow orchestration state of the art', 'AI Agent 驱动的工作流自动化 最新技术趋势分析', 'Generative AI agentic design patterns and best practices', 'Large Language Model agent workflow integration whitepaper']
+2026-02-17T20:03:56.602864+00:00 | Web retrieval start: query='AI agent 驱动的 workflow 最近技术分析报告' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T20:03:56.602964+00:00 | Web retrieval expanded queries: ['AI agent 驱动的 workflow 最近技术分析报告', 'Agentic workflow technology trends 2024 2025 report', 'LLM-based autonomous agent workflow automation survey', 'Multi-agent systems workflow orchestration state of the art', 'AI Agent 驱动的工作流自动化 最新技术趋势分析', 'Generative AI agentic design patterns and best practices', 'Large Language Model agent workflow integration whitepaper']
+2026-02-17T20:03:57.067482+00:00 | Success: source=arxiv query='AI agent 驱动的 workflow 最近技术分析报告' results=5
+2026-02-17T20:03:57.664196+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:04:00.399598+00:00 | Success: source=semantic_scholar query='AI agent 驱动的 workflow 最近技术分析报告' results=0
+2026-02-17T20:04:01.367198+00:00 | Success: source=crossref query='AI agent 驱动的 workflow 最近技术分析报告' results=5
+2026-02-17T20:04:02.307815+00:00 | Success: source=arxiv query='Agentic workflow technology trends 2024 2025 report' results=5
+2026-02-17T20:04:03.583723+00:00 | Success: source=semantic_scholar query='Agentic workflow technology trends 2024 2025 report' results=5
+2026-02-17T20:04:04.644233+00:00 | Success: source=crossref query='Agentic workflow technology trends 2024 2025 report' results=5
+2026-02-17T20:04:05.512247+00:00 | Success: source=arxiv query='LLM-based autonomous agent workflow automation survey' results=5
+2026-02-17T20:04:06.135929+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:04:09.025292+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:04:13.883355+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:04:22.496406+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T20:04:38.799570+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-17T20:05:09.143417+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 6) in 30s
+2026-02-17T20:05:39.213605+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 7) in 30s
+2026-02-17T20:06:09.531091+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 8) in 30s
+2026-02-17T20:06:40.159390+00:00 | Success: source=semantic_scholar query='LLM-based autonomous agent workflow automation survey' results=5
+2026-02-17T20:06:41.328409+00:00 | Success: source=crossref query='LLM-based autonomous agent workflow automation survey' results=5
+2026-02-17T20:06:42.344211+00:00 | Success: source=arxiv query='Multi-agent systems workflow orchestration state of the art' results=5
+2026-02-17T20:06:43.371638+00:00 | Success: source=semantic_scholar query='Multi-agent systems workflow orchestration state of the art' results=5
+2026-02-17T20:06:44.536421+00:00 | Success: source=crossref query='Multi-agent systems workflow orchestration state of the art' results=5
+2026-02-17T20:06:45.328746+00:00 | Success: source=arxiv query='AI Agent 驱动的工作流自动化 最新技术趋势分析' results=5
+2026-02-17T20:06:46.435000+00:00 | Success: source=semantic_scholar query='AI Agent 驱动的工作流自动化 最新技术趋势分析' results=0
+2026-02-17T20:06:47.378043+00:00 | Success: source=crossref query='AI Agent 驱动的工作流自动化 最新技术趋势分析' results=5
+2026-02-17T20:06:48.365053+00:00 | Success: source=arxiv query='Generative AI agentic design patterns and best practices' results=5
+2026-02-17T20:06:49.452457+00:00 | Success: source=semantic_scholar query='Generative AI agentic design patterns and best practices' results=5
+2026-02-17T20:06:50.393800+00:00 | Success: source=crossref query='Generative AI agentic design patterns and best practices' results=5
+2026-02-17T20:06:51.673510+00:00 | Success: source=arxiv query='Large Language Model agent workflow integration whitepaper' results=5
+2026-02-17T20:06:52.543032+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:06:56.263099+00:00 | Success: source=semantic_scholar query='Large Language Model agent workflow integration whitepaper' results=5
+2026-02-17T20:06:57.289650+00:00 | Success: source=crossref query='Large Language Model agent workflow integration whitepaper' results=5
+2026-02-17T20:06:57.290120+00:00 | Web retrieval fetch pages: total=95
+2026-02-17T20:08:14.122957+00:00 | Web retrieval fetch done: fetched=95 failed=11 elapsed=78.5s
+2026-02-17T20:08:14.124133+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=90
+2026-02-17T20:08:17.245108+00:00 | Web retrieval rerank done: elapsed=3.1s items=90
+2026-02-17T20:08:20.401897+00:00 | Web retrieval query: LLM Based Agentic Systems
+2026-02-17T20:08:20.402170+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T20:08:26.802477+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T20:08:26.802767+00:00 | Web retrieval expanded queries: ['LLM Based Agentic Systems', 'Large Language Model autonomous agents', 'LLM-powered multi-agent systems', 'Generative AI agents and tool use', 'Task planning and reasoning in LLM agents', 'Cognitive architectures for language model agents']
+2026-02-17T20:08:26.802827+00:00 | Web retrieval start: query='LLM Based Agentic Systems' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T20:08:26.802869+00:00 | Web retrieval expanded queries: ['LLM Based Agentic Systems', 'Large Language Model autonomous agents', 'LLM-powered multi-agent systems', 'Generative AI agents and tool use', 'Task planning and reasoning in LLM agents', 'Cognitive architectures for language model agents']
+2026-02-17T20:08:28.107583+00:00 | Success: source=arxiv query='LLM Based Agentic Systems' results=5
+2026-02-17T20:08:28.982613+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:08:31.919286+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:08:36.529267+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:08:44.596455+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T20:09:02.085636+00:00 | Success: source=semantic_scholar query='LLM Based Agentic Systems' results=5
+2026-02-17T20:09:03.167761+00:00 | Success: source=crossref query='LLM Based Agentic Systems' results=5
+2026-02-17T20:09:04.189468+00:00 | Success: source=arxiv query='Large Language Model autonomous agents' results=5
+2026-02-17T20:09:04.791413+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:09:07.659868+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:09:11.757756+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:09:20.549331+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T20:09:37.159849+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-17T20:10:07.276678+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 6) in 30s
+2026-02-17T20:10:37.641195+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 7) in 30s
+2026-02-17T20:11:12.063638+00:00 | Success: source=semantic_scholar query='Large Language Model autonomous agents' results=5
+2026-02-17T20:11:13.019287+00:00 | Success: source=crossref query='Large Language Model autonomous agents' results=5
+2026-02-17T20:11:14.118100+00:00 | Success: source=arxiv query='LLM-powered multi-agent systems' results=5
+2026-02-17T20:11:14.973359+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:11:17.323335+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:11:22.199378+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:11:31.734586+00:00 | Success: source=semantic_scholar query='LLM-powered multi-agent systems' results=5
+2026-02-17T20:11:32.696446+00:00 | Success: source=crossref query='LLM-powered multi-agent systems' results=5
+2026-02-17T20:11:39.818970+00:00 | Success: source=arxiv query='Generative AI agents and tool use' results=5
+2026-02-17T20:11:40.687084+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:11:43.298001+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:11:48.985083+00:00 | Success: source=semantic_scholar query='Generative AI agents and tool use' results=5
+2026-02-17T20:11:49.521101+00:00 | Success: source=crossref query='Generative AI agents and tool use' results=5
+2026-02-17T20:11:54.175699+00:00 | Success: source=arxiv query='Task planning and reasoning in LLM agents' results=5
+2026-02-17T20:11:55.038113+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:11:57.906099+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:12:03.337095+00:00 | Success: source=semantic_scholar query='Task planning and reasoning in LLM agents' results=5
+2026-02-17T20:12:04.291873+00:00 | Success: source=crossref query='Task planning and reasoning in LLM agents' results=5
+2026-02-17T20:12:11.640736+00:00 | Success: source=arxiv query='Cognitive architectures for language model agents' results=5
+2026-02-17T20:12:12.513844+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:12:16.225634+00:00 | Success: source=semantic_scholar query='Cognitive architectures for language model agents' results=5
+2026-02-17T20:12:17.434648+00:00 | Success: source=crossref query='Cognitive architectures for language model agents' results=5
+2026-02-17T20:12:17.435229+00:00 | Web retrieval fetch pages: total=90
+2026-02-17T20:13:08.630728+00:00 | Web retrieval fetch done: fetched=90 failed=9 elapsed=52.3s
+2026-02-17T20:13:08.632238+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=89
+2026-02-17T20:13:11.584532+00:00 | Web retrieval rerank done: elapsed=3.0s items=89
+2026-02-17T20:13:14.490912+00:00 | Web retrieval query: LLM and NLP Research Papers
+2026-02-17T20:13:14.491338+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T20:13:20.712706+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T20:13:20.712945+00:00 | Web retrieval expanded queries: ['LLM and NLP Research Papers', 'Large Language Models Natural Language Processing literature review', 'recent advancements in LLM and NLP', 'state-of-the-art Large Language Models research', 'transformer models for Natural Language Processing', 'generative AI in NLP survey', 'emerging trends in LLM research papers']
+2026-02-17T20:13:20.713021+00:00 | Web retrieval start: query='LLM and NLP Research Papers' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T20:13:20.713081+00:00 | Web retrieval expanded queries: ['LLM and NLP Research Papers', 'Large Language Models Natural Language Processing literature review', 'recent advancements in LLM and NLP', 'state-of-the-art Large Language Models research', 'transformer models for Natural Language Processing', 'generative AI in NLP survey', 'emerging trends in LLM research papers']
+2026-02-17T20:13:21.578579+00:00 | Success: source=arxiv query='LLM and NLP Research Papers' results=5
+2026-02-17T20:13:22.614455+00:00 | Success: source=semantic_scholar query='LLM and NLP Research Papers' results=5
+2026-02-17T20:13:23.667589+00:00 | Success: source=crossref query='LLM and NLP Research Papers' results=5
+2026-02-17T20:13:24.613080+00:00 | Success: source=arxiv query='Large Language Models Natural Language Processing literature review' results=5
+2026-02-17T20:13:25.211654+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:13:29.017029+00:00 | Success: source=semantic_scholar query='Large Language Models Natural Language Processing literature review' results=5
+2026-02-17T20:13:30.220904+00:00 | Success: source=crossref query='Large Language Models Natural Language Processing literature review' results=5
+2026-02-17T20:13:31.416851+00:00 | Success: source=arxiv query='recent advancements in LLM and NLP' results=5
+2026-02-17T20:13:32.271312+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:13:35.188033+00:00 | Success: source=semantic_scholar query='recent advancements in LLM and NLP' results=5
+2026-02-17T20:13:36.075580+00:00 | Success: source=crossref query='recent advancements in LLM and NLP' results=5
+2026-02-17T20:13:37.241783+00:00 | Success: source=arxiv query='state-of-the-art Large Language Models research' results=5
+2026-02-17T20:13:39.060700+00:00 | Success: source=semantic_scholar query='state-of-the-art Large Language Models research' results=5
+2026-02-17T20:13:40.054285+00:00 | Success: source=crossref query='state-of-the-art Large Language Models research' results=5
+2026-02-17T20:13:41.098522+00:00 | Success: source=arxiv query='transformer models for Natural Language Processing' results=5
+2026-02-17T20:13:41.970610+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:13:45.595066+00:00 | Success: source=semantic_scholar query='transformer models for Natural Language Processing' results=5
+2026-02-17T20:13:46.546655+00:00 | Success: source=crossref query='transformer models for Natural Language Processing' results=5
+2026-02-17T20:13:47.458114+00:00 | Success: source=arxiv query='generative AI in NLP survey' results=5
+2026-02-17T20:13:50.096346+00:00 | Success: source=semantic_scholar query='generative AI in NLP survey' results=5
+2026-02-17T20:13:51.052695+00:00 | Success: source=crossref query='generative AI in NLP survey' results=5
+2026-02-17T20:13:51.980883+00:00 | Success: source=arxiv query='emerging trends in LLM research papers' results=5
+2026-02-17T20:13:53.358330+00:00 | Success: source=semantic_scholar query='emerging trends in LLM research papers' results=5
+2026-02-17T20:13:54.421226+00:00 | Success: source=crossref query='emerging trends in LLM research papers' results=5
+2026-02-17T20:13:54.421619+00:00 | Web retrieval fetch pages: total=105
+2026-02-17T20:14:53.846215+00:00 | Web retrieval fetch done: fetched=105 failed=12 elapsed=60.8s
+2026-02-17T20:14:53.847041+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=95
+2026-02-17T20:14:57.093643+00:00 | Web retrieval rerank done: elapsed=3.2s items=95
+2026-02-17T20:15:00.082381+00:00 | Web retrieval query: AI Agents for Scientific Discovery
+2026-02-17T20:15:00.082686+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T20:15:07.413388+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T20:15:07.413642+00:00 | Web retrieval expanded queries: ['AI Agents for Scientific Discovery', 'autonomous agents for automated scientific research', 'large language models for hypothesis generation and discovery', 'AI-driven self-driving laboratories', 'machine learning agents in experimental design and optimization', 'accelerating scientific discovery with multi-agent systems']
+2026-02-17T20:15:07.413700+00:00 | Web retrieval start: query='AI Agents for Scientific Discovery' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T20:15:07.413744+00:00 | Web retrieval expanded queries: ['AI Agents for Scientific Discovery', 'autonomous agents for automated scientific research', 'large language models for hypothesis generation and discovery', 'AI-driven self-driving laboratories', 'machine learning agents in experimental design and optimization', 'accelerating scientific discovery with multi-agent systems']
+2026-02-17T20:15:08.328667+00:00 | Success: source=arxiv query='AI Agents for Scientific Discovery' results=5
+2026-02-17T20:15:09.199819+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:15:12.315893+00:00 | Success: source=semantic_scholar query='AI Agents for Scientific Discovery' results=5
+2026-02-17T20:15:13.234594+00:00 | Success: source=crossref query='AI Agents for Scientific Discovery' results=5
+2026-02-17T20:15:14.422584+00:00 | Success: source=arxiv query='autonomous agents for automated scientific research' results=5
+2026-02-17T20:15:14.487730+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:15:17.139390+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:15:23.013311+00:00 | Success: source=semantic_scholar query='autonomous agents for automated scientific research' results=5
+2026-02-17T20:15:24.014338+00:00 | Success: source=crossref query='autonomous agents for automated scientific research' results=5
+2026-02-17T20:15:26.232070+00:00 | Success: source=arxiv query='large language models for hypothesis generation and discovery' results=5
+2026-02-17T20:15:26.833050+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:15:29.694148+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:15:34.601009+00:00 | Success: source=semantic_scholar query='large language models for hypothesis generation and discovery' results=5
+2026-02-17T20:15:35.720640+00:00 | Success: source=crossref query='large language models for hypothesis generation and discovery' results=5
+2026-02-17T20:15:40.189379+00:00 | Success: source=arxiv query='AI-driven self-driving laboratories' results=5
+2026-02-17T20:15:41.860293+00:00 | Success: source=semantic_scholar query='AI-driven self-driving laboratories' results=5
+2026-02-17T20:15:42.804560+00:00 | Success: source=crossref query='AI-driven self-driving laboratories' results=5
+2026-02-17T20:15:44.305260+00:00 | Success: source=arxiv query='machine learning agents in experimental design and optimization' results=5
+2026-02-17T20:15:45.489518+00:00 | Success: source=semantic_scholar query='machine learning agents in experimental design and optimization' results=5
+2026-02-17T20:15:45.955374+00:00 | Success: source=crossref query='machine learning agents in experimental design and optimization' results=5
+2026-02-17T20:15:47.175803+00:00 | Success: source=arxiv query='accelerating scientific discovery with multi-agent systems' results=5
+2026-02-17T20:15:47.778239+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:15:51.529804+00:00 | Success: source=semantic_scholar query='accelerating scientific discovery with multi-agent systems' results=5
+2026-02-17T20:15:52.677168+00:00 | Success: source=crossref query='accelerating scientific discovery with multi-agent systems' results=5
+2026-02-17T20:15:52.677722+00:00 | Web retrieval fetch pages: total=90
+2026-02-17T20:16:52.054517+00:00 | Web retrieval fetch done: fetched=90 failed=3 elapsed=60.5s
+2026-02-17T20:16:52.056100+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=87
+2026-02-17T20:16:54.910175+00:00 | Web retrieval rerank done: elapsed=2.9s items=87
+2026-02-17T20:16:57.889672+00:00 | Web retrieval query: FinRobot finance AI agent architecture details
+2026-02-17T20:16:57.889997+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T20:17:07.753767+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T20:17:07.754196+00:00 | Web retrieval expanded queries: ['FinRobot finance AI agent architecture details', 'FinRobot AI4Finance framework architecture', 'FinRobot multi-agent system design and modules', 'FinRobot technical whitepaper financial AI agents', 'FinRobot open source financial LLM agent structure', 'FinRobot workflow implementation details']
+2026-02-17T20:17:07.754307+00:00 | Web retrieval start: query='FinRobot finance AI agent architecture details' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T20:17:07.754373+00:00 | Web retrieval expanded queries: ['FinRobot finance AI agent architecture details', 'FinRobot AI4Finance framework architecture', 'FinRobot multi-agent system design and modules', 'FinRobot technical whitepaper financial AI agents', 'FinRobot open source financial LLM agent structure', 'FinRobot workflow implementation details']
+2026-02-17T20:17:08.761886+00:00 | Success: source=arxiv query='FinRobot finance AI agent architecture details' results=5
+2026-02-17T20:17:09.636481+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:17:12.535494+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:17:17.143158+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:17:25.454399+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T20:17:42.325097+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-17T20:18:12.657305+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 6) in 30s
+2026-02-17T20:18:43.098931+00:00 | Success: source=semantic_scholar query='FinRobot finance AI agent architecture details' results=5
+2026-02-17T20:18:44.316198+00:00 | Success: source=crossref query='FinRobot finance AI agent architecture details' results=5
+2026-02-17T20:18:45.091555+00:00 | Success: source=arxiv query='FinRobot AI4Finance framework architecture' results=5
+2026-02-17T20:18:45.809303+00:00 | Success: source=semantic_scholar query='FinRobot AI4Finance framework architecture' results=2
+2026-02-17T20:18:46.716626+00:00 | Success: source=crossref query='FinRobot AI4Finance framework architecture' results=5
+2026-02-17T20:18:47.792917+00:00 | Success: source=arxiv query='FinRobot multi-agent system design and modules' results=5
+2026-02-17T20:18:49.374651+00:00 | Success: source=semantic_scholar query='FinRobot multi-agent system design and modules' results=5
+2026-02-17T20:18:50.316754+00:00 | Success: source=crossref query='FinRobot multi-agent system design and modules' results=5
+2026-02-17T20:18:51.111499+00:00 | Success: source=arxiv query='FinRobot technical whitepaper financial AI agents' results=5
+2026-02-17T20:18:51.984511+00:00 | Success: source=semantic_scholar query='FinRobot technical whitepaper financial AI agents' results=5
+2026-02-17T20:18:53.050776+00:00 | Success: source=crossref query='FinRobot technical whitepaper financial AI agents' results=5
+2026-02-17T20:18:54.009820+00:00 | Success: source=arxiv query='FinRobot open source financial LLM agent structure' results=5
+2026-02-17T20:18:54.870422+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:18:57.181069+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:19:02.473711+00:00 | Success: source=semantic_scholar query='FinRobot open source financial LLM agent structure' results=5
+2026-02-17T20:19:03.415279+00:00 | Success: source=crossref query='FinRobot open source financial LLM agent structure' results=5
+2026-02-17T20:19:04.163705+00:00 | Success: source=arxiv query='FinRobot workflow implementation details' results=5
+2026-02-17T20:19:05.047776+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:19:08.471095+00:00 | Success: source=semantic_scholar query='FinRobot workflow implementation details' results=5
+2026-02-17T20:19:09.371945+00:00 | Success: source=crossref query='FinRobot workflow implementation details' results=5
+2026-02-17T20:19:09.372617+00:00 | Web retrieval fetch pages: total=87
+2026-02-17T20:19:23.105687+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 1) in 2s
+2026-02-17T20:19:26.115371+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 2) in 4s
+2026-02-17T20:19:30.634445+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 3) in 8s
+2026-02-17T20:19:39.719742+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 4) in 16s
+2026-02-17T20:19:56.642456+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 5) in 30s
+2026-02-17T20:20:27.026285+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 6) in 30s
+2026-02-17T20:20:57.490476+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 7) in 30s
+2026-02-17T20:21:27.930918+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 8) in 30s
+2026-02-17T20:21:58.308347+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 9) in 20.86788335500023s
+2026-02-17T20:22:19.536644+00:00 | Web retrieval rate limit from fetch_url; giving up after 10 attempts
+2026-02-17T20:22:22.877071+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 1) in 2s
+2026-02-17T20:22:25.937664+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 2) in 4s
+2026-02-17T20:22:30.883588+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 3) in 8s
+2026-02-17T20:22:39.356203+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 4) in 16s
+2026-02-17T20:22:56.328219+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 5) in 30s
+2026-02-17T20:23:26.702152+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 6) in 30s
+2026-02-17T20:23:57.065415+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 7) in 30s
+2026-02-17T20:24:27.647264+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 8) in 30s
+2026-02-17T20:24:58.077447+00:00 | Web retrieval rate limit from fetch_url; retrying (attempt 9) in 20.89239052999983s
+2026-02-17T20:25:19.326766+00:00 | Web retrieval rate limit from fetch_url; giving up after 10 attempts
+2026-02-17T20:25:46.261082+00:00 | Web retrieval fetch done: fetched=87 failed=13 elapsed=403.6s
+2026-02-17T20:25:46.262198+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=73
+2026-02-17T20:25:48.527890+00:00 | Web retrieval rerank done: elapsed=2.8s items=73
+2026-02-17T20:25:51.410379+00:00 | Web retrieval query: Agentic Predictor performance prediction methodology
+2026-02-17T20:25:51.410740+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T20:26:01.846559+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T20:26:01.849766+00:00 | Web retrieval expanded queries: ['Agentic Predictor performance prediction methodology', 'Agentic Predictor neural architecture search methodology', 'Performance prediction techniques using Agentic Predictors', 'Agent-based performance estimation algorithms for neural networks', 'Methodology of neural predictors in agentic AI systems', 'Surrogate model performance prediction in agentic frameworks']
+2026-02-17T20:26:01.849832+00:00 | Web retrieval start: query='Agentic Predictor performance prediction methodology' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T20:26:01.849874+00:00 | Web retrieval expanded queries: ['Agentic Predictor performance prediction methodology', 'Agentic Predictor neural architecture search methodology', 'Performance prediction techniques using Agentic Predictors', 'Agent-based performance estimation algorithms for neural networks', 'Methodology of neural predictors in agentic AI systems', 'Surrogate model performance prediction in agentic frameworks']
+2026-02-17T20:26:02.886303+00:00 | Success: source=arxiv query='Agentic Predictor performance prediction methodology' results=5
+2026-02-17T20:26:03.785973+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:26:07.418242+00:00 | Success: source=semantic_scholar query='Agentic Predictor performance prediction methodology' results=5
+2026-02-17T20:26:08.365174+00:00 | Success: source=crossref query='Agentic Predictor performance prediction methodology' results=5
+2026-02-17T20:26:09.210236+00:00 | Success: source=arxiv query='Agentic Predictor neural architecture search methodology' results=5
+2026-02-17T20:26:10.069280+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:26:13.670192+00:00 | Success: source=semantic_scholar query='Agentic Predictor neural architecture search methodology' results=5
+2026-02-17T20:26:14.593622+00:00 | Success: source=crossref query='Agentic Predictor neural architecture search methodology' results=5
+2026-02-17T20:26:15.566447+00:00 | Success: source=arxiv query='Performance prediction techniques using Agentic Predictors' results=5
+2026-02-17T20:26:16.429845+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:26:19.057925+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:26:23.064493+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:26:32.952758+00:00 | Success: source=semantic_scholar query='Performance prediction techniques using Agentic Predictors' results=5
+2026-02-17T20:26:33.897998+00:00 | Success: source=crossref query='Performance prediction techniques using Agentic Predictors' results=5
+2026-02-17T20:26:37.549547+00:00 | Success: source=arxiv query='Agent-based performance estimation algorithms for neural networks' results=5
+2026-02-17T20:26:38.173016+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:26:41.071032+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:26:45.965193+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:26:54.245676+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T20:27:11.158384+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-17T20:27:42.305685+00:00 | Success: source=semantic_scholar query='Agent-based performance estimation algorithms for neural networks' results=5
+2026-02-17T20:27:43.310274+00:00 | Success: source=crossref query='Agent-based performance estimation algorithms for neural networks' results=5
+2026-02-17T20:27:44.361747+00:00 | Success: source=arxiv query='Methodology of neural predictors in agentic AI systems' results=5
+2026-02-17T20:27:45.222345+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:27:47.860201+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:27:52.730686+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:28:01.375059+00:00 | Success: source=semantic_scholar query='Methodology of neural predictors in agentic AI systems' results=5
+2026-02-17T20:28:02.384991+00:00 | Success: source=crossref query='Methodology of neural predictors in agentic AI systems' results=5
+2026-02-17T20:28:03.785536+00:00 | Success: source=arxiv query='Surrogate model performance prediction in agentic frameworks' results=5
+2026-02-17T20:28:05.429637+00:00 | Success: source=semantic_scholar query='Surrogate model performance prediction in agentic frameworks' results=5
+2026-02-17T20:28:06.391334+00:00 | Success: source=crossref query='Surrogate model performance prediction in agentic frameworks' results=5
+2026-02-17T20:28:06.391967+00:00 | Web retrieval fetch pages: total=90
+2026-02-17T20:29:16.402300+00:00 | Web retrieval fetch done: fetched=90 failed=6 elapsed=71.1s
+2026-02-17T20:29:16.403338+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=82
+2026-02-17T20:29:19.209214+00:00 | Web retrieval rerank done: elapsed=2.8s items=82
+2026-02-17T20:29:22.001455+00:00 | Web retrieval query: PROV-AGENT unified provenance framework implementation
+2026-02-17T20:29:22.001797+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T20:29:33.452292+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T20:29:33.452496+00:00 | Web retrieval expanded queries: ['PROV-AGENT unified provenance framework implementation', 'PROV-AGENT architecture for unified data lineage', 'implementation of W3C PROV unified framework', 'PROV-DM integrated provenance management system', 'agent-based unified provenance architecture', 'cross-platform provenance framework using PROV']
+2026-02-17T20:29:33.452542+00:00 | Web retrieval start: query='PROV-AGENT unified provenance framework implementation' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T20:29:33.452599+00:00 | Web retrieval expanded queries: ['PROV-AGENT unified provenance framework implementation', 'PROV-AGENT architecture for unified data lineage', 'implementation of W3C PROV unified framework', 'PROV-DM integrated provenance management system', 'agent-based unified provenance architecture', 'cross-platform provenance framework using PROV']
+2026-02-17T20:29:36.584027+00:00 | Success: source=arxiv query='PROV-AGENT unified provenance framework implementation' results=5
+2026-02-17T20:29:37.445001+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:29:40.309822+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:29:44.913465+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:29:54.586560+00:00 | Success: source=semantic_scholar query='PROV-AGENT unified provenance framework implementation' results=5
+2026-02-17T20:29:55.528039+00:00 | Success: source=crossref query='PROV-AGENT unified provenance framework implementation' results=5
+2026-02-17T20:29:56.605806+00:00 | Success: source=arxiv query='PROV-AGENT architecture for unified data lineage' results=5
+2026-02-17T20:29:57.607693+00:00 | Success: source=semantic_scholar query='PROV-AGENT architecture for unified data lineage' results=5
+2026-02-17T20:29:58.542520+00:00 | Success: source=crossref query='PROV-AGENT architecture for unified data lineage' results=5
+2026-02-17T20:29:59.710150+00:00 | Success: source=arxiv query='implementation of W3C PROV unified framework' results=5
+2026-02-17T20:30:00.312518+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:30:02.831441+00:00 | Success: source=semantic_scholar query='implementation of W3C PROV unified framework' results=5
+2026-02-17T20:30:04.220321+00:00 | Success: source=crossref query='implementation of W3C PROV unified framework' results=5
+2026-02-17T20:30:05.405541+00:00 | Success: source=arxiv query='PROV-DM integrated provenance management system' results=5
+2026-02-17T20:30:06.281335+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:30:09.613218+00:00 | Success: source=semantic_scholar query='PROV-DM integrated provenance management system' results=5
+2026-02-17T20:30:10.601714+00:00 | Success: source=crossref query='PROV-DM integrated provenance management system' results=5
+2026-02-17T20:30:11.608404+00:00 | Success: source=arxiv query='agent-based unified provenance architecture' results=5
+2026-02-17T20:30:12.948428+00:00 | Success: source=semantic_scholar query='agent-based unified provenance architecture' results=5
+2026-02-17T20:30:13.926850+00:00 | Success: source=crossref query='agent-based unified provenance architecture' results=5
+2026-02-17T20:30:14.859543+00:00 | Success: source=arxiv query='cross-platform provenance framework using PROV' results=5
+2026-02-17T20:30:15.730788+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:30:19.382319+00:00 | Success: source=semantic_scholar query='cross-platform provenance framework using PROV' results=5
+2026-02-17T20:30:20.388378+00:00 | Success: source=crossref query='cross-platform provenance framework using PROV' results=5
+2026-02-17T20:30:20.388955+00:00 | Web retrieval fetch pages: total=90
+2026-02-17T20:31:19.518783+00:00 | Web retrieval fetch done: fetched=90 failed=3 elapsed=60.3s
+2026-02-17T20:31:19.520377+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=78
+2026-02-17T20:31:22.323752+00:00 | Web retrieval rerank done: elapsed=2.8s items=78
+2026-02-17T20:31:25.128319+00:00 | Web retrieval query: Ai-Co-Scientist multi-agent system design
+2026-02-17T20:31:25.128653+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T20:31:37.634923+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T20:31:37.635129+00:00 | Web retrieval expanded queries: ['Ai-Co-Scientist multi-agent system design', 'AI-Co-Scientist multi-agent architecture', 'automated scientific discovery using multi-agent systems', 'LLM-based autonomous research agent framework', 'design patterns for AI scientist multi-agent systems', 'collaborative agents for automated hypothesis generation', 'multi-agent workflows for autonomous scientific research']
+2026-02-17T20:31:37.635193+00:00 | Web retrieval start: query='Ai-Co-Scientist multi-agent system design' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T20:31:37.635239+00:00 | Web retrieval expanded queries: ['Ai-Co-Scientist multi-agent system design', 'AI-Co-Scientist multi-agent architecture', 'automated scientific discovery using multi-agent systems', 'LLM-based autonomous research agent framework', 'design patterns for AI scientist multi-agent systems', 'collaborative agents for automated hypothesis generation', 'multi-agent workflows for autonomous scientific research']
+2026-02-17T20:31:38.673680+00:00 | Success: source=arxiv query='Ai-Co-Scientist multi-agent system design' results=5
+2026-02-17T20:31:39.523645+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:31:42.139474+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:31:47.874444+00:00 | Success: source=semantic_scholar query='Ai-Co-Scientist multi-agent system design' results=5
+2026-02-17T20:31:48.968086+00:00 | Success: source=crossref query='Ai-Co-Scientist multi-agent system design' results=5
+2026-02-17T20:31:49.748350+00:00 | Success: source=arxiv query='AI-Co-Scientist multi-agent architecture' results=5
+2026-02-17T20:31:50.353043+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:31:53.864278+00:00 | Success: source=semantic_scholar query='AI-Co-Scientist multi-agent architecture' results=5
+2026-02-17T20:31:54.802950+00:00 | Success: source=crossref query='AI-Co-Scientist multi-agent architecture' results=5
+2026-02-17T20:31:55.972354+00:00 | Success: source=arxiv query='automated scientific discovery using multi-agent systems' results=5
+2026-02-17T20:31:56.828869+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:32:00.263409+00:00 | Success: source=semantic_scholar query='automated scientific discovery using multi-agent systems' results=5
+2026-02-17T20:32:01.282381+00:00 | Success: source=crossref query='automated scientific discovery using multi-agent systems' results=5
+2026-02-17T20:32:02.207117+00:00 | Success: source=arxiv query='LLM-based autonomous research agent framework' results=5
+2026-02-17T20:32:02.822081+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:32:06.429607+00:00 | Success: source=semantic_scholar query='LLM-based autonomous research agent framework' results=5
+2026-02-17T20:32:07.724014+00:00 | Success: source=crossref query='LLM-based autonomous research agent framework' results=5
+2026-02-17T20:32:08.413285+00:00 | Success: source=arxiv query='design patterns for AI scientist multi-agent systems' results=5
+2026-02-17T20:32:09.270684+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:32:12.640612+00:00 | Success: source=semantic_scholar query='design patterns for AI scientist multi-agent systems' results=5
+2026-02-17T20:32:13.661731+00:00 | Success: source=crossref query='design patterns for AI scientist multi-agent systems' results=5
+2026-02-17T20:32:17.881716+00:00 | Success: source=arxiv query='collaborative agents for automated hypothesis generation' results=5
+2026-02-17T20:32:18.775308+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:32:21.776387+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:32:26.653691+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:32:35.523150+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T20:32:51.832259+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-17T20:33:22.125857+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 6) in 30s
+2026-02-17T20:33:52.924406+00:00 | Success: source=semantic_scholar query='collaborative agents for automated hypothesis generation' results=5
+2026-02-17T20:33:53.876201+00:00 | Success: source=crossref query='collaborative agents for automated hypothesis generation' results=5
+2026-02-17T20:33:55.703374+00:00 | Success: source=arxiv query='multi-agent workflows for autonomous scientific research' results=5
+2026-02-17T20:33:56.557235+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:33:59.428666+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:34:04.600300+00:00 | Success: source=semantic_scholar query='multi-agent workflows for autonomous scientific research' results=5
+2026-02-17T20:34:05.858732+00:00 | Success: source=crossref query='multi-agent workflows for autonomous scientific research' results=5
+2026-02-17T20:34:05.859283+00:00 | Web retrieval fetch pages: total=105
+2026-02-17T20:35:04.085508+00:00 | Web retrieval fetch done: fetched=105 failed=10 elapsed=59.4s
+2026-02-17T20:35:04.086740+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=83
+2026-02-17T20:35:07.038399+00:00 | Web retrieval rerank done: elapsed=3.0s items=83
+2026-02-17T20:35:09.966544+00:00 | Web retrieval query: Magentic-One evaluation benchmarks vs SOTA
+2026-02-17T20:35:09.966833+00:00 | Retriever | Model gemini-3-pro-preview is generating query expansion...
+2026-02-17T20:35:16.645351+00:00 | Retriever | Model gemini-3-pro-preview finished generating query expansion.
+2026-02-17T20:35:16.645580+00:00 | Web retrieval expanded queries: ['Magentic-One evaluation benchmarks vs SOTA', 'Microsoft Magentic-One performance evaluation vs state-of-the-art agents', 'Magentic-One benchmark results GAIA AssistantBench', 'Comparative analysis of Magentic-One against SOTA multi-agent systems', 'Magentic-One evaluation metrics and experimental results', 'Magentic-One vs AutoGen performance comparison']
+2026-02-17T20:35:16.645632+00:00 | Web retrieval start: query='Magentic-One evaluation benchmarks vs SOTA' modes=['lit'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=True max_queries=10
+2026-02-17T20:35:16.645674+00:00 | Web retrieval expanded queries: ['Magentic-One evaluation benchmarks vs SOTA', 'Microsoft Magentic-One performance evaluation vs state-of-the-art agents', 'Magentic-One benchmark results GAIA AssistantBench', 'Comparative analysis of Magentic-One against SOTA multi-agent systems', 'Magentic-One evaluation metrics and experimental results', 'Magentic-One vs AutoGen performance comparison']
+2026-02-17T20:35:17.829271+00:00 | Success: source=arxiv query='Magentic-One evaluation benchmarks vs SOTA' results=5
+2026-02-17T20:35:18.435492+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:35:21.434908+00:00 | Success: source=semantic_scholar query='Magentic-One evaluation benchmarks vs SOTA' results=5
+2026-02-17T20:35:22.637208+00:00 | Success: source=crossref query='Magentic-One evaluation benchmarks vs SOTA' results=5
+2026-02-17T20:35:24.641821+00:00 | Success: source=arxiv query='Microsoft Magentic-One performance evaluation vs state-of-the-art agents' results=5
+2026-02-17T20:35:25.558413+00:00 | Success: source=semantic_scholar query='Microsoft Magentic-One performance evaluation vs state-of-the-art agents' results=0
+2026-02-17T20:35:26.527420+00:00 | Success: source=crossref query='Microsoft Magentic-One performance evaluation vs state-of-the-art agents' results=5
+2026-02-17T20:35:27.616167+00:00 | Success: source=arxiv query='Magentic-One benchmark results GAIA AssistantBench' results=5
+2026-02-17T20:35:28.221767+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:35:31.094566+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:35:35.700299+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:35:44.336585+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T20:36:00.467288+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-17T20:36:31.335309+00:00 | Success: source=semantic_scholar query='Magentic-One benchmark results GAIA AssistantBench' results=5
+2026-02-17T20:36:32.254654+00:00 | Success: source=crossref query='Magentic-One benchmark results GAIA AssistantBench' results=5
+2026-02-17T20:36:36.941779+00:00 | Success: source=arxiv query='Comparative analysis of Magentic-One against SOTA multi-agent systems' results=5
+2026-02-17T20:36:37.980418+00:00 | Success: source=semantic_scholar query='Comparative analysis of Magentic-One against SOTA multi-agent systems' results=0
+2026-02-17T20:36:39.390192+00:00 | Success: source=crossref query='Comparative analysis of Magentic-One against SOTA multi-agent systems' results=5
+2026-02-17T20:36:40.612610+00:00 | Success: source=arxiv query='Magentic-One evaluation metrics and experimental results' results=5
+2026-02-17T20:36:41.477120+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:36:44.351624+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:36:49.234114+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:36:57.293381+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-17T20:37:14.851768+00:00 | Success: source=semantic_scholar query='Magentic-One evaluation metrics and experimental results' results=5
+2026-02-17T20:37:15.788315+00:00 | Success: source=crossref query='Magentic-One evaluation metrics and experimental results' results=5
+2026-02-17T20:37:16.632441+00:00 | Success: source=arxiv query='Magentic-One vs AutoGen performance comparison' results=5
+2026-02-17T20:37:17.503088+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-17T20:37:20.105266+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-17T20:37:24.967674+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-17T20:37:34.479399+00:00 | Success: source=semantic_scholar query='Magentic-One vs AutoGen performance comparison' results=5
+2026-02-17T20:37:35.439990+00:00 | Success: source=crossref query='Magentic-One vs AutoGen performance comparison' results=5
+2026-02-17T20:37:35.440585+00:00 | Web retrieval fetch pages: total=80
+2026-02-17T20:38:43.283616+00:00 | Web retrieval fetch done: fetched=80 failed=3 elapsed=68.9s
+2026-02-17T20:38:43.284518+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=75
+2026-02-17T20:38:46.167575+00:00 | Web retrieval rerank done: elapsed=2.9s items=75
+2026-02-17T20:38:49.290211+00:00 | Web retrieval summary: queries=9 raw=752 scored=752 accepted=50 added=33 skipped_existing=3 skipped_empty=14 filtered=90
+2026-02-17T20:38:49.292894+00:00 | ***Skill activated: retrieve_sources***
+2026-02-17T20:38:49.652733+00:00 | Graph: embedding pending chunks count=36
+2026-02-17T20:38:52.801339+00:00 | Graph: embedding completed chunks count=36
+2026-02-17T20:38:52.807424+00:00 | Graph: incremental update
+2026-02-17T20:38:53.593988+00:00 | Graph stats: chunks_total=845 chunks_new=36 chunks_pruned=0 clusters=20 assigned=845 noise_ratio=0.00 avg_sim=0.88
+2026-02-17T20:38:55.099821+00:00 | Topic mapped to cluster: label='LLM Based Agentic Systems' similarity=0.79
+2026-02-17T20:38:55.851736+00:00 | Cluster scores (query='AI agent 驱动的 workflow 最近技术分析报告 FinRobot finance AI agent architecture details Agentic Predictor performance prediction methodology PROV-AGENT unified provenance framework implementation Ai-Co-Scientist multi-agent system design Magentic-One evaluation benchmarks vs SOTA' total=20 selected=10):
+* 0.83 | LLM Based Agentic Systems | d621c73d [selected]
+* 0.76 | AI Agents for Scientific Discovery | f30bc626 [selected]
+* 0.75 | AI Agents for Scientific Discovery | 74fbf066 [selected]
+* 0.75 | LLM and NLP Research Papers | 0ef24e07 [selected]
+* 0.71 | Language Agents Scientific Knowledge Synthesis | 1a38aada [selected]
+* 0.70 | Denario AI Research Platform | 69517f04 [selected]
+* 0.70 | Grounded Long-Form Article Generation | 435900b6 [selected]
+* 0.70 | Multi Agent AI for Mass Spectrometry | 669fb2b6 [selected]
+* 0.68 | AI Generated Scientific Research Papers | aff34b3c [selected]
+* 0.67 | Taylor Hawkins Musical Career and Style | fb40b0a1 [selected]
+  0.67 | Impact of Label Noise on Calibration | 49fdb98b
+  0.63 | Wearable Accelerometer Step Counting Algorithms | f80396e0
+  0.62 | Computational Protein Modeling and Analysis | 0b246dbe
+  0.62 | ART Clinic Performance and Success Rates | c6f6b666
+  0.61 | Bat Neuroscience and Aging Research | 8820c482
+  0.60 | Cosmological Structure and Merger Trees | b29fcb1a
+  0.59 | Astrophysical Data Analysis And Modeling | f627d093
+  0.58 | Physics Informed Neural Networks | de05fbed
+  0.58 | Asteroid Data Analysis and Machine Learning | 5ebe18c7
+  0.56 | Mass Transfer In Binary Star Systems | 28b33c4d
+2026-02-17T20:38:56.701746+00:00 | Retrieved docs: total=13 web=10 file=3
+2026-02-17T20:38:56.702910+00:00 | ***Skill activated: plan_research***
+2026-02-17T20:38:56.704313+00:00 | Source briefs: docs=13 highlights=27 per_doc=10
+2026-02-17T20:38:56.704430+00:00 | Source briefs by source_type: file=3 web=10
+2026-02-17T20:38:56.706404+00:00 | Planner | Planner throttle: sleeping 2s before plan draft.
+2026-02-17T20:38:58.710743+00:00 | Planner | Model gemini-3-pro-preview is generating plan draft...
+2026-02-17T20:39:26.342692+00:00 | Planner | Model gemini-3-pro-preview finished generating plan draft.
+2026-02-17T20:39:26.349014+00:00 | ***Skill activated: refine_plan***
+2026-02-17T20:39:26.349220+00:00 | Retriever | Model gemini-3-pro-preview is generating gap query rewrite...
+2026-02-17T20:39:36.878380+00:00 | Retriever | Model gemini-3-pro-preview finished generating gap query rewrite.
+2026-02-17T20:39:36.879885+00:00 | Source briefs: docs=13 highlights=13 per_doc=10
+2026-02-17T20:39:36.879996+00:00 | Source briefs by source_type: file=3 web=10
+2026-02-17T20:39:36.880876+00:00 | Planner | Planner throttle: sleeping 4s before plan refinement.
+2026-02-17T20:39:40.888576+00:00 | Planner | Model gemini-3-pro-preview is generating plan refinement...
+2026-02-17T20:40:09.897577+00:00 | Planner | Model gemini-3-pro-preview finished generating plan refinement.
+2026-02-17T20:40:09.898013+00:00 | ***Skill activated: build_outline***
+2026-02-17T20:40:09.899726+00:00 | Outliner | Planner throttle: sleeping 8s before outline.
+2026-02-17T20:40:17.903556+00:00 | Outliner | Model gemini-3-pro-preview is generating outline...
+2026-02-17T20:41:00.190676+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline.
+2026-02-17T20:41:00.191739+00:00 | Outliner: outline length out of range (attempt=1 words=990 target=1000-2000)
+2026-02-17T20:41:00.191834+00:00 | Outliner: outline language ratio too low (attempt=1 cjk_ratio=0.14 min=0.40)
+2026-02-17T20:41:00.193254+00:00 | Outliner | Planner throttle: sleeping 16s before outline.
+2026-02-17T20:41:15.676795+00:00 | Outliner | Model gemini-3-pro-preview is generating outline...
+2026-02-17T20:42:01.134528+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline.
+2026-02-17T20:42:01.135128+00:00 | Outliner: outline length out of range (attempt=2 words=399 target=1000-2000)
+2026-02-17T20:42:01.135750+00:00 | Outliner | Planner throttle: sleeping 30s before outline.
+2026-02-17T20:42:30.567270+00:00 | Outliner | Model gemini-3-pro-preview is generating outline...
+2026-02-17T20:43:22.427622+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline.
+2026-02-17T20:43:22.428701+00:00 | Outliner: outline length out of range (attempt=3 words=1298 target=1000-2000)
+2026-02-17T20:43:22.428825+00:00 | Outliner: outline language ratio too low (attempt=3 cjk_ratio=0.00 min=0.40)
+2026-02-17T20:43:22.428968+00:00 | Outliner | Planner throttle: sleeping 30s before outline revision.
+2026-02-17T20:43:51.877147+00:00 | Outliner | Model gemini-3-pro-preview is generating outline revision...
+2026-02-17T20:44:34.909244+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline revision.
+2026-02-17T20:44:34.910159+00:00 | Outliner: outline length still out of range after revision (attempt=6 words=457 target=1000-2000)
+2026-02-17T20:44:34.910310+00:00 | Outliner | Planner throttle: sleeping 30s before outline translate.
+2026-02-17T20:45:04.350156+00:00 | Outliner | Model gemini-3-pro-preview is generating outline translate...
+2026-02-17T20:45:53.491123+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline translate.
+2026-02-17T20:45:53.492579+00:00 | Outliner: returning best-effort outline despite length constraint failure. Last count=1298 target=1000-2000.
+2026-02-17T20:45:53.492859+00:00 | ***Skill activated: persist_plan***
+2026-02-17T20:45:54.279222+00:00 | Theme | Model gemini-3-pro-preview is generating interest themes...
+2026-02-17T20:46:21.178339+00:00 | Theme | Model gemini-3-pro-preview finished generating interest themes.
+2026-02-17T20:46:21.223635+00:00 | ---------- Task Ends ----------
