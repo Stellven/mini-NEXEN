@@ -50,6 +50,14 @@ docker run --rm -it \
   -e GEMINI_API_KEY="your-key" \
   mini-nexen research --topic "Agentic research systems"
 ```
+Example (equivalent to local CLI):
+```bash
+docker run --rm -it \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/plans:/app/plans" \
+  -e GEMINI_API_KEY="your-key" \
+  mini-nexen research --topic "AI agent 驱动的 workflow 最近技术分析报告" --web-lit --ingest
+```
 Notes:
 - For LM Studio running on the host, use `--network=host` (Linux) or set `LMSTUDIO_BASE_URL` to `http://host.docker.internal:1234/v1`.
 - If you want interactive provider/model prompts, keep `-it`.
