@@ -370,7 +370,12 @@ class GraphManager:
             if not rows:
                 return
             texts = [row["text"] for row in rows]
-        embeddings = batch_embed(client, texts, batch_size=32)
+        log_task_event(f"Graph: embedding missing chunks count={len(texts)}")
+        try:
+            embeddings = batch_embed(client, texts, batch_size=32)
+        except Exception as exc:
+            log_task_event(f"Graph: embedding failed; leaving chunks unembedded. error={exc}")
+            return
         if len(embeddings) != len(texts):
             return
         with db._connect() as conn:
@@ -401,7 +406,12 @@ class GraphManager:
                 missing_texts.append(row["text"])
                 missing_indices.append(idx)
         if missing_texts:
-            extra = batch_embed(client, missing_texts, batch_size=32)
+            log_task_event(f"Graph: embedding missing chunks for clustering count={len(missing_texts)}")
+            try:
+                extra = batch_embed(client, missing_texts, batch_size=32)
+            except Exception as exc:
+                log_task_event(f"Graph: embedding failed during clustering. error={exc}")
+                return False
             if len(extra) != len(missing_texts):
                 return False
             with db._connect() as conn:

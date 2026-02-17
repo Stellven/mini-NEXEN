@@ -282,6 +282,17 @@ def run_web_retrieval(
 ) -> list[WebResult]:
     results: list[WebResult] = []
     modes_set = {mode.strip().lower() for mode in modes}
+    log_task_event(
+        "Web retrieval start: "
+        f"query='{query}' "
+        f"modes={sorted(modes_set) if modes_set else []} "
+        f"max_results={max_results} "
+        f"timeout={timeout}s "
+        f"fetch_pages={fetch_pages} "
+        f"hybrid={hybrid} "
+        f"expand={expand_query_flag} "
+        f"max_queries={max_queries}"
+    )
 
     def _safe_search(label: str, fn: callable, query_text: str) -> list[WebResult]:
         try:
@@ -297,6 +308,8 @@ def run_web_retrieval(
         queries = expand_queries(query, modes_set, max_queries=max_queries, extra_queries=extra_queries)
     if not queries:
         return results
+    if len(queries) > 1:
+        log_task_event(f"Web retrieval expanded queries: {queries}")
 
     for q in queries:
         if "tech" in modes_set or "web" in modes_set:
@@ -308,6 +321,10 @@ def run_web_retrieval(
             results.extend(_safe_search("crossref", search_crossref, q))
 
     fetched: list[WebResult] = []
+    if fetch_pages and results:
+        log_task_event(f"Web retrieval fetch pages: total={len(results)}")
+    fetch_failures = 0
+    fetch_started = time.monotonic()
     for result in results:
         if not fetch_pages or result.text:
             fetched.append(result)
@@ -317,7 +334,16 @@ def run_web_retrieval(
             fetched.append(WebResult(title=result.title, url=result.url, text=text, source=result.source))
             time.sleep(0.2)
         except Exception:
+            fetch_failures += 1
             fetched.append(result)
+    if fetch_pages and results:
+        fetch_elapsed = time.monotonic() - fetch_started
+        log_task_event(
+            "Web retrieval fetch done: "
+            f"fetched={len(fetched)} "
+            f"failed={fetch_failures} "
+            f"elapsed={fetch_elapsed:.1f}s"
+        )
     merged = _dedupe_results(fetched)
     if not hybrid:
         return merged
@@ -337,6 +363,22 @@ def run_web_retrieval(
         api_key=api_key,
     )
     try:
-        return _semantic_rerank(query=query, results=merged, config=config)
-    except Exception:
+        log_task_event(
+            "Web retrieval rerank start: "
+            f"provider={config.provider} "
+            f"model={config.model} "
+            f"timeout={config.timeout}s "
+            f"items={len(merged)}"
+        )
+        rerank_started = time.monotonic()
+        reranked = _semantic_rerank(query=query, results=merged, config=config)
+        rerank_elapsed = time.monotonic() - rerank_started
+        log_task_event(
+            "Web retrieval rerank done: "
+            f"elapsed={rerank_elapsed:.1f}s "
+            f"items={len(reranked)}"
+        )
+        return reranked
+    except Exception as exc:
+        log_task_event(f"Web retrieval rerank failed; returning original results. error={exc}")
         return merged

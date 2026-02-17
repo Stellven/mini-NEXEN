@@ -8,14 +8,20 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from . import db
+from .config import GRAPH_TOP_CLUSTERS
 from .db import Document, Interest, Method, load_document_text
 from .embeddings import EmbeddingClient, EmbeddingConfig, cosine_similarity, normalize
+from .graph import GraphManager
 from .llm import LLMClient, LLMClientError, log_task_event
 from .llm_prompts import SYSTEM_OUTLINE_PROMPT, SYSTEM_PLAN_PROMPT, outline_prompt, plan_prompt, refine_prompt
 from .text_utils import top_sentences, tokenize
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _CJK_WORD_RE = re.compile(r"[\u4e00-\u9fff]+")
+
+DOC_CHUNK_CAP = 3
+PER_CLUSTER_CHUNK_LIMIT = 30
+MERGED_CHUNK_MAX_CHARS = 1200
 
 _JSON_KEY_MAP = {
     "scope": "scope",
@@ -72,6 +78,8 @@ class PlanDraft:
     readiness: str
     notes: list[str]
     retrieval_queries: list[str]
+    graph_top_clusters: int
+    top_k_docs: int
 
 
 def _now_iso() -> str:
@@ -120,6 +128,7 @@ def create_source_briefs(
     documents: Iterable[Document],
     keywords: Iterable[str],
     highlights_per_doc: int = 10,
+    doc_text_overrides: dict[str, str] | None = None,
 ) -> list[SourceBrief]:
     from .llm import log_task_event
 
@@ -127,7 +136,9 @@ def create_source_briefs(
     total_highlights = 0
     counts: dict[str, int] = {}
     for doc in documents:
-        text = load_document_text(doc)
+        text = doc_text_overrides.get(doc.doc_id) if doc_text_overrides else None
+        if not text:
+            text = load_document_text(doc)
         highlights = top_sentences(text, keywords, limit=highlights_per_doc)
         total_highlights += len(highlights)
         briefs.append(SourceBrief(doc=doc, highlights=highlights))
@@ -147,6 +158,116 @@ def _compact_snippet(text: str, limit: int = 220) -> str:
         return compacted
     trimmed = compacted[:limit].rsplit(" ", 1)[0]
     return (trimmed or compacted[:limit]).rstrip() + "..."
+
+
+def select_docs_by_cluster_round_robin(
+    query: str,
+    embed_config: EmbeddingConfig | None,
+    top_clusters: int,
+    top_k_docs: int,
+    source_type: str | None = None,
+    per_cluster_chunk_limit: int = PER_CLUSTER_CHUNK_LIMIT,
+    min_similarity: float = 0.2,
+) -> tuple[list[str], list[tuple[float, str, str]], dict[str, str]]:
+    if not query or not embed_config:
+        return [], [], {}
+    graph = GraphManager(embed_config=embed_config, llm=None, semantic_labels=False)
+    scored = graph.score_clusters(query)
+    if not scored:
+        return [], [], {}
+    selected_clusters = [(sim, cid, label) for sim, cid, label in scored if sim >= min_similarity]
+    if not selected_clusters:
+        return [], [], {}
+    selected_clusters = selected_clusters[: max(1, int(top_clusters))]
+
+    cluster_chunks: dict[str, list[str]] = {}
+    with db._connect() as conn:
+        for _, cluster_id, _ in selected_clusters:
+            params = [cluster_id]
+            source_clause = ""
+            if source_type:
+                source_clause = "AND d.source_type = ?"
+                params.append(source_type)
+            params.append(int(per_cluster_chunk_limit))
+            rows = conn.execute(
+                f"""
+                SELECT c.doc_id
+                FROM chunks c
+                JOIN documents d ON d.doc_id = c.doc_id
+                JOIN document_stats s ON s.doc_id = d.doc_id
+                WHERE c.cluster_id = ?
+                  AND s.archived = 0
+                  {source_clause}
+                ORDER BY c.similarity DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+            cluster_chunks[cluster_id] = [row["doc_id"] for row in rows]
+
+    selected_clusters = [item for item in selected_clusters if cluster_chunks.get(item[1])]
+    if not selected_clusters:
+        return [], [], {}
+
+    selected_docs: list[str] = []
+    doc_cluster_map: dict[str, str] = {}
+    seen_docs: set[str] = set()
+    progress = True
+    while len(selected_docs) < int(top_k_docs) and progress:
+        progress = False
+        for _, cluster_id, _ in selected_clusters:
+            queue = cluster_chunks.get(cluster_id, [])
+            while queue and queue[0] in seen_docs:
+                queue.pop(0)
+            if not queue:
+                continue
+            doc_id = queue.pop(0)
+            selected_docs.append(doc_id)
+            seen_docs.add(doc_id)
+            doc_cluster_map[doc_id] = cluster_id
+            progress = True
+            if len(selected_docs) >= int(top_k_docs):
+                break
+    return selected_docs, selected_clusters, doc_cluster_map
+
+
+def merge_doc_chunks(
+    doc_ids: Iterable[str],
+    per_doc_cap: int = DOC_CHUNK_CAP,
+    max_chars: int = MERGED_CHUNK_MAX_CHARS,
+) -> tuple[dict[str, str], dict[str, int]]:
+    overrides: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    ids = [doc_id for doc_id in doc_ids if doc_id]
+    if not ids:
+        return overrides, counts
+    per_doc_cap = max(1, int(per_doc_cap))
+    per_chunk_limit = max(200, int(max_chars / per_doc_cap))
+    with db._connect() as conn:
+        for doc_id in ids:
+            rows = conn.execute(
+                """
+                SELECT c.text
+                FROM chunks c
+                JOIN document_stats s ON s.doc_id = c.doc_id
+                WHERE c.doc_id = ? AND s.archived = 0 AND c.cluster_id IS NOT NULL
+                ORDER BY c.similarity DESC
+                LIMIT ?
+                """,
+                (doc_id, per_doc_cap),
+            ).fetchall()
+            parts = []
+            for row in rows:
+                snippet = _compact_snippet(row["text"], limit=per_chunk_limit)
+                if snippet:
+                    parts.append(snippet)
+            counts[doc_id] = len(parts)
+            if not parts:
+                continue
+            merged = "\n\n".join(parts)
+            merged = _compact_snippet(merged, limit=max_chars)
+            overrides[doc_id] = merged
+    return overrides, counts
 
 
 def _prepare_theme_evidence(
@@ -250,9 +371,13 @@ def _merge_themes_by_label_similarity(
 
         combined_docs: dict[str, list[str]] = {}
         chunk_count = 0
+        similarities: list[float] = []
         for idx in group:
             theme = themes[idx]
             chunk_count += int(theme.get("chunk_count") or 0)
+            similarity = theme.get("similarity")
+            if isinstance(similarity, (int, float)):
+                similarities.append(float(similarity))
             for doc in theme.get("documents", []):
                 title = doc.get("title") or "Unknown document"
                 evidence = doc.get("evidence") or []
@@ -261,10 +386,12 @@ def _merge_themes_by_label_similarity(
                     if item not in combined_docs[title]:
                         combined_docs[title].append(item)
 
+        merged_similarity = max(similarities) if similarities else None
         documents = [{"title": title, "evidence": evidence} for title, evidence in combined_docs.items()]
         merged.append(
             {
                 "label": merged_label,
+                "similarity": merged_similarity,
                 "bullets": [],
                 "documents": documents,
                 "chunk_count": chunk_count,
@@ -361,77 +488,131 @@ def _summarize_theme_bullets(
 
 
 def build_interest_themes(
+    topic: str,
+    interests: list[Interest],
+    query_hints: list[str] | None = None,
     llm: LLMClient | None = None,
+    top_k_docs: int | None = None,
     max_themes: int = 6,
     max_docs: int = 3,
     max_bullets: int = 4,
     max_snippets: int = 3,
-    merge_threshold: float = 0.85,
 ) -> list[dict]:
     if not llm:
         raise LLMClientError("LLM is required for interest theme summaries.")
-    db.init_db()
-    with db._connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT c.cluster_id, c.text, c.similarity, d.doc_id, d.title, cl.label
-            FROM chunks c
-            JOIN documents d ON d.doc_id = c.doc_id
-            JOIN document_stats s ON s.doc_id = d.doc_id
-            LEFT JOIN clusters cl ON cl.cluster_id = c.cluster_id
-            WHERE d.source_type = 'file'
-              AND s.archived = 0
-              AND c.cluster_id IS NOT NULL
-            """
-        ).fetchall()
-    if not rows:
-        return []
 
-    clusters: dict[str, dict] = {}
-    for row in rows:
-        cluster_id = row["cluster_id"]
-        entry = clusters.setdefault(
-            cluster_id,
-            {
-                "label": row["label"] or "Unlabeled Theme",
-                "chunk_count": 0,
-                "doc_counts": Counter(),
-                "doc_titles": {},
-                "texts": [],
-                "snippets": [],
-            },
-        )
-        entry["chunk_count"] += 1
-        doc_id = row["doc_id"]
-        entry["doc_counts"][doc_id] += 1
-        entry["doc_titles"][doc_id] = row["title"]
-        if row["text"]:
-            entry["texts"].append(row["text"])
-            entry["snippets"].append(
-                (
-                    float(row["similarity"] or 0.0),
-                    row["text"],
-                    row["title"] or "Unknown document",
-                )
+    query_parts = [topic]
+    for interest in interests:
+        if interest.topic:
+            query_parts.append(interest.topic)
+    if query_hints:
+        query_parts.extend(query_hints)
+    query = " ".join(part for part in query_parts if part).strip()
+
+    top_k = int(top_k_docs or max_docs * max_themes)
+    embed_config = _build_theme_embedding_config(llm)
+    selected_doc_ids, selected_clusters, doc_cluster_map = select_docs_by_cluster_round_robin(
+        query,
+        embed_config,
+        max_themes,
+        top_k,
+        source_type="file",
+    )
+
+    themes: list[dict] = []
+    if selected_doc_ids and selected_clusters:
+        db.init_db()
+        docs = db.get_documents_by_ids(selected_doc_ids)
+        doc_titles = {doc.doc_id: doc.title for doc in docs}
+        merged_texts, chunk_counts = merge_doc_chunks(selected_doc_ids, per_doc_cap=DOC_CHUNK_CAP)
+        selected_order = {doc_id: idx for idx, doc_id in enumerate(selected_doc_ids)}
+        for sim, cluster_id, label in selected_clusters:
+            doc_ids = [
+                doc_id for doc_id, cid in doc_cluster_map.items() if cid == cluster_id
+            ]
+            if not doc_ids:
+                continue
+            doc_ids.sort(key=lambda doc_id: selected_order.get(doc_id, 0))
+            documents = []
+            for doc_id in doc_ids[:max_docs]:
+                text = merged_texts.get(doc_id) or ""
+                snippet = _compact_snippet(text, limit=420)
+                if not snippet:
+                    continue
+                title = doc_titles.get(doc_id) or "Unknown document"
+                documents.append({"title": title, "evidence": [snippet]})
+            if not documents:
+                continue
+            chunk_count = sum(chunk_counts.get(doc_id, 0) for doc_id in doc_ids)
+            themes.append(
+                {
+                    "label": label or "Unlabeled Theme",
+                    "similarity": sim,
+                    "bullets": [],
+                    "documents": documents,
+                    "chunk_count": chunk_count,
+                    "doc_count": len(doc_ids),
+                }
             )
 
-    ordered = sorted(clusters.values(), key=lambda item: item["chunk_count"], reverse=True)
-    themes = []
-    for item in ordered[:max_themes]:
-        doc_counts = item["doc_counts"].most_common(max_docs)
-        doc_titles = [item["doc_titles"][doc_id] for doc_id, _ in doc_counts]
-        documents = _prepare_theme_evidence(item["snippets"], max_docs=max_docs, max_snippets=max_snippets)
-        themes.append(
-            {
-                "label": item["label"],
-                "bullets": [],
-                "documents": documents,
-                "chunk_count": item["chunk_count"],
-                "doc_count": len(item["doc_counts"]),
-            }
-        )
+    if not themes:
+        db.init_db()
+        with db._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.cluster_id, c.text, c.similarity, d.doc_id, d.title, cl.label
+                FROM chunks c
+                JOIN documents d ON d.doc_id = c.doc_id
+                JOIN document_stats s ON s.doc_id = d.doc_id
+                LEFT JOIN clusters cl ON cl.cluster_id = c.cluster_id
+                WHERE d.source_type = 'file'
+                  AND s.archived = 0
+                  AND c.cluster_id IS NOT NULL
+                """
+            ).fetchall()
+        if not rows:
+            return []
+        clusters: dict[str, dict] = {}
+        for row in rows:
+            cluster_id = row["cluster_id"]
+            entry = clusters.setdefault(
+                cluster_id,
+                {
+                    "label": row["label"] or "Unlabeled Theme",
+                    "chunk_count": 0,
+                    "doc_counts": Counter(),
+                    "doc_titles": {},
+                    "texts": [],
+                    "snippets": [],
+                },
+            )
+            entry["chunk_count"] += 1
+            doc_id = row["doc_id"]
+            entry["doc_counts"][doc_id] += 1
+            entry["doc_titles"][doc_id] = row["title"]
+            if row["text"]:
+                entry["texts"].append(row["text"])
+                entry["snippets"].append(
+                    (
+                        float(row["similarity"] or 0.0),
+                        row["text"],
+                        row["title"] or "Unknown document",
+                    )
+                )
+        ordered = sorted(clusters.values(), key=lambda item: item["chunk_count"], reverse=True)
+        for item in ordered[:max_themes]:
+            documents = _prepare_theme_evidence(item["snippets"], max_docs=max_docs, max_snippets=max_snippets)
+            themes.append(
+                {
+                    "label": item["label"],
+                    "similarity": None,
+                    "bullets": [],
+                    "documents": documents,
+                    "chunk_count": item["chunk_count"],
+                    "doc_count": len(item["doc_counts"]),
+                }
+            )
     if themes:
-        themes = _merge_themes_by_label_similarity(llm, themes, threshold=merge_threshold)
         summaries = _summarize_theme_bullets(llm, themes, max_bullets=max_bullets)
         for theme in themes:
             label = theme["label"]
@@ -737,7 +918,12 @@ def _base_plan(
     documents: list[Document],
     round_number: int,
     keywords_seed: list[str],
+    graph_top_clusters: int | None = None,
+    top_k_docs: int | None = None,
+    doc_text_overrides: dict[str, str] | None = None,
 ) -> PlanDraft:
+    cluster_limit = int(graph_top_clusters or GRAPH_TOP_CLUSTERS)
+    doc_limit = int(top_k_docs or 0)
     source_types = []
     seen = set()
     for doc in documents:
@@ -745,7 +931,11 @@ def _base_plan(
             seen.add(doc.source_type)
             source_types.append(doc.source_type)
 
-    source_briefs = create_source_briefs(documents, keywords_seed)
+    source_briefs = create_source_briefs(
+        documents,
+        keywords_seed,
+        doc_text_overrides=doc_text_overrides,
+    )
 
     return PlanDraft(
         topic=topic,
@@ -760,6 +950,8 @@ def _base_plan(
         readiness="draft",
         notes=[],
         retrieval_queries=[],
+        graph_top_clusters=cluster_limit,
+        top_k_docs=doc_limit,
     )
 
 
@@ -783,10 +975,22 @@ def llm_draft_plan(
     extracted_interests: list[str] | None,
     documents: list[Document],
     round_number: int,
+    graph_top_clusters: int | None = None,
+    top_k_docs: int | None = None,
+    doc_text_overrides: dict[str, str] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> PlanDraft:
     keywords_seed = build_keywords(topic, interests)
-    base_plan = _base_plan(topic, interests, documents, round_number, keywords_seed)
+    base_plan = _base_plan(
+        topic,
+        interests,
+        documents,
+        round_number,
+        keywords_seed,
+        graph_top_clusters,
+        top_k_docs,
+        doc_text_overrides,
+    )
     prompt = plan_prompt(
         topic,
         interests,
@@ -794,6 +998,7 @@ def llm_draft_plan(
         documents,
         keywords_seed,
         extracted_interests=extracted_interests,
+        doc_text_overrides=doc_text_overrides,
         skill_guidance=skill_guidance,
     )
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan draft", agent="Planner")
@@ -829,10 +1034,22 @@ def llm_refine_plan(
     methods: list[Method],
     extracted_interests: list[str] | None,
     round_number: int,
+    graph_top_clusters: int | None = None,
+    top_k_docs: int | None = None,
+    doc_text_overrides: dict[str, str] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> PlanDraft:
     keywords_seed = plan.keywords or build_keywords(plan.topic, interests)
-    base_plan = _base_plan(plan.topic, interests, documents, round_number, keywords_seed)
+    base_plan = _base_plan(
+        plan.topic,
+        interests,
+        documents,
+        round_number,
+        keywords_seed,
+        graph_top_clusters,
+        top_k_docs,
+        doc_text_overrides,
+    )
     base_plan.readiness = "refined"
     prior_plan = {
         "scope": plan.scope,
@@ -850,6 +1067,7 @@ def llm_refine_plan(
         documents,
         keywords_seed,
         extracted_interests=extracted_interests,
+        doc_text_overrides=doc_text_overrides,
         skill_guidance=skill_guidance,
     )
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan refinement", agent="Planner")
@@ -884,6 +1102,7 @@ def llm_build_outline(
     interests: list[Interest],
     methods: list[Method],
     keywords: list[str],
+    doc_text_overrides: dict[str, str] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> list[str]:
     def _parse_outline_response(response: str, attempt: int, task: str) -> list[str] | None:
@@ -1098,7 +1317,15 @@ def llm_build_outline(
             )
         return cleaned, count, ratio
 
-    prompt = outline_prompt(topic, interests, methods, documents, keywords, skill_guidance=skill_guidance)
+    prompt = outline_prompt(
+        topic,
+        interests,
+        methods,
+        documents,
+        keywords,
+        doc_text_overrides=doc_text_overrides,
+        skill_guidance=skill_guidance,
+    )
     result = _attempt(prompt, 1)
     if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS and result[2] >= OUTLINE_MIN_CJK_RATIO:
         return result[0]
@@ -1121,6 +1348,7 @@ def llm_build_outline(
         methods,
         documents,
         keywords,
+        doc_text_overrides=doc_text_overrides,
         length_hint=length_hint,
         language_hint=language_hint if previous_ratio < OUTLINE_MIN_CJK_RATIO else None,
         skill_guidance=skill_guidance,
@@ -1142,6 +1370,7 @@ def llm_build_outline(
         methods,
         documents,
         keywords,
+        doc_text_overrides=doc_text_overrides,
         length_hint=length_hint,
         language_hint=language_hint if previous_ratio < OUTLINE_MIN_CJK_RATIO else None,
         skill_guidance=skill_guidance,
@@ -1276,14 +1505,25 @@ def render_plan_md(
 
     lines.append("")
     lines.append("## Locally Extracted Interests")
-    themes = build_interest_themes(llm=llm)
+    themes = build_interest_themes(
+        plan.topic,
+        interests,
+        query_hints=plan.retrieval_queries,
+        llm=llm,
+        max_themes=plan.graph_top_clusters,
+        top_k_docs=plan.top_k_docs,
+    )
     if not themes:
         lines.append(
             "No themes available yet. Ingest local files and run research with embeddings enabled to build the graph."
         )
     else:
         for theme in themes:
-            lines.append(f"Theme: {theme['label']}")
+            similarity = theme.get("similarity")
+            if isinstance(similarity, (int, float)):
+                lines.append(f"Theme: {theme['label']} (sim={similarity:.2f})")
+            else:
+                lines.append(f"Theme: {theme['label']}")
             for bullet in theme["bullets"]:
                 lines.append(f"- {bullet}")
             lines.append("")

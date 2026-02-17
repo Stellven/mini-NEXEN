@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import re
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional
@@ -13,7 +14,8 @@ _ECHO_LOG = False
 PLANNING_THROTTLE_BASE_SECONDS = 2
 PLANNING_THROTTLE_MAX_SECONDS = 30
 PLANNING_THROTTLE_IDLE_RESET_SECONDS = 60.0
-PLANNING_RETRY_MAX_SECONDS = 90.0
+PLANNING_RETRY_MAX_SECONDS = 180.0
+_HTTP_CODE_RE = re.compile(r"\b([45]\d{2})\b")
 
 
 def set_log_echo(enabled: bool = True) -> None:
@@ -98,6 +100,23 @@ class GeminiClient(LLMClient):
         use_time_budget = agent in {"Planner", "Outliner"}
         started_at = time.time()
         attempt = 0
+        def _classify_error(message: str) -> str:
+            lowered = message.lower()
+            if "timeout" in lowered:
+                return "timeout"
+            if "429" in message or "rate" in lowered or "resourceexhausted" in lowered:
+                return "rate_limit"
+            match = _HTTP_CODE_RE.search(message)
+            if match:
+                return f"http_{match.group(1)}"
+            return "error"
+
+        def _log_failure(category: str, exc: Exception, detail: str | None = None) -> None:
+            info = detail if detail is not None else str(exc)
+            self._log(
+                agent,
+                f"Model {self.config.model} failed {task}: {category} ({type(exc).__name__}: {info})",
+            )
         while True:
             attempt += 1
             if attempt == 1:
@@ -127,8 +146,9 @@ class GeminiClient(LLMClient):
                 return text
             except Exception as exc:  # pragma: no cover - provider-specific errors
                 message = str(exc)
-                if "429" in message or "rate" in message.lower() or "resourceexhausted" in message.lower():
-                    self._log(agent, f"Model {self.config.model} rate limit on {task}.")
+                category = _classify_error(message)
+                if category == "rate_limit":
+                    _log_failure(category, exc, detail=message)
                     if use_time_budget:
                         elapsed = time.time() - started_at
                         if elapsed >= PLANNING_RETRY_MAX_SECONDS:
@@ -141,7 +161,7 @@ class GeminiClient(LLMClient):
                         time.sleep(2**attempt)
                         continue
                     raise LLMClientError("Rate limit reached")
-                self._log(agent, f"Model {self.config.model} failed {task}: {message}")
+                _log_failure(category, exc, detail=message)
                 raise LLMClientError(message) from exc
 
     def _maybe_throttle_planning(self, agent: str, task: str) -> None:

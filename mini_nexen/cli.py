@@ -202,7 +202,7 @@ def _research(args: argparse.Namespace) -> None:
     embed_provider = provider if web_enabled else None
     embed_model = None
     if web_enabled:
-        embed_model = _resolve_embed_choice(provider, args)
+        embed_provider, embed_model = _resolve_embed_choice(provider, args)
     embed_base_url = (
         args.web_embed_base_url
         or os.getenv("MINI_NEXEN_EMBED_BASE_URL")
@@ -325,58 +325,37 @@ def _env_optional_bool(name: str) -> bool | None:
     return None
 
 
-def _resolve_embed_choice(provider: str, args: argparse.Namespace) -> str | None:
+def _resolve_embed_choice(provider: str, args: argparse.Namespace) -> tuple[str | None, str | None]:
     if args.web_embed_model:
-        return args.web_embed_model
+        return provider, args.web_embed_model
 
     env_model = os.getenv("MINI_NEXEN_EMBED_MODEL")
     if env_model:
-        return env_model
+        return provider, env_model
 
     if not sys.stdin.isatty():
         if provider == "gemini":
-            return "gemini-embedding-001"
-        return None
+            return "gemini", "gemini-embedding-001"
+        return provider, None
 
-    if provider == "gemini":
-        options = ["gemini-embedding-001", "custom"]
-        print("Select Gemini embedding model:")
-        for idx, option in enumerate(options, start=1):
-            print(f"{idx}. {option}")
-        while True:
-            choice = input("Enter number: ").strip()
-            if not choice:
-                return "gemini-embedding-001"
-            if choice.isdigit():
-                index = int(choice)
-                if 1 <= index <= len(options):
-                    selected = options[index - 1]
-                    if selected == "custom":
-                        custom = input("Enter embedding model name: ").strip()
-                        return custom or "gemini-embedding-001"
-                    return selected
-            print("Invalid selection.")
-
-    if provider == "lmstudio":
-        options = ["auto-detect", "custom"]
-        print("Select LM Studio embedding model:")
-        for idx, option in enumerate(options, start=1):
-            print(f"{idx}. {option}")
-        while True:
-            choice = input("Enter number: ").strip()
-            if not choice:
-                return None
-            if choice.isdigit():
-                index = int(choice)
-                if 1 <= index <= len(options):
-                    selected = options[index - 1]
-                    if selected == "custom":
-                        custom = input("Enter embedding model name: ").strip()
-                        return custom or None
-                    return None
-            print("Invalid selection.")
-
-    return None
+    options = [
+        ("gemini", "gemini-embedding-001", "Gemini embedding"),
+        ("lmstudio", None, "LM Studio embedding (auto-detect)"),
+    ]
+    print("Select embedding model:")
+    for idx, (_, model, label) in enumerate(options, start=1):
+        model_label = model or "auto-detect"
+        print(f"{idx}. {model_label} ({label})")
+    while True:
+        choice = input("Enter number: ").strip()
+        if not choice:
+            return options[0][0], options[0][1]
+        if choice.isdigit():
+            index = int(choice)
+            if 1 <= index <= len(options):
+                selected_provider, selected_model, _ = options[index - 1]
+                return selected_provider, selected_model
+        print("Invalid selection.")
 
 
 def _format_lmstudio_model(model: str | None) -> str:

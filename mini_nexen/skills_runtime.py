@@ -34,6 +34,8 @@ from .planning import (
     llm_draft_plan,
     llm_refine_plan,
     render_plan_md,
+    merge_doc_chunks,
+    select_docs_by_cluster_round_robin,
 )
 from .text_utils import score_documents, tokenize
 from .web_retrieval import expand_queries, run_web_retrieval
@@ -59,6 +61,7 @@ class SkillContext:
     methods: list[db.Method] = field(default_factory=list)
     extracted_interests: list[str] = field(default_factory=list)
     documents: list[db.Document] = field(default_factory=list)
+    doc_text_overrides: dict[str, str] = field(default_factory=dict)
     plan: Optional[PlanDraft] = None
     outline: list[str] = field(default_factory=list)
     plan_md: str = ""
@@ -409,17 +412,8 @@ def _ensure_min_web_docs(
     for candidate in candidates:
         if len(selected_web) >= min_web_docs:
             break
-        if len(selected) < target_k:
-            selected.append(candidate)
-            selected_ids.add(candidate.doc_id)
-            selected_web.append(candidate)
+        if candidate.doc_id in selected_ids:
             continue
-        non_web = [doc for doc in selected if doc.source_type != "web"]
-        if not non_web:
-            break
-        non_web.sort(key=lambda doc: score_map.get(doc.doc_id, 0.0))
-        to_remove = non_web[0]
-        selected.remove(to_remove)
         selected.append(candidate)
         selected_ids.add(candidate.doc_id)
         selected_web.append(candidate)
@@ -521,16 +515,29 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
             label_text = label or "Unlabeled"
             lines.append(f"{marker} {sim:.2f} | {label_text} | {cid[:8]}{note}")
         log_task_event_quiet("\n".join(lines))
-    graph_docs = graph.search_documents(query, ctx.top_k, top_clusters=ctx.graph_top_clusters)
-    if graph_docs:
+    selected_docs: list[db.Document] = []
+    if cluster_scores:
+        embed_config = _build_embedding_config(ctx)
+        selected_doc_ids, _, _ = select_docs_by_cluster_round_robin(
+            query,
+            embed_config,
+            ctx.graph_top_clusters,
+            ctx.top_k,
+        )
+        if selected_doc_ids:
+            doc_lookup = {doc.doc_id: doc for doc in docs}
+            selected_docs = [doc_lookup[doc_id] for doc_id in selected_doc_ids if doc_id in doc_lookup]
+
+    if selected_docs:
         selected = _ensure_min_web_docs(
-            graph_docs,
+            selected_docs,
             docs,
             query_tokens,
             ctx.min_web_docs,
             ctx.top_k,
         )
         ctx.documents = selected
+        ctx.doc_text_overrides, _ = merge_doc_chunks([doc.doc_id for doc in selected])
         db.mark_documents_used([doc.doc_id for doc in selected])
         log_task_event(
             "Retrieved docs: "
@@ -560,6 +567,7 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
         ctx.top_k,
     )
     ctx.documents = selected
+    ctx.doc_text_overrides, _ = merge_doc_chunks([doc.doc_id for doc in selected])
     db.mark_documents_used([doc.doc_id for doc in selected])
     log_task_event(
         "Retrieved docs: "
@@ -738,6 +746,9 @@ def skill_plan_research(ctx: SkillContext) -> SkillContext:
         extracted_interests=ctx.extracted_interests,
         documents=ctx.documents,
         round_number=ctx.round_number,
+        graph_top_clusters=ctx.graph_top_clusters,
+        top_k_docs=ctx.top_k,
+        doc_text_overrides=ctx.doc_text_overrides,
         skill_guidance=ctx.skill_guidance,
     )
     return ctx
@@ -764,6 +775,9 @@ def skill_refine_plan(ctx: SkillContext) -> SkillContext:
         methods=ctx.methods,
         extracted_interests=ctx.extracted_interests,
         round_number=ctx.round_number,
+        graph_top_clusters=ctx.graph_top_clusters,
+        top_k_docs=ctx.top_k,
+        doc_text_overrides=ctx.doc_text_overrides,
         skill_guidance=ctx.skill_guidance,
     )
     cleaned_queries = [_trim_query(text) for text in _clean_query_list(ctx.plan.retrieval_queries)]
@@ -784,6 +798,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         interests=ctx.interests,
         methods=ctx.methods,
         keywords=ctx.plan.keywords,
+        doc_text_overrides=ctx.doc_text_overrides,
         skill_guidance=ctx.skill_guidance,
     )
     return ctx

@@ -66,10 +66,16 @@ def _serialize_methods(methods: Iterable[Method]) -> list[str]:
     return serialized
 
 
-def _serialize_documents(documents: Iterable[Document], keywords: Iterable[str]) -> list[dict]:
+def _serialize_documents(
+    documents: Iterable[Document],
+    keywords: Iterable[str],
+    doc_text_overrides: dict[str, str] | None = None,
+) -> list[dict]:
     results = []
     for doc in documents:
-        text = load_document_text(doc)
+        text = doc_text_overrides.get(doc.doc_id) if doc_text_overrides else None
+        if not text:
+            text = load_document_text(doc)
         highlights = top_sentences(text, keywords, limit=10)
         results.append(
             {
@@ -89,13 +95,14 @@ def plan_prompt(
     documents: list[Document],
     keywords: list[str],
     extracted_interests: list[str] | None = None,
+    doc_text_overrides: dict[str, str] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
         "topic": topic,
         "interests": _serialize_interests(interests),
         "methods": _serialize_methods(methods),
-        "documents": _serialize_documents(documents, keywords),
+        "documents": _serialize_documents(documents, keywords, doc_text_overrides=doc_text_overrides),
         "instructions": {
             "output_json_schema": {
                 "scope": ["string"],
@@ -145,6 +152,7 @@ def refine_prompt(
     documents: list[Document],
     keywords: list[str],
     extracted_interests: list[str] | None = None,
+    doc_text_overrides: dict[str, str] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
@@ -152,7 +160,7 @@ def refine_prompt(
         "prior_plan": prior_plan,
         "interests": _serialize_interests(interests),
         "methods": _serialize_methods(methods),
-        "documents": _serialize_documents(documents, keywords),
+        "documents": _serialize_documents(documents, keywords, doc_text_overrides=doc_text_overrides),
         "instructions": {
             "output_json_schema": {
                 "scope": ["string"],
@@ -200,6 +208,7 @@ def outline_prompt(
     methods: list[Method],
     documents: list[Document],
     keywords: list[str],
+    doc_text_overrides: dict[str, str] | None = None,
     length_hint: str | None = None,
     language_hint: str | None = None,
     skill_guidance: list[str] | None = None,
@@ -208,7 +217,7 @@ def outline_prompt(
         "topic": topic,
         "interests": _serialize_interests(interests),
         "methods": _serialize_methods(methods),
-        "documents": _serialize_documents(documents, keywords),
+        "documents": _serialize_documents(documents, keywords, doc_text_overrides=doc_text_overrides),
         "keywords": keywords,
         "instructions": {
             "output_json_schema": {
