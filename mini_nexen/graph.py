@@ -202,7 +202,7 @@ class GraphManager:
             )
         return None
 
-    def search_documents(self, query: str, top_k: int) -> list[db.Document]:
+    def search_documents(self, query: str, top_k: int, top_clusters: int = 3) -> list[db.Document]:
         if not query.strip():
             return []
         clusters = self._load_clusters()
@@ -220,7 +220,8 @@ class GraphManager:
             sim = cosine_similarity(query_vec, centroid)
             scored_clusters.append((sim, cluster_id))
         scored_clusters.sort(key=lambda item: item[0], reverse=True)
-        top_clusters = [cid for sim, cid in scored_clusters[:3] if sim >= 0.2]
+        top_limit = max(1, int(top_clusters)) if top_clusters else 3
+        top_clusters = [cid for sim, cid in scored_clusters[:top_limit] if sim >= 0.2]
         if not top_clusters:
             return []
         doc_scores: dict[str, float] = {}
@@ -245,6 +246,26 @@ class GraphManager:
         ordered = sorted(doc_scores.items(), key=lambda item: item[1], reverse=True)
         doc_ids = [doc_id for doc_id, _ in ordered[:top_k]]
         return db.get_documents_by_ids(doc_ids)
+
+    def score_clusters(self, query: str) -> list[tuple[float, str, str]]:
+        if not query.strip():
+            return []
+        clusters = self._load_clusters_with_ids()
+        if not clusters:
+            return []
+        client = self._client()
+        if not client:
+            return []
+        query_vecs = client.embed_texts([query])
+        if len(query_vecs) != 1:
+            return []
+        query_vec = normalize(query_vecs[0])
+        scored: list[tuple[float, str, str]] = []
+        for cluster_id, label, centroid in clusters:
+            sim = cosine_similarity(query_vec, centroid)
+            scored.append((sim, cluster_id, label))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return scored
 
     def suggest_interests(self, query: str, limit: int = 3) -> list[str]:
         if not query.strip():

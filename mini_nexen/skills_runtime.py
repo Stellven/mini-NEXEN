@@ -12,6 +12,7 @@ from .config import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_ROUNDS,
     DEFAULT_TOP_K,
+    GRAPH_TOP_CLUSTERS,
     GRAPH_ASSIGN_SIMILARITY_MIN,
     GRAPH_AVG_SIMILARITY_THRESHOLD,
     GRAPH_NOISE_RATIO_THRESHOLD,
@@ -51,6 +52,7 @@ class SkillSpec:
 class SkillContext:
     topic: str
     top_k: int = DEFAULT_TOP_K
+    min_web_docs: int = 0
     max_rounds: int = DEFAULT_ROUNDS
     round_number: int = 1
     interests: list[db.Interest] = field(default_factory=list)
@@ -89,6 +91,7 @@ class SkillContext:
     graph_avg_similarity_threshold: float = GRAPH_AVG_SIMILARITY_THRESHOLD
     graph_unassigned_ratio_threshold: float = GRAPH_UNASSIGNED_RATIO_THRESHOLD
     graph_assign_similarity_min: float = GRAPH_ASSIGN_SIMILARITY_MIN
+    graph_top_clusters: int = GRAPH_TOP_CLUSTERS
     graph_semantic_labels: bool = True
     llm: Optional[LLMClient] = None
 
@@ -261,6 +264,7 @@ def _rewrite_gap_queries_with_llm(ctx: SkillContext, gaps: list[str]) -> list[st
         "instructions": (
             "Rewrite each gap into 2-3 short search queries. "
             "Queries should be 2-6 words, no negations, and focused on key entities/relationships. "
+            "Queries must be in English; translate if needed. "
             "Return JSON only as a flat list of strings."
         ),
     }
@@ -371,6 +375,57 @@ def _score_web_results(
             scored.append((score, results[idx]))
     return scored
 
+
+def _ensure_min_web_docs(
+    selected: list[db.Document],
+    docs: list[db.Document],
+    query_tokens: list[str],
+    min_web_docs: int,
+    target_k: int,
+) -> list[db.Document]:
+    if min_web_docs <= 0:
+        return selected
+    web_available = [doc for doc in docs if doc.source_type == "web"]
+    if not web_available:
+        return selected
+    selected_ids = {doc.doc_id for doc in selected}
+    selected_web = [doc for doc in selected if doc.source_type == "web"]
+    if len(selected_web) >= min_web_docs:
+        return selected
+
+    doc_texts = []
+    for doc in docs:
+        text = db.load_document_text(doc)
+        doc_texts.append((doc.doc_id, f"{doc.title}\n{text}"))
+    scores = score_documents(query_tokens, doc_texts)
+    scores.sort(key=lambda item: item[1], reverse=True)
+    score_map = {docs[idx].doc_id: score for idx, score in scores}
+    candidates = [
+        docs[idx]
+        for idx, score in scores
+        if score > 0 and docs[idx].source_type == "web" and docs[idx].doc_id not in selected_ids
+    ]
+
+    for candidate in candidates:
+        if len(selected_web) >= min_web_docs:
+            break
+        if len(selected) < target_k:
+            selected.append(candidate)
+            selected_ids.add(candidate.doc_id)
+            selected_web.append(candidate)
+            continue
+        non_web = [doc for doc in selected if doc.source_type != "web"]
+        if not non_web:
+            break
+        non_web.sort(key=lambda doc: score_map.get(doc.doc_id, 0.0))
+        to_remove = non_web[0]
+        selected.remove(to_remove)
+        selected.append(candidate)
+        selected_ids.add(candidate.doc_id)
+        selected_web.append(candidate)
+
+    return selected
+
 def skill_collect_interests(ctx: SkillContext) -> SkillContext:
     ensure_dirs()
     db.init_db()
@@ -398,6 +453,7 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
             query_parts.append(interest.topic)
     query_parts.extend(ctx.query_hints)
     query = " ".join(part for part in query_parts if part).strip()
+    query_tokens = tokenize(query)
 
     graph = GraphManager(
         embed_config=_build_embedding_config(ctx),
@@ -444,13 +500,45 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
         log_task_event(
             f"Topic mapped to cluster: label='{label}' similarity={sim:.2f}"
         )
-    graph_docs = graph.search_documents(query, ctx.top_k)
-    if graph_docs:
-        ctx.documents = graph_docs
-        db.mark_documents_used([doc.doc_id for doc in graph_docs])
-        return ctx
 
-    query_tokens = tokenize(query)
+    cluster_scores = graph.score_clusters(query)
+    if cluster_scores:
+        top_limit = max(1, int(ctx.graph_top_clusters)) if ctx.graph_top_clusters else 3
+        selected_ids = [
+            cid for sim, cid, _ in cluster_scores[:top_limit] if sim >= 0.2
+        ]
+        selected = [item for item in cluster_scores if item[1] in selected_ids]
+        remaining = [item for item in cluster_scores if item[1] not in selected_ids]
+        ordered = selected + remaining
+        lines = [
+            f"Cluster scores (query='{query}' total={len(cluster_scores)} selected={len(selected_ids)}):"
+        ]
+        for sim, cid, label in ordered:
+            marker = "*"
+            note = " [selected]" if cid in selected_ids else ""
+            if cid not in selected_ids:
+                marker = " "
+            label_text = label or "Unlabeled"
+            lines.append(f"{marker} {sim:.2f} | {label_text} | {cid[:8]}{note}")
+        log_task_event_quiet("\n".join(lines))
+    graph_docs = graph.search_documents(query, ctx.top_k, top_clusters=ctx.graph_top_clusters)
+    if graph_docs:
+        selected = _ensure_min_web_docs(
+            graph_docs,
+            docs,
+            query_tokens,
+            ctx.min_web_docs,
+            ctx.top_k,
+        )
+        ctx.documents = selected
+        db.mark_documents_used([doc.doc_id for doc in selected])
+        log_task_event(
+            "Retrieved docs: "
+            f"total={len(selected)} "
+            f"web={sum(1 for doc in selected if doc.source_type == 'web')} "
+            f"file={sum(1 for doc in selected if doc.source_type == 'file')}"
+        )
+        return ctx
     doc_texts = []
     for doc in docs:
         text = db.load_document_text(doc)
@@ -464,8 +552,21 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
         if score <= 0:
             continue
         selected.append(docs[idx])
+    selected = _ensure_min_web_docs(
+        selected,
+        docs,
+        query_tokens,
+        ctx.min_web_docs,
+        ctx.top_k,
+    )
     ctx.documents = selected
     db.mark_documents_used([doc.doc_id for doc in selected])
+    log_task_event(
+        "Retrieved docs: "
+        f"total={len(selected)} "
+        f"web={sum(1 for doc in selected if doc.source_type == 'web')} "
+        f"file={sum(1 for doc in selected if doc.source_type == 'file')}"
+    )
     return ctx
 
 

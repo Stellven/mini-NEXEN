@@ -7,7 +7,7 @@ from . import db
 import os
 import sys
 
-from .config import DEFAULT_ROUNDS, DEFAULT_TOP_K, ensure_dirs
+from .config import DEFAULT_MIN_WEB_DOCS, DEFAULT_ROUNDS, DEFAULT_TOP_K, GRAPH_TOP_CLUSTERS, ensure_dirs
 from .file_ingest import load_text_from_file
 from .llm import LLMClientError, load_llm_config, log_task_event, set_log_echo
 from .web_retrieval import RetrievalRateLimitError
@@ -233,6 +233,7 @@ def _research(args: argparse.Namespace) -> None:
             topic=args.topic,
             rounds=args.rounds,
             top_k=args.top_k,
+            min_web_docs=args.min_web_docs,
             provider=provider,
             model=model,
             base_url=args.base_url,
@@ -258,6 +259,7 @@ def _research(args: argparse.Namespace) -> None:
             ingest_seeds=args.ingest_seeds,
             auto_interest=args.auto_interest,
             graph_semantic_labels=not args.no_graph_semantic_labels or args.graph_semantic_labels,
+            graph_top_clusters=args.graph_top_clusters,
         )
         print(f"Saved plan: {result.plan_path}")
         # print(result.plan_markdown)
@@ -577,6 +579,12 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument("--topic", required=True)
     research.add_argument("--rounds", type=int, default=DEFAULT_ROUNDS)
     research.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
+    research.add_argument(
+        "--min-web-docs",
+        type=int,
+        default=DEFAULT_MIN_WEB_DOCS,
+        help="Minimum web documents to include in planning (default: 4)",
+    )
     research.add_argument("--provider", choices=["gemini", "lmstudio"], help="LLM provider")
     research.add_argument("--model", help="Model name (provider-specific)")
     research.add_argument("--base-url", help="Override base URL (LM Studio only)")
@@ -599,6 +607,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-graph-semantic-labels",
         action="store_true",
         help="Disable LLM cluster labels",
+    )
+    research.add_argument(
+        "--graph-top-clusters",
+        type=int,
+        default=GRAPH_TOP_CLUSTERS,
+        help="Number of top clusters to use for retrieval (default: 3)",
     )
     research.add_argument("--web-max-results", type=int, default=5, help="Max results per source")
     research.add_argument("--web-timeout", type=int, default=15, help="Web fetch timeout (seconds)")

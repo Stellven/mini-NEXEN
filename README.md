@@ -101,7 +101,9 @@ LM Studio setup checklist:
 - `--web-max-new`: Max new sources per run (default: 50).
 - `--web-max-per-query`: Cap results per query seed (default: 10).
 - `--web-relevance-threshold`: Filter low-relevance results when reranking (default: 0.25).
-- `--top-k`: Max local documents pulled into planning (default: 8).
+- `--top-k`: Max local documents pulled into planning (default: 20).
+- `--min-web-docs`: Minimum web documents to include in planning (default: 4).
+- `--graph-top-clusters`: Number of top clusters to use for retrieval (default: 3).
 - `--no-graph-semantic-labels`: Disable LLM-based cluster labels.
 
 **Planning**

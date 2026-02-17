@@ -8,6 +8,7 @@ from . import db
 from .agents import Orchestrator
 from .config import (
     PLANS_DIR,
+    GRAPH_TOP_CLUSTERS,
     WEB_ARCHIVE_RUNS_UNUSED,
     WEB_ARCHIVE_SCORE_THRESHOLD,
     WEB_DECAY_PER_RUN,
@@ -34,6 +35,7 @@ def run_research(
     topic: str,
     rounds: int,
     top_k: int,
+    min_web_docs: int = 0,
     provider: str | None = None,
     model: str | None = None,
     base_url: str | None = None,
@@ -59,6 +61,7 @@ def run_research(
     ingest_seeds: bool = False,
     auto_interest: bool = False,
     graph_semantic_labels: bool = True,
+    graph_top_clusters: int = GRAPH_TOP_CLUSTERS,
 ) -> ResearchResult:
     ensure_dirs()
     db.init_db()
@@ -97,6 +100,7 @@ def run_research(
         topic=topic,
         max_rounds=rounds,
         top_k=top_k,
+        min_web_docs=min_web_docs,
         run_id=run_id,
         llm=llm_client,
         web_enabled=web_enabled,
@@ -116,6 +120,7 @@ def run_research(
         web_max_per_query=web_max_per_query,
         web_relevance_threshold=web_relevance_threshold,
         graph_semantic_labels=graph_semantic_labels,
+        graph_top_clusters=graph_top_clusters,
     )
     ctx = supervisor.run(ctx)
 

@@ -14,6 +14,43 @@ from .llm import LLMClient, LLMClientError, log_task_event
 from .llm_prompts import SYSTEM_OUTLINE_PROMPT, SYSTEM_PLAN_PROMPT, outline_prompt, plan_prompt, refine_prompt
 from .text_utils import top_sentences, tokenize
 
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_CJK_WORD_RE = re.compile(r"[\u4e00-\u9fff]+")
+
+_JSON_KEY_MAP = {
+    "scope": "scope",
+    "key_questions": "key_questions",
+    "key questions": "key_questions",
+    "key-questions": "key_questions",
+    "questions": "key_questions",
+    "keywords": "keywords",
+    "gaps": "gaps",
+    "gap": "gaps",
+    "notes": "notes",
+    "readiness": "readiness",
+    "retrieval_queries": "retrieval_queries",
+    "retrieval queries": "retrieval_queries",
+    "retrieval query": "retrieval_queries",
+    "范围": "scope",
+    "关键问题": "key_questions",
+    "关键词": "keywords",
+    "缺口": "gaps",
+    "差距": "gaps",
+    "缺口与检索需求": "gaps",
+    "差距与检索需求": "gaps",
+    "备注": "notes",
+    "就绪度": "readiness",
+    "准备度": "readiness",
+    "准备状态": "readiness",
+    "检索查询": "retrieval_queries",
+    "检索查询语句": "retrieval_queries",
+    "检索关键词": "retrieval_queries",
+}
+
+OUTLINE_MIN_WORDS = 1000
+OUTLINE_MAX_WORDS = 2000
+OUTLINE_MIN_CJK_RATIO = 0.4
+
 
 @dataclass
 class SourceBrief:
@@ -257,16 +294,18 @@ def _summarize_theme_bullets(
             "You summarize recurring themes based on the evidence provided. "
             "Use ONLY the evidence provided. Do NOT quote text; paraphrase. "
             "Avoid words like 'user', 'interest', or 'focus'. "
-            "Return JSON only: {\"themes\":[{\"theme\":\"...\",\"bullets\":[...]}]}."
+            "Write all natural-language content in Chinese. "
+            "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English. "
+            "Return JSON only: "
+            "{\"themes\":[{\"theme\":\"...\",\"bullets\":[{\"bullet\":\"...\",\"sources\":[\"title1\",\"title2\"]}]}]}."
         ),
         "requirements": [
             f"Provide 2-{max_bullets} bullets per theme.",
             "Bullets must be full-sentence reasoning, not keyword lists.",
-            "Bullets must be plain strings; do not return objects.",
             "Highlight recurring patterns, commonalities, and contradictions when present.",
             "Explicitly connect the evidence to the theme label.",
-            "Sources are optional; include zero, one, or multiple titles only if it improves clarity.",
-            "If listing sources, format as: Sources: title1; title2",
+            "Each bullet must be an object with fields: bullet (string) and sources (array of document titles).",
+            "Sources may be empty, but include 1-2 titles when they improve traceability.",
         ],
         "themes": payload,
     }
@@ -416,28 +455,35 @@ def is_ready(plan: PlanDraft, min_sources: int = 3) -> tuple[bool, list[str]]:
 def _extract_json(text: str) -> dict:
     if not text:
         return {}
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        return {}
-    try:
-        return json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return {}
+    for replace_quotes in (False, True):
+        normalized = _normalize_json_text(text, replace_quotes=replace_quotes)
+        start = normalized.find("{")
+        end = normalized.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            continue
+        try:
+            payload = json.loads(normalized[start : end + 1])
+            return _normalize_payload_keys(payload)
+        except json.JSONDecodeError:
+            continue
+    return {}
 
 
 def _extract_json_list(text: str) -> list[object]:
     if not text:
         return []
-    start = text.find("[")
-    end = text.rfind("]")
-    if start == -1 or end == -1 or end <= start:
-        return []
-    try:
-        payload = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return []
-    return payload if isinstance(payload, list) else []
+    for replace_quotes in (False, True):
+        normalized = _normalize_json_text(text, replace_quotes=replace_quotes)
+        start = normalized.find("[")
+        end = normalized.rfind("]")
+        if start == -1 or end == -1 or end <= start:
+            continue
+        try:
+            payload = json.loads(normalized[start : end + 1])
+        except json.JSONDecodeError:
+            continue
+        return payload if isinstance(payload, list) else []
+    return []
 
 
 def _outline_from_text(text: str, limit: int = 50) -> list[str]:
@@ -475,31 +521,54 @@ def _parse_plan_from_text(text: str) -> dict[str, list[str]]:
         line = raw.strip()
         if not line:
             continue
-        lower = line.casefold().strip(":")
+        lower = line.casefold().strip(":：")
         if lower.startswith("#"):
-            lower = lower.lstrip("#").strip().strip(":")
+            lower = lower.lstrip("#").strip().strip(":：")
         if lower in {"scope"}:
+            current = "scope"
+            continue
+        if lower in {"范围"}:
             current = "scope"
             continue
         if lower in {"key questions", "questions", "key_question", "key_questions"}:
             current = "key_questions"
             continue
+        if lower in {"关键问题"}:
+            current = "key_questions"
+            continue
         if lower.startswith("keywords"):
             current = "keywords"
             # allow inline keywords after colon
-            if ":" in line:
-                inline = line.split(":", 1)[1].strip()
+            if ":" in line or "：" in line:
+                inline = line.split(":", 1)[1].strip() if ":" in line else line.split("：", 1)[1].strip()
                 if inline:
                     parts = [p.strip() for p in re.split(r"[;,]", inline) if p.strip()]
+                    sections["keywords"].extend(parts)
+            continue
+        if lower.startswith("关键词"):
+            current = "keywords"
+            if ":" in line or "：" in line:
+                inline = line.split(":", 1)[1].strip() if ":" in line else line.split("：", 1)[1].strip()
+                if inline:
+                    parts = [p.strip() for p in re.split(r"[;,，]", inline) if p.strip()]
                     sections["keywords"].extend(parts)
             continue
         if lower.startswith("gaps"):
             current = "gaps"
             continue
+        if lower.startswith("缺口") or lower.startswith("差距"):
+            current = "gaps"
+            continue
         if lower.startswith("notes"):
             current = "notes"
             continue
+        if lower.startswith("备注"):
+            current = "notes"
+            continue
         if lower.startswith("retrieval queries") or lower.startswith("retrieval_queries"):
+            current = "retrieval_queries"
+            continue
+        if lower.startswith("检索查询") or lower.startswith("检索关键词"):
             current = "retrieval_queries"
             continue
 
@@ -531,6 +600,60 @@ def _truncate_text(text: str, limit: int = 2000) -> str:
 def _log_llm_failure(agent: str, stage: str, response: str) -> None:
     snippet = _truncate_text(response).replace("\r", "\\r").replace("\n", "\\n")
     log_task_event(f"{agent} | LLM {stage} raw response (truncated): {snippet}")
+
+
+def _normalize_json_text(text: str, replace_quotes: bool = False) -> str:
+    if not text:
+        return ""
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1)
+    replacements = {
+        "：": ":",
+        "，": ",",
+        "、": ",",
+        "；": ";",
+        "（": "(",
+        "）": ")",
+        "【": "[",
+        "】": "]",
+        "｛": "{",
+        "｝": "}",
+        "\u3000": " ",
+    }
+    if replace_quotes:
+        replacements.update(
+            {
+                "“": "\"",
+                "”": "\"",
+                "‘": "\"",
+                "’": "\"",
+            }
+        )
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    return text
+
+
+def _normalize_payload_keys(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        return {}
+    normalized: dict[str, object] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str):
+            continue
+        key_clean = key.strip()
+        key_fold = key_clean.casefold().replace("-", " ").replace("_", " ").strip()
+        mapped = _JSON_KEY_MAP.get(key_clean)
+        if not mapped:
+            mapped = _JSON_KEY_MAP.get(key_fold)
+        if not mapped:
+            mapped = _JSON_KEY_MAP.get(key_fold.replace(" ", " "))
+        if not mapped:
+            mapped = key_clean
+        normalized[mapped] = value
+    return normalized
 
 
 def _clean_list(value: object) -> list[str]:
@@ -577,11 +700,22 @@ def _normalize_outline(outline: list[object]) -> list[str]:
 
 def _count_words(text: str) -> int:
     tokens = tokenize(text)
-    return len([token for token in tokens if token])
+    english_tokens = len([token for token in tokens if token])
+    # Approximate CJK word count by contiguous CJK sequences.
+    cjk_words = len(_CJK_WORD_RE.findall(text or ""))
+    return english_tokens + cjk_words
 
 
 def outline_word_count(outline: list[str]) -> int:
     return _count_words(" ".join(outline))
+
+
+def outline_cjk_ratio(outline: list[str]) -> float:
+    text = " ".join(outline)
+    cjk_tokens = len(_CJK_RE.findall(text))
+    english_tokens = len([token for token in tokenize(text) if token])
+    total = cjk_tokens + english_tokens
+    return cjk_tokens / total if total else 0.0
 
 
 def _apply_llm_fields(plan: PlanDraft, payload: dict) -> PlanDraft:
@@ -752,25 +886,302 @@ def llm_build_outline(
     keywords: list[str],
     skill_guidance: list[str] | None = None,
 ) -> list[str]:
+    def _parse_outline_response(response: str, attempt: int, task: str) -> list[str] | None:
+        payload = _extract_json(response)
+        outline = payload.get("outline")
+        cleaned: list[str] = []
+        if isinstance(outline, list):
+            cleaned = _normalize_outline(outline)
+        if not cleaned:
+            list_payload = _extract_json_list(response)
+            if list_payload:
+                cleaned = _normalize_outline(list_payload)
+                if cleaned:
+                    log_task_event(f"Outliner: recovered outline from JSON list fallback ({task}).")
+        if not cleaned:
+            fallback = _outline_from_text(response)
+            if fallback:
+                log_task_event(f"Outliner: recovered outline from text fallback ({task}).")
+                cleaned = fallback
+        if not cleaned:
+            _log_llm_failure("Outliner", f"{task} attempt {attempt}", response)
+            return None
+        return cleaned
+
+    def _translate_outline_to_chinese(items: list[str]) -> list[str]:
+        prompt = {
+            "outline": items,
+            "instructions": [
+                "Translate all items to Chinese.",
+                "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
+                "Return JSON only as {\"outline\": [...]} with the same structure depth.",
+            ],
+        }
+        response = llm.generate(
+            system_prompt="You translate research plan outlines to Chinese. Return JSON only.",
+            user_prompt=json.dumps(prompt, indent=2),
+            task="outline translate",
+            agent="Outliner",
+        )
+        payload = _extract_json(response)
+        outline = payload.get("outline")
+        if isinstance(outline, list):
+            cleaned = _normalize_outline(outline)
+            if cleaned:
+                return cleaned
+        list_payload = _extract_json_list(response)
+        if list_payload:
+            cleaned = _normalize_outline(list_payload)
+            if cleaned:
+                return cleaned
+        return []
+    def _attempt(prompt_text: str, attempt: int) -> tuple[list[str], int, float] | None:
+        response = llm.generate(SYSTEM_OUTLINE_PROMPT, prompt_text, task="outline", agent="Outliner")
+        cleaned = _parse_outline_response(response, attempt, "outline")
+        if not cleaned:
+            return None
+        count = outline_word_count(cleaned)
+        ratio = outline_cjk_ratio(cleaned)
+        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and ratio >= OUTLINE_MIN_CJK_RATIO:
+            return cleaned, count, ratio
+        log_task_event(
+            "Outliner: outline length out of range "
+            f"(attempt={attempt} words={count} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS})"
+        )
+        if ratio < OUTLINE_MIN_CJK_RATIO:
+            log_task_event(
+                "Outliner: outline language ratio too low "
+                f"(attempt={attempt} cjk_ratio={ratio:.2f} min={OUTLINE_MIN_CJK_RATIO:.2f})"
+            )
+        return cleaned, count, ratio
+    def _revision_prompt(
+        previous_outline: list[str],
+        length_hint: str,
+        language_hint: str | None,
+    ) -> str:
+        payload = {
+            "previous_outline": previous_outline,
+            "instructions": {
+                "output_json_schema": {
+                    "outline": ["string"]
+                },
+                "requirements": [
+                    f"Length must be {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words in the output language.",
+                    "Keep 8-12 major steps.",
+                    "Each major step must include 3-5 substeps.",
+                    "Each substep should be 2-3 sentences.",
+                    "Preserve the original topic coverage and structure; rewrite to fit length.",
+                ],
+                "language_guidance": [
+                    "Write natural-language content in Chinese.",
+                    "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
+                ],
+            },
+            "length_hint": length_hint,
+        }
+        if language_hint:
+            payload["language_hint"] = language_hint
+        return json.dumps(payload, indent=2)
+
+    def _expand_prompt(
+        previous_outline: list[str],
+        length_hint: str,
+        language_hint: str | None,
+    ) -> str:
+        payload = {
+            "previous_outline": previous_outline,
+            "instructions": {
+                "output_json_schema": {
+                    "outline": ["string"]
+                },
+                "requirements": [
+                    f"Length must be at least {OUTLINE_MIN_WORDS} words in the output language.",
+                    "Keep 8-12 major steps.",
+                    "Each major step must include 3-5 substeps.",
+                    "Each substep should be 2-3 sentences.",
+                    "Do not remove content; only expand with additional detail and substeps.",
+                ],
+                "language_guidance": [
+                    "Write natural-language content in Chinese.",
+                    "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
+                ],
+            },
+            "length_hint": length_hint,
+        }
+        if language_hint:
+            payload["language_hint"] = language_hint
+        return json.dumps(payload, indent=2)
+
+    def _attempt_revision(
+        previous_outline: list[str],
+        previous_count: int,
+        previous_ratio: float,
+        attempt: int,
+    ) -> tuple[list[str], int, float] | None:
+        length_hint = (
+            f"Your previous outline length was {previous_count} words. "
+            f"Adjust to {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words. "
+            "You MUST be within range."
+        )
+        language_hint = None
+        if previous_ratio < OUTLINE_MIN_CJK_RATIO:
+            language_hint = (
+                "Your previous outline was not sufficiently Chinese. "
+                "Translate all step titles and substeps to Chinese; keep English only for paper titles, "
+                "datasets, benchmarks, model names, APIs, and acronyms."
+            )
+        prompt_text = _revision_prompt(previous_outline, length_hint, language_hint)
+        response = llm.generate(
+            system_prompt="You revise research plan outlines to meet strict length constraints. Return JSON only.",
+            user_prompt=prompt_text,
+            task="outline revision",
+            agent="Outliner",
+        )
+        cleaned = _parse_outline_response(response, attempt, "outline revision")
+        if not cleaned:
+            return None
+        count = outline_word_count(cleaned)
+        ratio = outline_cjk_ratio(cleaned)
+        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and ratio >= OUTLINE_MIN_CJK_RATIO:
+            return cleaned, count, ratio
+        log_task_event(
+            "Outliner: outline length still out of range after revision "
+            f"(attempt={attempt} words={count} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS})"
+        )
+        if ratio < OUTLINE_MIN_CJK_RATIO:
+            log_task_event(
+                "Outliner: outline language ratio too low after revision "
+                f"(attempt={attempt} cjk_ratio={ratio:.2f} min={OUTLINE_MIN_CJK_RATIO:.2f})"
+            )
+        return cleaned, count, ratio
+
+    def _attempt_expand(
+        previous_outline: list[str],
+        previous_count: int,
+        previous_ratio: float,
+        attempt: int,
+    ) -> tuple[list[str], int, float] | None:
+        length_hint = (
+            f"Your previous outline length was {previous_count} words. "
+            f"Expand to at least {OUTLINE_MIN_WORDS} words without changing the major steps. "
+            "Add more substeps and elaboration (2-3 sentences per substep)."
+        )
+        language_hint = None
+        if previous_ratio < OUTLINE_MIN_CJK_RATIO:
+            language_hint = (
+                "Your previous outline was not sufficiently Chinese. "
+                "Translate all step titles and substeps to Chinese; keep English only for paper titles, "
+                "datasets, benchmarks, model names, APIs, and acronyms."
+            )
+        prompt_text = _expand_prompt(previous_outline, length_hint, language_hint)
+        response = llm.generate(
+            system_prompt="You expand research plan outlines to meet strict minimum length. Return JSON only.",
+            user_prompt=prompt_text,
+            task="outline expansion",
+            agent="Outliner",
+        )
+        cleaned = _parse_outline_response(response, attempt, "outline expansion")
+        if not cleaned:
+            return None
+        count = outline_word_count(cleaned)
+        ratio = outline_cjk_ratio(cleaned)
+        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and ratio >= OUTLINE_MIN_CJK_RATIO:
+            return cleaned, count, ratio
+        log_task_event(
+            "Outliner: outline length still out of range after expansion "
+            f"(attempt={attempt} words={count} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS})"
+        )
+        if ratio < OUTLINE_MIN_CJK_RATIO:
+            log_task_event(
+                "Outliner: outline language ratio too low after expansion "
+                f"(attempt={attempt} cjk_ratio={ratio:.2f} min={OUTLINE_MIN_CJK_RATIO:.2f})"
+            )
+        return cleaned, count, ratio
+
     prompt = outline_prompt(topic, interests, methods, documents, keywords, skill_guidance=skill_guidance)
-    response = llm.generate(SYSTEM_OUTLINE_PROMPT, prompt, task="outline", agent="Outliner")
-    payload = _extract_json(response)
-    outline = payload.get("outline")
-    if isinstance(outline, list):
-        cleaned = _normalize_outline(outline)
-        if cleaned:
-            return cleaned
-    list_payload = _extract_json_list(response)
-    if list_payload:
-        cleaned = _normalize_outline(list_payload)
-        if cleaned:
-            log_task_event("Outliner: recovered outline from JSON list fallback.")
-            return cleaned
-    fallback = _outline_from_text(response)
-    if fallback:
-        log_task_event("Outliner: recovered outline from text fallback.")
-        return fallback
-    _log_llm_failure("Outliner", "outline", response)
+    result = _attempt(prompt, 1)
+    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS and result[2] >= OUTLINE_MIN_CJK_RATIO:
+        return result[0]
+
+    previous_count = result[1] if result else 0
+    previous_ratio = result[2] if result else 0.0
+    length_hint = (
+        f"Your previous outline length was {previous_count} words. "
+        f"Expand or compress to {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words. "
+        "Add more detailed substeps (2-3 sentences each) to reach the target."
+    )
+    language_hint = (
+        "Your previous outline was not sufficiently Chinese. "
+        "Translate all step titles and substeps to Chinese; keep English only for paper titles, datasets, "
+        "benchmarks, model names, APIs, and acronyms."
+    )
+    retry_prompt = outline_prompt(
+        topic,
+        interests,
+        methods,
+        documents,
+        keywords,
+        length_hint=length_hint,
+        language_hint=language_hint if previous_ratio < OUTLINE_MIN_CJK_RATIO else None,
+        skill_guidance=skill_guidance,
+    )
+    result = _attempt(retry_prompt, 2)
+    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS and result[2] >= OUTLINE_MIN_CJK_RATIO:
+        return result[0]
+
+    previous_count = result[1] if result else previous_count
+    previous_ratio = result[2] if result else previous_ratio
+    length_hint = (
+        f"Length still out of range ({previous_count} words). "
+        f"Target {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words. "
+        "Increase detail by expanding each major step with additional substeps."
+    )
+    final_prompt = outline_prompt(
+        topic,
+        interests,
+        methods,
+        documents,
+        keywords,
+        length_hint=length_hint,
+        language_hint=language_hint if previous_ratio < OUTLINE_MIN_CJK_RATIO else None,
+        skill_guidance=skill_guidance,
+    )
+    result = _attempt(final_prompt, 3)
+    if result and result[2] >= OUTLINE_MIN_CJK_RATIO:
+        if OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS:
+            return result[0]
+
+    if result and result[1] < OUTLINE_MIN_WORDS:
+        expanded = _attempt_expand(result[0], result[1], result[2], 4)
+        if expanded and OUTLINE_MIN_WORDS <= expanded[1] <= OUTLINE_MAX_WORDS and expanded[2] >= OUTLINE_MIN_CJK_RATIO:
+            return expanded[0]
+        if expanded:
+            result = expanded
+            if result[1] < OUTLINE_MIN_WORDS:
+                expanded = _attempt_expand(result[0], result[1], result[2], 5)
+                if expanded and OUTLINE_MIN_WORDS <= expanded[1] <= OUTLINE_MAX_WORDS and expanded[2] >= OUTLINE_MIN_CJK_RATIO:
+                    return expanded[0]
+                if expanded:
+                    result = expanded
+
+    if result:
+        enforced = _attempt_revision(result[0], result[1], result[2], 6)
+        if enforced and OUTLINE_MIN_WORDS <= enforced[1] <= OUTLINE_MAX_WORDS and enforced[2] >= OUTLINE_MIN_CJK_RATIO:
+            return enforced[0]
+
+        translated = _translate_outline_to_chinese(result[0])
+        if translated:
+            translated_count = outline_word_count(translated)
+            translated_ratio = outline_cjk_ratio(translated)
+            if OUTLINE_MIN_WORDS <= translated_count <= OUTLINE_MAX_WORDS and translated_ratio >= OUTLINE_MIN_CJK_RATIO:
+                return translated
+
+        log_task_event(
+            "Outliner: returning best-effort outline despite length constraint failure. "
+            f"Last count={result[1]} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS}."
+        )
+        return result[0]
+
     raise LLMClientError("LLM returned invalid JSON for outline.")
 
 
@@ -806,10 +1217,31 @@ def render_plan_md(
     lines.append("- " + ", ".join(plan.keywords))
 
     lines.append("")
-    lines.append("## Source Types in Library")
+    lines.append("## Source Types in Selected Docs")
     if plan.source_types:
         for item in plan.source_types:
             lines.append(f"- {item}")
+    else:
+        lines.append("- None")
+
+    lines.append("")
+    lines.append("## Source Types in Library")
+    db.init_db()
+    db._ensure_document_stats()
+    with db._connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT d.source_type, COUNT(*) AS count
+            FROM documents d
+            JOIN document_stats s ON d.doc_id = s.doc_id
+            WHERE s.archived = 0
+            GROUP BY d.source_type
+            ORDER BY d.source_type
+            """
+        ).fetchall()
+    if rows:
+        for row in rows:
+            lines.append(f"- {row['source_type']}: {row['count']}")
     else:
         lines.append("- None")
 

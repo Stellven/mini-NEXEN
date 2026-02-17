@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .llm import log_task_event
 from .skills_runtime import SkillContext, SkillRunner
 
 
@@ -30,6 +31,7 @@ class Orchestrator:
         max_rounds = max(1, ctx.max_rounds)
         for idx in range(max_rounds):
             ctx.round_number = idx + 1
+            log_task_event(f"=== Round {ctx.round_number}/{max_rounds} ===")
             ctx = self.retriever.run(ctx, self.runner)
             ctx = self.planner.run(ctx, self.runner)
             if ctx.plan and ctx.plan.readiness == "ready":
