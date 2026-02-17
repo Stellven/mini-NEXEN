@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Iterable
 
-from .db import Document, Interest, load_document_text
+from .db import Document, Interest, Method, load_document_text
 from .text_utils import top_sentences
 
 SYSTEM_PLAN_PROMPT = """You are a research planning agent. Produce a plan that is concise, actionable, and focused on gaps.
@@ -12,12 +12,15 @@ Return ONE valid JSON object only. No markdown, no commentary, no extra text.
 Requirements:
 - Must include keys: scope, key_questions, keywords, gaps, notes, readiness
 - scope, key_questions, keywords MUST be non-empty arrays (>= 3 items each)
+- keywords must include core terms from the topic and interests; include extracted interests if provided
+- methods are analysis approaches; use them to frame the plan, not as the topic itself
 - gaps and notes may be empty arrays
+- retrieval_queries is optional; if provided, it must be a short list of search phrases
 - readiness must be one of: "draft", "refined", "ready"
 - Output must be strict JSON (double quotes, no trailing commas)
 
 Example:
-{"scope":["..."],"key_questions":["..."],"keywords":["..."],"gaps":["..."],"notes":["..."],"readiness":"draft"}
+{"scope":["..."],"key_questions":["..."],"keywords":["..."],"gaps":["..."],"notes":["..."],"readiness":"draft","retrieval_queries":["..."]}
 """
 
 SYSTEM_OUTLINE_PROMPT = """You are a research planning agent. Produce a research plan (not a report outline).
@@ -31,6 +34,8 @@ Requirements:
 - Do not write report section headings.
 - Total outline length must be 1000-2000 words across titles and substeps.
 - Output must be strict JSON (double quotes, no trailing commas)
+- Treat methods as analysis approaches to apply to the topic, not as the topic itself.
+- If methods are provided, the research plan MUST explicitly structure steps around those methods.
 
 Example:
 {"outline":[{"title":"Search for official technical reports and release blogs to extract architecture and training details.","substeps":["List official sources and release pages to target.","Extract training scale, data sources, and capability summaries.",{"text":"Capture deployment context and version history.","substeps":["Note release cadence and changelogs.","Record published caveats or limitations."]}]},{"title":"Compare context window sizes and long-context accuracy across models.","substeps":["Collect vendor claims and independent benchmarks.","Analyze long-context recall and retrieval performance.",{"text":"Identify failure cases.","substeps":["Summarize common error patterns.","Note mitigation strategies reported by practitioners."]}]}]}
@@ -40,10 +45,14 @@ Example:
 def _serialize_interests(interests: Iterable[Interest]) -> list[str]:
     serialized = []
     for interest in interests:
-        if interest.notes:
-            serialized.append(f"{interest.topic} ({interest.notes})")
-        else:
-            serialized.append(interest.topic)
+        serialized.append(interest.topic)
+    return serialized
+
+
+def _serialize_methods(methods: Iterable[Method]) -> list[str]:
+    serialized = []
+    for method in methods:
+        serialized.append(method.method)
     return serialized
 
 
@@ -51,7 +60,7 @@ def _serialize_documents(documents: Iterable[Document], keywords: Iterable[str])
     results = []
     for doc in documents:
         text = load_document_text(doc)
-        highlights = top_sentences(text, keywords, limit=3)
+        highlights = top_sentences(text, keywords, limit=10)
         results.append(
             {
                 "title": doc.title,
@@ -66,13 +75,16 @@ def _serialize_documents(documents: Iterable[Document], keywords: Iterable[str])
 def plan_prompt(
     topic: str,
     interests: list[Interest],
+    methods: list[Method],
     documents: list[Document],
     keywords: list[str],
+    extracted_interests: list[str] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
         "topic": topic,
         "interests": _serialize_interests(interests),
+        "methods": _serialize_methods(methods),
         "documents": _serialize_documents(documents, keywords),
         "instructions": {
             "output_json_schema": {
@@ -81,10 +93,29 @@ def plan_prompt(
                 "keywords": ["string"],
                 "gaps": ["string"],
                 "notes": ["string"],
+                "retrieval_queries": ["string"],
                 "readiness": "draft | refined | ready",
-            }
+            },
+            "keyword_guidance": [
+                "Include key terms from the topic.",
+                "Include salient terms from manually added interests.",
+                "If extracted_interests are provided, incorporate them.",
+                "Do not replace the topic with method names.",
+            ],
+            "retrieval_query_guidance": [
+                "If provided, use 2-6 word search phrases.",
+                "Avoid negations like 'no' or 'lack of'.",
+                "Focus on entities, relationships, and concrete nouns.",
+                "Keep to 2-8 total queries.",
+            ],
+            "method_guidance": [
+                "Methods are analysis approaches (lenses), not standalone topics.",
+                "Apply methods to the topic and evidence.",
+            ],
         },
     }
+    if extracted_interests:
+        payload["extracted_interests"] = extracted_interests
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
     return json.dumps(payload, indent=2)
@@ -94,14 +125,17 @@ def refine_prompt(
     topic: str,
     prior_plan: dict,
     interests: list[Interest],
+    methods: list[Method],
     documents: list[Document],
     keywords: list[str],
+    extracted_interests: list[str] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
         "topic": topic,
         "prior_plan": prior_plan,
         "interests": _serialize_interests(interests),
+        "methods": _serialize_methods(methods),
         "documents": _serialize_documents(documents, keywords),
         "instructions": {
             "output_json_schema": {
@@ -110,10 +144,29 @@ def refine_prompt(
                 "keywords": ["string"],
                 "gaps": ["string"],
                 "notes": ["string"],
+                "retrieval_queries": ["string"],
                 "readiness": "draft | refined | ready",
-            }
+            },
+            "keyword_guidance": [
+                "Include key terms from the topic.",
+                "Include salient terms from manually added interests.",
+                "If extracted_interests are provided, incorporate them.",
+                "Do not replace the topic with method names.",
+            ],
+            "retrieval_query_guidance": [
+                "If provided, use 2-6 word search phrases.",
+                "Avoid negations like 'no' or 'lack of'.",
+                "Focus on entities, relationships, and concrete nouns.",
+                "Keep to 2-8 total queries.",
+            ],
+            "method_guidance": [
+                "Methods are analysis approaches (lenses), not standalone topics.",
+                "Apply methods to the topic and evidence.",
+            ],
         },
     }
+    if extracted_interests:
+        payload["extracted_interests"] = extracted_interests
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
     return json.dumps(payload, indent=2)
@@ -122,6 +175,7 @@ def refine_prompt(
 def outline_prompt(
     topic: str,
     interests: list[Interest],
+    methods: list[Method],
     documents: list[Document],
     keywords: list[str],
     skill_guidance: list[str] | None = None,
@@ -129,6 +183,7 @@ def outline_prompt(
     payload = {
         "topic": topic,
         "interests": _serialize_interests(interests),
+        "methods": _serialize_methods(methods),
         "documents": _serialize_documents(documents, keywords),
         "keywords": keywords,
         "instructions": {
@@ -139,6 +194,11 @@ def outline_prompt(
                 "Include major sections and subtopics to expand later.",
                 "List source-backed bullets when available.",
                 "Emphasize gaps and future research directions.",
+            ],
+            "method_guidance": [
+                "Use methods as analytical lenses applied to the topic and evidence.",
+                "Do not treat methods as the topic itself.",
+                "If methods are provided, align major steps to the methods and name steps accordingly.",
             ],
         },
     }

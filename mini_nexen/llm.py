@@ -245,7 +245,7 @@ class LMStudioClient(LLMClient):
                         agent,
                         f"Model {self.config.model} retrying {task} (attempt {attempt}/3)."
                     )
-            response = self._requests.post(url, headers=headers, data=json.dumps(payload), timeout=600)
+            response = self._requests.post(url, headers=headers, data=json.dumps(payload), timeout=1200)
             if response.status_code == 429:
                 self._log(agent, f"Model {self.config.model} rate limit on {task}.")
                 if use_time_budget:

@@ -78,7 +78,7 @@ def run_research(
     )
 
     if auto_interest:
-        db.add_interest(topic=topic, notes="auto: research query")
+        db.add_interest(topic=topic, notes="")
 
     runner = build_default_runner()
     supervisor = Orchestrator(runner)

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from . import db
-from .db import Document, Interest, load_document_text
+from .db import Document, Interest, Method, load_document_text
 from .embeddings import EmbeddingClient, EmbeddingConfig, cosine_similarity, normalize
 from .llm import LLMClient, LLMClientError, log_task_event
 from .llm_prompts import SYSTEM_OUTLINE_PROMPT, SYSTEM_PLAN_PROMPT, outline_prompt, plan_prompt, refine_prompt
@@ -34,6 +34,7 @@ class PlanDraft:
     gaps: list[str]
     readiness: str
     notes: list[str]
+    retrieval_queries: list[str]
 
 
 def _now_iso() -> str:
@@ -44,10 +45,18 @@ def summarize_interests(interests: Iterable[Interest]) -> list[str]:
     summary = []
     seen = set()
     for interest in interests:
-        if interest.notes:
-            item = f"{interest.topic} ({interest.notes})"
-        else:
-            item = interest.topic
+        item = interest.topic
+        if item not in seen:
+            seen.add(item)
+            summary.append(item)
+    return summary
+
+
+def summarize_methods(methods: Iterable[Method]) -> list[str]:
+    summary = []
+    seen = set()
+    for method in methods:
+        item = method.method
         if item not in seen:
             seen.add(item)
             summary.append(item)
@@ -58,7 +67,6 @@ def build_keywords(topic: str, interests: Iterable[Interest], extra: Iterable[st
     tokens = tokenize(topic)
     for interest in interests:
         tokens.extend(tokenize(interest.topic))
-        tokens.extend(tokenize(interest.notes))
     if extra:
         for item in extra:
             tokens.extend(tokenize(item))
@@ -74,7 +82,7 @@ def build_keywords(topic: str, interests: Iterable[Interest], extra: Iterable[st
 def create_source_briefs(
     documents: Iterable[Document],
     keywords: Iterable[str],
-    highlights_per_doc: int = 3,
+    highlights_per_doc: int = 10,
 ) -> list[SourceBrief]:
     from .llm import log_task_event
 
@@ -149,7 +157,14 @@ def _merge_theme_label(llm: LLMClient, labels: list[str]) -> str:
         task="merge theme label",
         agent="Theme",
     )
-    merged = (response or "").strip().strip("\"'`")
+    merged = ""
+    parsed = _extract_json(response or "")
+    if isinstance(parsed, dict):
+        candidate = parsed.get("merged_label") or parsed.get("label") or parsed.get("theme")
+        if isinstance(candidate, str):
+            merged = candidate.strip()
+    if not merged:
+        merged = (response or "").strip().strip("\"'`")
     merged = merged.replace("\n", " ").strip()
     if not merged:
         raise LLMClientError("LLM returned empty merged theme label.")
@@ -247,6 +262,7 @@ def _summarize_theme_bullets(
         "requirements": [
             f"Provide 2-{max_bullets} bullets per theme.",
             "Bullets must be full-sentence reasoning, not keyword lists.",
+            "Bullets must be plain strings; do not return objects.",
             "Highlight recurring patterns, commonalities, and contradictions when present.",
             "Explicitly connect the evidence to the theme label.",
             "Sources are optional; include zero, one, or multiple titles only if it improves clarity.",
@@ -276,6 +292,25 @@ def _summarize_theme_bullets(
             continue
         cleaned = []
         for bullet in bullets:
+            if isinstance(bullet, dict):
+                text = str(
+                    bullet.get("bullet")
+                    or bullet.get("text")
+                    or bullet.get("claim")
+                    or ""
+                ).strip()
+                sources = bullet.get("sources") or bullet.get("source") or []
+                source_items: list[str] = []
+                if isinstance(sources, list):
+                    source_items = [str(src).strip() for src in sources if str(src).strip()]
+                elif isinstance(sources, str):
+                    if sources.strip():
+                        source_items = [sources.strip()]
+                if text:
+                    if source_items:
+                        text = f"{text} Sources: {', '.join(source_items)}"
+                    cleaned.append(text)
+                continue
             text = str(bullet).strip()
             if text:
                 cleaned.append(text)
@@ -363,7 +398,9 @@ def build_interest_themes(
             label = theme["label"]
             bullets = summaries.get(label)
             if not bullets:
-                raise LLMClientError(f"Missing theme summary for '{label}'.")
+                log_task_event(f"Theme summary missing for '{label}'; leaving bullets empty.")
+                theme["bullets"] = []
+                continue
             theme["bullets"] = bullets
     return themes
 
@@ -431,6 +468,7 @@ def _parse_plan_from_text(text: str) -> dict[str, list[str]]:
         "keywords": [],
         "gaps": [],
         "notes": [],
+        "retrieval_queries": [],
     }
     current: str | None = None
     for raw in (text or "").splitlines():
@@ -460,6 +498,9 @@ def _parse_plan_from_text(text: str) -> dict[str, list[str]]:
             continue
         if lower.startswith("notes"):
             current = "notes"
+            continue
+        if lower.startswith("retrieval queries") or lower.startswith("retrieval_queries"):
+            current = "retrieval_queries"
             continue
 
         item = line
@@ -549,6 +590,7 @@ def _apply_llm_fields(plan: PlanDraft, payload: dict) -> PlanDraft:
     plan.keywords = _clean_list(payload.get("keywords")) or plan.keywords
     plan.gaps = _clean_list(payload.get("gaps")) or plan.gaps
     plan.notes = _clean_list(payload.get("notes")) or plan.notes
+    plan.retrieval_queries = _clean_list(payload.get("retrieval_queries")) or plan.retrieval_queries
     readiness = payload.get("readiness")
     if isinstance(readiness, str) and readiness.strip():
         plan.readiness = readiness.strip().lower()
@@ -583,6 +625,7 @@ def _base_plan(
         gaps=[],
         readiness="draft",
         notes=[],
+        retrieval_queries=[],
     )
 
 
@@ -602,13 +645,23 @@ def llm_draft_plan(
     llm: LLMClient,
     topic: str,
     interests: list[Interest],
+    methods: list[Method],
+    extracted_interests: list[str] | None,
     documents: list[Document],
     round_number: int,
     skill_guidance: list[str] | None = None,
 ) -> PlanDraft:
     keywords_seed = build_keywords(topic, interests)
     base_plan = _base_plan(topic, interests, documents, round_number, keywords_seed)
-    prompt = plan_prompt(topic, interests, documents, keywords_seed, skill_guidance=skill_guidance)
+    prompt = plan_prompt(
+        topic,
+        interests,
+        methods,
+        documents,
+        keywords_seed,
+        extracted_interests=extracted_interests,
+        skill_guidance=skill_guidance,
+    )
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan draft", agent="Planner")
     payload = _extract_json(response)
     if not payload:
@@ -639,6 +692,8 @@ def llm_refine_plan(
     plan: PlanDraft,
     documents: list[Document],
     interests: list[Interest],
+    methods: list[Method],
+    extracted_interests: list[str] | None,
     round_number: int,
     skill_guidance: list[str] | None = None,
 ) -> PlanDraft:
@@ -657,8 +712,10 @@ def llm_refine_plan(
         plan.topic,
         prior_plan,
         interests,
+        methods,
         documents,
         keywords_seed,
+        extracted_interests=extracted_interests,
         skill_guidance=skill_guidance,
     )
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan refinement", agent="Planner")
@@ -691,10 +748,11 @@ def llm_build_outline(
     topic: str,
     documents: list[Document],
     interests: list[Interest],
+    methods: list[Method],
     keywords: list[str],
     skill_guidance: list[str] | None = None,
 ) -> list[str]:
-    prompt = outline_prompt(topic, interests, documents, keywords, skill_guidance=skill_guidance)
+    prompt = outline_prompt(topic, interests, methods, documents, keywords, skill_guidance=skill_guidance)
     response = llm.generate(SYSTEM_OUTLINE_PROMPT, prompt, task="outline", agent="Outliner")
     payload = _extract_json(response)
     outline = payload.get("outline")
@@ -720,9 +778,11 @@ def render_plan_md(
     plan: PlanDraft,
     outline: list[str],
     interests: list[Interest],
+    methods: list[Method],
     llm: LLMClient | None = None,
 ) -> str:
     interest_summary = summarize_interests(interests)
+    method_summary = summarize_methods(methods)
 
     lines = [
         f"# Research Plan - {plan.topic}",
@@ -767,7 +827,15 @@ def render_plan_md(
         lines.append(f"- {item}")
 
     lines.append("")
-    lines.append("## Recorded Interests")
+    lines.append("## Analysis Methods")
+    if method_summary:
+        for item in method_summary:
+            lines.append(f"- {item}")
+    else:
+        lines.append("- None")
+
+    lines.append("")
+    lines.append("## Manually Added Interests")
     if interest_summary:
         for item in interest_summary:
             lines.append(f"- {item}")
@@ -775,7 +843,7 @@ def render_plan_md(
         lines.append("- None")
 
     lines.append("")
-    lines.append("## Interest Themes (Local Library)")
+    lines.append("## Locally Extracted Interests")
     themes = build_interest_themes(llm=llm)
     if not themes:
         lines.append(

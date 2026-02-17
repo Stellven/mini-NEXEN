@@ -5,6 +5,7 @@ Minimal, local-first research backend for generating research plans and detailed
 **What It Does**
 - Maintains a personal library of documents, URLs, and notes.
 - Tracks user interests (NotebookLM-style memory).
+- Tracks analysis methods/approaches (lenses applied to research topics).
 - Builds a lightweight topic graph from document chunks and embeddings.
 - Uses cluster-aware local retrieval plus optional external web sources (guardrails on by default).
 - Generates a research plan + detailed outline and saves it as `YYYY_MM_DD_HH_MM_plan.md`.
@@ -174,12 +175,21 @@ sqlite3 data/mini_nexen.sqlite3 "SELECT topic, cluster_id, similarity, run_id, c
 **List/Manage Stored Data**
 ```bash
 python -m mini_nexen.cli list-docs
+python -m mini_nexen.cli method "Five Forces"
 python -m mini_nexen.cli list-interests
+python -m mini_nexen.cli list-methods
 python -m mini_nexen.cli delete-interest --id "<INTEREST_ID>"
+python -m mini_nexen.cli delete-method --id "<METHOD_ID>"
 python -m mini_nexen.cli clear-interests --yes
+python -m mini_nexen.cli clear-methods --yes
+python -m mini_nexen.cli clear-library --yes
 ```
 
+Interests and methods are stored as short labels (no notes).
 Clearing interests removes only the `interests` table entries; it does not delete documents, chunks, or clusters.
+Clearing methods removes only the `methods` table entries; it does not delete documents, chunks, or clusters.
+Clearing the library deletes all documents and graph data (documents, document_stats, chunks, clusters,
+topic_cluster_map, graph_meta) and removes stored files from `data/library/`. Interests and methods are retained.
 
 **Seed Pack**
 ```bash

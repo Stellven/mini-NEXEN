@@ -69,8 +69,21 @@ def _ingest(args: argparse.Namespace) -> None:
 def _add_interest(args: argparse.Namespace) -> None:
     ensure_dirs()
     db.init_db()
-    interest = db.add_interest(topic=args.topic, notes=args.notes or "")
+    topic = (args.topic or args.text or "").strip()
+    if not topic:
+        raise SystemExit("Provide interest text via --topic or as a positional argument.")
+    interest = db.add_interest(topic=topic, notes="")
     print(f"Recorded interest: {interest.interest_id}")
+
+
+def _add_method(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    db.init_db()
+    method = (args.method or args.text or "").strip()
+    if not method:
+        raise SystemExit("Provide method text via --method or as a positional argument.")
+    recorded = db.add_method(method=method, notes="")
+    print(f"Recorded method: {recorded.method_id}")
 
 
 def _delete_interest(args: argparse.Namespace) -> None:
@@ -83,6 +96,16 @@ def _delete_interest(args: argparse.Namespace) -> None:
         print(f"No interest found for id: {args.id}")
 
 
+def _delete_method(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    db.init_db()
+    deleted = db.delete_method(args.id)
+    if deleted:
+        print(f"Deleted method: {args.id}")
+    else:
+        print(f"No method found for id: {args.id}")
+
+
 def _clear_interests(args: argparse.Namespace) -> None:
     ensure_dirs()
     db.init_db()
@@ -90,6 +113,15 @@ def _clear_interests(args: argparse.Namespace) -> None:
         raise SystemExit("Refusing to clear interests without --yes")
     deleted = db.clear_interests()
     print(f"Cleared interests: {deleted}")
+
+
+def _clear_methods(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    db.init_db()
+    if not args.yes:
+        raise SystemExit("Refusing to clear methods without --yes")
+    deleted = db.clear_methods()
+    print(f"Cleared methods: {deleted}")
 
 
 def _clear_library(args: argparse.Namespace) -> None:
@@ -127,8 +159,17 @@ def _list_interests(_: argparse.Namespace) -> None:
         print("No interests recorded yet.")
         return
     for interest in interests:
-        notes = f" ({interest.notes})" if interest.notes else ""
-        print(f"{interest.interest_id} | {interest.topic}{notes}")
+        print(f"{interest.interest_id} | {interest.topic}")
+
+
+def _list_methods(_: argparse.Namespace) -> None:
+    ensure_dirs()
+    methods = db.list_methods(limit=50)
+    if not methods:
+        print("No methods recorded yet.")
+        return
+    for method in methods:
+        print(f"{method.method_id} | {method.method}")
 
 
 def _research(args: argparse.Namespace) -> None:
@@ -383,10 +424,14 @@ def _prompt_provider(default: str | None = None) -> str:
 def _prompt_model(provider: str, default: str | None = None) -> str:
     if provider == "gemini":
         options = [
-            "gemini-2.0-flash",
-            "gemini-2.0-pro",
+            "gemini-3-pro-preview",
+            "gemini-3-flash-preview",
             "gemini-2.5-flash",
             "gemini-2.5-pro",
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-pro",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
             "custom",
         ]
         print("Select Gemini model:")
@@ -470,9 +515,16 @@ def build_parser() -> argparse.ArgumentParser:
     interest = sub.add_parser("interest", help="Record an interest topic")
     interest.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     interest.add_argument("--quiet", action="store_true", help="Disable log echoing")
-    interest.add_argument("--topic", required=True)
-    interest.add_argument("--notes")
+    interest.add_argument("text", nargs="?", help="Interest text (if --topic omitted)")
+    interest.add_argument("--topic", help="Interest topic text")
     interest.set_defaults(func=_add_interest)
+
+    method = sub.add_parser("method", help="Record an analysis method/approach")
+    method.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
+    method.add_argument("--quiet", action="store_true", help="Disable log echoing")
+    method.add_argument("text", nargs="?", help="Method text (if --method omitted)")
+    method.add_argument("--method", help="Method text")
+    method.set_defaults(func=_add_method)
 
     del_interest = sub.add_parser("delete-interest", help="Delete a single interest by id")
     del_interest.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
@@ -480,11 +532,23 @@ def build_parser() -> argparse.ArgumentParser:
     del_interest.add_argument("--id", required=True, help="Interest id to remove")
     del_interest.set_defaults(func=_delete_interest)
 
+    del_method = sub.add_parser("delete-method", help="Delete a single method by id")
+    del_method.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
+    del_method.add_argument("--quiet", action="store_true", help="Disable log echoing")
+    del_method.add_argument("--id", required=True, help="Method id to remove")
+    del_method.set_defaults(func=_delete_method)
+
     clear_interests = sub.add_parser("clear-interests", help="Delete all interests")
     clear_interests.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     clear_interests.add_argument("--quiet", action="store_true", help="Disable log echoing")
     clear_interests.add_argument("--yes", action="store_true", help="Confirm deletion")
     clear_interests.set_defaults(func=_clear_interests)
+
+    clear_methods = sub.add_parser("clear-methods", help="Delete all methods")
+    clear_methods.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
+    clear_methods.add_argument("--quiet", action="store_true", help="Disable log echoing")
+    clear_methods.add_argument("--yes", action="store_true", help="Confirm deletion")
+    clear_methods.set_defaults(func=_clear_methods)
 
     clear_library = sub.add_parser("clear-library", help="Delete all documents + graph data")
     clear_library.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
@@ -501,6 +565,11 @@ def build_parser() -> argparse.ArgumentParser:
     list_interests.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     list_interests.add_argument("--quiet", action="store_true", help="Disable log echoing")
     list_interests.set_defaults(func=_list_interests)
+
+    list_methods = sub.add_parser("list-methods", help="List methods")
+    list_methods.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
+    list_methods.add_argument("--quiet", action="store_true", help="Disable log echoing")
+    list_methods.set_defaults(func=_list_methods)
 
     research = sub.add_parser("research", help="Generate a research plan")
     research.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")

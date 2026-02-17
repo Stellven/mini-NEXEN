@@ -31,6 +31,14 @@ class Interest:
 
 
 @dataclass
+class Method:
+    method_id: str
+    method: str
+    notes: str
+    created_at: str
+
+
+@dataclass
 class DocumentStats:
     doc_id: str
     relevance_score: float
@@ -59,6 +67,13 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE TABLE IF NOT EXISTS interests (
     interest_id TEXT PRIMARY KEY,
     topic TEXT NOT NULL,
+    notes TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS methods (
+    method_id TEXT PRIMARY KEY,
+    method TEXT NOT NULL,
     notes TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
@@ -434,6 +449,20 @@ def add_interest(topic: str, notes: str = "") -> Interest:
     return Interest(interest_id=interest_id, topic=topic, notes=notes, created_at=_now_iso())
 
 
+def add_method(method: str, notes: str = "") -> Method:
+    init_db()
+    method_id = str(uuid.uuid4())
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO methods (method_id, method, notes, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (method_id, method, notes, _now_iso()),
+        )
+    return Method(method_id=method_id, method=method, notes=notes, created_at=_now_iso())
+
+
 def list_interests(limit: int = 50) -> list[Interest]:
     init_db()
     with _connect() as conn:
@@ -460,6 +489,32 @@ def list_interests(limit: int = 50) -> list[Interest]:
     return interests
 
 
+def list_methods(limit: int = 50) -> list[Method]:
+    init_db()
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT method_id, method, notes, created_at
+            FROM methods
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    methods = []
+    for row in rows:
+        methods.append(
+            Method(
+                method_id=row["method_id"],
+                method=row["method"],
+                notes=row["notes"],
+                created_at=row["created_at"],
+            )
+        )
+    return methods
+
+
 def delete_interest(interest_id: str) -> int:
     init_db()
     with _connect() as conn:
@@ -470,10 +525,27 @@ def delete_interest(interest_id: str) -> int:
     return int(cur.rowcount or 0)
 
 
+def delete_method(method_id: str) -> int:
+    init_db()
+    with _connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM methods WHERE method_id = ?",
+            (method_id,),
+        )
+    return int(cur.rowcount or 0)
+
+
 def clear_interests() -> int:
     init_db()
     with _connect() as conn:
         cur = conn.execute("DELETE FROM interests")
+    return int(cur.rowcount or 0)
+
+
+def clear_methods() -> int:
+    init_db()
+    with _connect() as conn:
+        cur = conn.execute("DELETE FROM methods")
     return int(cur.rowcount or 0)
 
 

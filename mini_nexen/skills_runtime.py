@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+import re
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -53,6 +54,8 @@ class SkillContext:
     max_rounds: int = DEFAULT_ROUNDS
     round_number: int = 1
     interests: list[db.Interest] = field(default_factory=list)
+    methods: list[db.Method] = field(default_factory=list)
+    extracted_interests: list[str] = field(default_factory=list)
     documents: list[db.Document] = field(default_factory=list)
     plan: Optional[PlanDraft] = None
     outline: list[str] = field(default_factory=list)
@@ -240,6 +243,76 @@ def _expand_queries_with_llm(ctx: SkillContext, query: str, modes: list[str]) ->
     return _clean_query_list(payload)
 
 
+def _trim_query(text: str, max_words: int = 8, max_chars: int = 80) -> str:
+    words = [word for word in text.split() if word]
+    if len(words) > max_words:
+        words = words[:max_words]
+    trimmed = " ".join(words).strip()
+    if len(trimmed) > max_chars:
+        trimmed = trimmed[:max_chars].rstrip()
+    return trimmed
+
+
+def _rewrite_gap_queries_with_llm(ctx: SkillContext, gaps: list[str]) -> list[str]:
+    if not ctx.llm:
+        return []
+    prompt = {
+        "gaps": gaps,
+        "instructions": (
+            "Rewrite each gap into 2-3 short search queries. "
+            "Queries should be 2-6 words, no negations, and focused on key entities/relationships. "
+            "Return JSON only as a flat list of strings."
+        ),
+    }
+    response = ctx.llm.generate(
+        system_prompt="You rewrite research gaps into concise search queries. Return JSON only.",
+        user_prompt=json.dumps(prompt, indent=2),
+        task="gap query rewrite",
+        agent="Retriever",
+    )
+    payload = _extract_json_payload(response)
+    return _clean_query_list(payload)
+
+
+def _rewrite_gap_queries_fallback(gaps: list[str]) -> list[str]:
+    cleaned = []
+    patterns = [
+        r"^the provided documents do not contain any information on\\s+",
+        r"^there is no existing literature (connecting|on)\\s+",
+        r"^there is no existing literature\\s+",
+        r"^there is no\\s+",
+        r"^insufficient sources to\\s+",
+        r"^no (?:themes|sources) available\\s+",
+        r"^lack of\\s+",
+    ]
+    for gap in gaps:
+        text = gap.strip()
+        if not text:
+            continue
+        for pattern in patterns:
+            if re.match(pattern, text, flags=re.IGNORECASE):
+                text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+                break
+        text = text.strip(" .:-")
+        if not text:
+            continue
+        cleaned.append(_trim_query(text))
+    return _clean_query_list(cleaned)
+
+
+def _rewrite_gap_queries(ctx: SkillContext, gaps: list[str], max_gaps: int = 6) -> list[str]:
+    if not gaps:
+        return []
+    limited = [gap.strip() for gap in gaps if gap.strip()][:max_gaps]
+    if not limited:
+        return []
+    rewritten = _rewrite_gap_queries_with_llm(ctx, limited)
+    if rewritten:
+        trimmed = [_trim_query(text) for text in rewritten]
+        return _clean_query_list(trimmed)[: max_gaps * 3]
+    return _rewrite_gap_queries_fallback(limited)
+
+
 def _build_embedding_config(ctx: SkillContext) -> EmbeddingConfig | None:
     provider = ctx.web_embed_provider
     if not provider and ctx.llm:
@@ -305,6 +378,13 @@ def skill_collect_interests(ctx: SkillContext) -> SkillContext:
     return ctx
 
 
+def skill_collect_methods(ctx: SkillContext) -> SkillContext:
+    ensure_dirs()
+    db.init_db()
+    ctx.methods = db.list_methods(limit=20)
+    return ctx
+
+
 def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
     ensure_dirs()
     docs = db.list_documents(limit=200)
@@ -316,8 +396,6 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
     for interest in ctx.interests:
         if interest.topic:
             query_parts.append(interest.topic)
-        if interest.notes:
-            query_parts.append(interest.notes)
     query_parts.extend(ctx.query_hints)
     query = " ".join(part for part in query_parts if part).strip()
 
@@ -356,6 +434,8 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
             if graph_result.labels_removed:
                 removed = ", ".join(graph_result.labels_removed[:8])
                 log_task_event(f"Graph rebuild: labels removed ({len(graph_result.labels_removed)}): {removed}")
+
+    ctx.extracted_interests = graph.suggest_interests(ctx.topic, limit=3)
 
     mapped = graph.map_topic_to_cluster(ctx.topic)
     if mapped:
@@ -553,6 +633,8 @@ def skill_plan_research(ctx: SkillContext) -> SkillContext:
         llm=ctx.llm,
         topic=ctx.topic,
         interests=ctx.interests,
+        methods=ctx.methods,
+        extracted_interests=ctx.extracted_interests,
         documents=ctx.documents,
         round_number=ctx.round_number,
         skill_guidance=ctx.skill_guidance,
@@ -572,15 +654,19 @@ def skill_refine_plan(ctx: SkillContext) -> SkillContext:
         return ctx
 
     ctx.plan.gaps = gaps
-    ctx.query_hints = gaps
+    fallback_queries = _rewrite_gap_queries(ctx, gaps)
     ctx.plan = llm_refine_plan(
         llm=ctx.llm,
         plan=ctx.plan,
         documents=ctx.documents,
         interests=ctx.interests,
+        methods=ctx.methods,
+        extracted_interests=ctx.extracted_interests,
         round_number=ctx.round_number,
         skill_guidance=ctx.skill_guidance,
     )
+    cleaned_queries = [_trim_query(text) for text in _clean_query_list(ctx.plan.retrieval_queries)]
+    ctx.query_hints = cleaned_queries or fallback_queries
     ctx.plan.readiness = "refined"
     return ctx
 
@@ -595,6 +681,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         topic=ctx.topic,
         documents=ctx.documents,
         interests=ctx.interests,
+        methods=ctx.methods,
         keywords=ctx.plan.keywords,
         skill_guidance=ctx.skill_guidance,
     )
@@ -605,7 +692,7 @@ def skill_persist_plan(ctx: SkillContext) -> SkillContext:
     if not ctx.plan:
         return ctx
 
-    ctx.plan_md = render_plan_md(ctx.plan, ctx.outline, ctx.interests, llm=ctx.llm)
+    ctx.plan_md = render_plan_md(ctx.plan, ctx.outline, ctx.interests, ctx.methods, llm=ctx.llm)
     return ctx
 
 
@@ -622,10 +709,9 @@ def build_default_runner() -> SkillRunner:
         if spec.name in ctx.active_skills:
             return ctx
         texts = [ctx.topic]
-        for interest in ctx.interests:
-            texts.append(interest.topic)
-            if interest.notes:
-                texts.append(interest.notes)
+        for method in ctx.methods:
+            if method.method:
+                texts.append(method.method)
         if not _matches_triggers(texts, SYSTEMS_ENGINEERING_TRIGGERS):
             return ctx
         content = spec.path.read_text(encoding="utf-8")
@@ -633,6 +719,7 @@ def build_default_runner() -> SkillRunner:
         ctx.skill_guidance.append(content)
         return ctx
     runner.register("collect_interests", skill_collect_interests)
+    runner.register("collect_methods", skill_collect_methods)
     runner.register("systems-engineering", skill_systems_engineering)
     runner.register("web_retrieve", skill_web_retrieve)
     runner.register("retrieve_sources", skill_retrieve_sources)
