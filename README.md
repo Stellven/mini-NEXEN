@@ -37,6 +37,40 @@ python -m mini_nexen.cli --help
 **Build / Installation**
 - There is no build step; this is a pure Python project. Run commands from the repo root with `python -m mini_nexen.cli ...`.
 
+**Docker**
+1. Build the image.
+```bash
+docker build -t mini-nexen .
+```
+2. Run a research pass (mount `data/` and `plans/` so outputs persist).
+```bash
+docker run --rm -it \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/plans:/app/plans" \
+  -e GEMINI_API_KEY="your-key" \
+  mini-nexen research --topic "Agentic research systems"
+```
+Notes:
+- For LM Studio running on the host, use `--network=host` (Linux) or set `LMSTUDIO_BASE_URL` to `http://host.docker.internal:1234/v1`.
+- If you want interactive provider/model prompts, keep `-it`.
+
+**Docker Compose**
+1. Configure environment variables (optional).
+```bash
+cp .env.example .env
+```
+2. Build and run (shows help by default).
+```bash
+docker compose up --build
+```
+3. Run a research pass.
+```bash
+docker compose run --rm mini-nexen research --topic "Agentic research systems"
+```
+Notes:
+- Edit `.env` to set Gemini/LM Studio keys and model defaults.
+- Data and plans are persisted to `./data` and `./plans`.
+
 **Setup**
 - Python 3.11 is required.
 - Dependencies are defined in `environment.yml`. Conda packages include `numpy`, `scipy`, `scikit-learn`, `hdbscan`, `requests`. Pip packages include `google-genai`, `pypdf`, `python-docx`.

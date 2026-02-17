@@ -1,0 +1,14 @@
+.git
+.gitignore
+.conda
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+data/
+plans/
+*.sqlite3
+.env

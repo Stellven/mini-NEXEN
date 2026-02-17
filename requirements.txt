@@ -1,0 +1,8 @@
+requests
+numpy
+scipy
+scikit-learn
+hdbscan
+google-genai
+pypdf
+python-docx

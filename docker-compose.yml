@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  mini-nexen:
+    build: .
+    image: mini-nexen:latest
+    stdin_open: true
+    tty: true
+    environment:
+      MINI_NEXEN_PROVIDER: ${MINI_NEXEN_PROVIDER:-gemini}
+      MINI_NEXEN_MODEL: ${MINI_NEXEN_MODEL:-gemini-2.5-flash}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
+      LMSTUDIO_API_KEY: ${LMSTUDIO_API_KEY:-}
+      MINI_NEXEN_EMBED_PROVIDER: ${MINI_NEXEN_EMBED_PROVIDER:-}
+      MINI_NEXEN_EMBED_MODEL: ${MINI_NEXEN_EMBED_MODEL:-}
+      MINI_NEXEN_EMBED_BASE_URL: ${MINI_NEXEN_EMBED_BASE_URL:-}
+      MINI_NEXEN_VERBOSE: ${MINI_NEXEN_VERBOSE:-1}
+    volumes:
+      - ./data:/app/data
+      - ./plans:/app/plans
+    command: ["--help"]
