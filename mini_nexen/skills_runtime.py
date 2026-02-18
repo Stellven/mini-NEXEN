@@ -800,6 +800,8 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         keywords=ctx.plan.keywords,
         doc_text_overrides=ctx.doc_text_overrides,
         skill_guidance=ctx.skill_guidance,
+        active_skills=ctx.active_skills,
+        run_id=ctx.run_id,
     )
     return ctx
 

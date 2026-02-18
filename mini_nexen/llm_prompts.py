@@ -6,7 +6,7 @@ from typing import Iterable
 from .db import Document, Interest, Method, load_document_text
 from .text_utils import top_sentences
 
-SYSTEM_PLAN_PROMPT = """You are a research planning agent. Produce a plan that is concise, actionable, and focused on gaps.
+SYSTEM_PLAN_PROMPT = """You are a research planning agent. All natural-language content MUST be in Chinese. Produce a plan that is concise, actionable, and focused on gaps.
 Return ONE valid JSON object only. No markdown, no commentary, no extra text.
 
 Requirements:
@@ -22,12 +22,13 @@ Requirements:
 - Keep JSON keys in English.
 - Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.
 - Use ASCII punctuation for JSON (":" and ","), not full-width punctuation.
+All natural-language content MUST be in Chinese.
 
 Example:
 {"scope":["..."],"key_questions":["..."],"keywords":["..."],"gaps":["..."],"notes":["..."],"readiness":"draft","retrieval_queries":["..."]}
 """
 
-SYSTEM_OUTLINE_PROMPT = """You are a research planning agent. Produce a research plan (not a report outline).
+SYSTEM_OUTLINE_PROMPT = """You are a research planning agent. All natural-language content MUST be in Chinese. Produce a research plan (not a report outline).
 Return ONE valid JSON object only. No markdown, no commentary, no extra text.
 
 Requirements:
@@ -46,6 +47,7 @@ Requirements:
 - Keep JSON keys in English.
 - Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.
 - Use ASCII punctuation for JSON (":" and ","), not full-width punctuation.
+All natural-language content MUST be in Chinese.
 
 Example:
 {"outline":[{"title":"Search for official technical reports and release blogs to extract architecture and training details.","substeps":["List official sources and release pages to target.","Extract training scale, data sources, and capability summaries.",{"text":"Capture deployment context and version history.","substeps":["Note release cadence and changelogs.","Record published caveats or limitations."]}]},{"title":"Compare context window sizes and long-context accuracy across models.","substeps":["Collect vendor claims and independent benchmarks.","Analyze long-context recall and retrieval performance.",{"text":"Identify failure cases.","substeps":["Summarize common error patterns.","Note mitigation strategies reported by practitioners."]}]}]}
@@ -211,6 +213,7 @@ def outline_prompt(
     doc_text_overrides: dict[str, str] | None = None,
     length_hint: str | None = None,
     language_hint: str | None = None,
+    structure_guidance: list[str] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
@@ -223,7 +226,12 @@ def outline_prompt(
             "output_json_schema": {
                 "outline": ["string"]
             },
-        "outline_expectations": [
+            "language_policy": [
+                "All natural-language content MUST be in Chinese.",
+                "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
+                "All natural-language content MUST be in Chinese.",
+            ],
+            "outline_expectations": [
             "Include major sections and subtopics to expand later.",
             "Provide 8-12 major steps.",
             "Each major step must include 3-5 substeps.",
@@ -240,6 +248,8 @@ def outline_prompt(
             ],
         },
     }
+    if structure_guidance:
+        payload["instructions"]["structure_guidance"] = structure_guidance
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
     if length_hint:

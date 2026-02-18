@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from . import db
-from .config import GRAPH_TOP_CLUSTERS
+from .config import GRAPH_TOP_CLUSTERS, PLANS_DIR, ensure_dirs
 from .db import Document, Interest, Method, load_document_text
 from .embeddings import EmbeddingClient, EmbeddingConfig, cosine_similarity, normalize
 from .graph import GraphManager
@@ -638,15 +638,17 @@ def _extract_json(text: str) -> dict:
         return {}
     for replace_quotes in (False, True):
         normalized = _normalize_json_text(text, replace_quotes=replace_quotes)
-        start = normalized.find("{")
-        end = normalized.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            continue
-        try:
-            payload = json.loads(normalized[start : end + 1])
-            return _normalize_payload_keys(payload)
-        except json.JSONDecodeError:
-            continue
+        for repair in (False, True):
+            candidate = _repair_json_text(normalized) if repair else normalized
+            start = candidate.find("{")
+            end = candidate.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                continue
+            try:
+                payload = json.loads(candidate[start : end + 1])
+                return _normalize_payload_keys(payload)
+            except json.JSONDecodeError:
+                continue
     return {}
 
 
@@ -655,15 +657,17 @@ def _extract_json_list(text: str) -> list[object]:
         return []
     for replace_quotes in (False, True):
         normalized = _normalize_json_text(text, replace_quotes=replace_quotes)
-        start = normalized.find("[")
-        end = normalized.rfind("]")
-        if start == -1 or end == -1 or end <= start:
-            continue
-        try:
-            payload = json.loads(normalized[start : end + 1])
-        except json.JSONDecodeError:
-            continue
-        return payload if isinstance(payload, list) else []
+        for repair in (False, True):
+            candidate = _repair_json_text(normalized) if repair else normalized
+            start = candidate.find("[")
+            end = candidate.rfind("]")
+            if start == -1 or end == -1 or end <= start:
+                continue
+            try:
+                payload = json.loads(candidate[start : end + 1])
+            except json.JSONDecodeError:
+                continue
+            return payload if isinstance(payload, list) else []
     return []
 
 
@@ -814,6 +818,16 @@ def _normalize_json_text(text: str, replace_quotes: bool = False) -> str:
     for src, dst in replacements.items():
         text = text.replace(src, dst)
     text = re.sub(r",\s*([}\]])", r"\1", text)
+    return text
+
+
+def _repair_json_text(text: str) -> str:
+    if not text:
+        return ""
+    # Fix invalid unicode escapes like "\4e9b" -> "\u4e9b"
+    text = re.sub(r"\\([0-9a-fA-F]{4})", r"\\u\1", text)
+    # Escape any remaining invalid backslash escapes.
+    text = re.sub(r"\\(?![\"\\/bfnrtu])", r"\\\\", text)
     return text
 
 
@@ -1095,6 +1109,23 @@ def llm_refine_plan(
     return refined
 
 
+def _save_outline_snapshot(
+    outline: list[str] | None,
+    raw: str | None,
+    prefix: str,
+    label: str,
+) -> None:
+    ensure_dirs()
+    safe_label = re.sub(r"[^a-zA-Z0-9_-]+", "_", label).strip("_")
+    if outline:
+        path = PLANS_DIR / f"{prefix}_{safe_label}.json"
+        payload = {"label": label, "outline": outline}
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    if raw:
+        path = PLANS_DIR / f"{prefix}_{safe_label}_raw.txt"
+        path.write_text(raw, encoding="utf-8")
+
+
 def llm_build_outline(
     llm: LLMClient,
     topic: str,
@@ -1104,6 +1135,9 @@ def llm_build_outline(
     keywords: list[str],
     doc_text_overrides: dict[str, str] | None = None,
     skill_guidance: list[str] | None = None,
+    active_skills: list[str] | None = None,
+    run_id: int | None = None,
+    save_prefix: str | None = None,
 ) -> list[str]:
     def _parse_outline_response(response: str, attempt: int, task: str) -> list[str] | None:
         payload = _extract_json(response)
@@ -1154,9 +1188,15 @@ def llm_build_outline(
             if cleaned:
                 return cleaned
         return []
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    prefix = save_prefix or f"{timestamp}_outline"
+    if run_id is not None and save_prefix is None:
+        prefix = f"{prefix}_run_{run_id}"
+
     def _attempt(prompt_text: str, attempt: int) -> tuple[list[str], int, float] | None:
         response = llm.generate(SYSTEM_OUTLINE_PROMPT, prompt_text, task="outline", agent="Outliner")
         cleaned = _parse_outline_response(response, attempt, "outline")
+        _save_outline_snapshot(cleaned, response, prefix, f"outline_attempt{attempt}")
         if not cleaned:
             return None
         count = outline_word_count(cleaned)
@@ -1191,13 +1231,15 @@ def llm_build_outline(
                     "Each substep should be 2-3 sentences.",
                     "Preserve the original topic coverage and structure; rewrite to fit length.",
                 ],
-                "language_guidance": [
-                    "Write natural-language content in Chinese.",
-                    "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
-                ],
-            },
-            "length_hint": length_hint,
-        }
+            "language_guidance": [
+                "Write natural-language content in Chinese.",
+                "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
+            ],
+        },
+        "length_hint": length_hint,
+    }
+        if structure_guidance:
+            payload["instructions"]["structure_guidance"] = structure_guidance
         if language_hint:
             payload["language_hint"] = language_hint
         return json.dumps(payload, indent=2)
@@ -1220,13 +1262,15 @@ def llm_build_outline(
                     "Each substep should be 2-3 sentences.",
                     "Do not remove content; only expand with additional detail and substeps.",
                 ],
-                "language_guidance": [
-                    "Write natural-language content in Chinese.",
-                    "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
-                ],
-            },
-            "length_hint": length_hint,
-        }
+            "language_guidance": [
+                "Write natural-language content in Chinese.",
+                "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
+            ],
+        },
+        "length_hint": length_hint,
+    }
+        if structure_guidance:
+            payload["instructions"]["structure_guidance"] = structure_guidance
         if language_hint:
             payload["language_hint"] = language_hint
         return json.dumps(payload, indent=2)
@@ -1257,6 +1301,7 @@ def llm_build_outline(
             agent="Outliner",
         )
         cleaned = _parse_outline_response(response, attempt, "outline revision")
+        _save_outline_snapshot(cleaned, response, prefix, f"outline_revision{attempt}")
         if not cleaned:
             return None
         count = outline_word_count(cleaned)
@@ -1300,6 +1345,7 @@ def llm_build_outline(
             agent="Outliner",
         )
         cleaned = _parse_outline_response(response, attempt, "outline expansion")
+        _save_outline_snapshot(cleaned, response, prefix, f"outline_expand{attempt}")
         if not cleaned:
             return None
         count = outline_word_count(cleaned)
@@ -1317,6 +1363,17 @@ def llm_build_outline(
             )
         return cleaned, count, ratio
 
+    structure_guidance = None
+    if active_skills:
+        labels = [skill.replace("-", " ").title() for skill in active_skills]
+        structure_guidance = [
+            "Structure major steps into contiguous sections grouped by the triggered skills in this order: "
+            + ", ".join(labels)
+            + ".",
+            "Prefix each major step title with the matching skill label (e.g., '[Systems Engineering] ...').",
+            "Ensure each skill has at least one major step; do not introduce new section labels.",
+        ]
+
     prompt = outline_prompt(
         topic,
         interests,
@@ -1324,6 +1381,7 @@ def llm_build_outline(
         documents,
         keywords,
         doc_text_overrides=doc_text_overrides,
+        structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
     )
     result = _attempt(prompt, 1)
@@ -1351,6 +1409,7 @@ def llm_build_outline(
         doc_text_overrides=doc_text_overrides,
         length_hint=length_hint,
         language_hint=language_hint if previous_ratio < OUTLINE_MIN_CJK_RATIO else None,
+        structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
     )
     result = _attempt(retry_prompt, 2)
@@ -1373,6 +1432,7 @@ def llm_build_outline(
         doc_text_overrides=doc_text_overrides,
         length_hint=length_hint,
         language_hint=language_hint if previous_ratio < OUTLINE_MIN_CJK_RATIO else None,
+        structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
     )
     result = _attempt(final_prompt, 3)
@@ -1400,6 +1460,7 @@ def llm_build_outline(
 
         translated = _translate_outline_to_chinese(result[0])
         if translated:
+            _save_outline_snapshot(translated, None, prefix, "outline_translate")
             translated_count = outline_word_count(translated)
             translated_ratio = outline_cjk_ratio(translated)
             if OUTLINE_MIN_WORDS <= translated_count <= OUTLINE_MAX_WORDS and translated_ratio >= OUTLINE_MIN_CJK_RATIO:
