@@ -11,10 +11,7 @@ from typing import Optional
 from .config import TASK_LOG_PATH, ensure_dirs
 
 _ECHO_LOG = False
-PLANNING_THROTTLE_BASE_SECONDS = 2
 PLANNING_THROTTLE_MAX_SECONDS = 30
-PLANNING_THROTTLE_IDLE_RESET_SECONDS = 60.0
-PLANNING_RETRY_MAX_SECONDS = 180.0
 _HTTP_CODE_RE = re.compile(r"\b([45]\d{2})\b")
 
 
@@ -80,8 +77,6 @@ class GeminiClient(LLMClient):
                 "google-genai is not installed. Install it to use Gemini models."
             ) from exc
         self._types = types
-        self._planning_last_call = 0.0
-        self._planning_call_count = 0
 
         api_key = config.api_key
         if api_key:
@@ -96,8 +91,7 @@ class GeminiClient(LLMClient):
         task: str = "content",
         agent: str = "Agent",
     ) -> str:
-        self._maybe_throttle_planning(agent, task)
-        use_time_budget = agent in {"Planner", "Outliner"}
+        is_planning = agent in {"Planner", "Outliner"}
         started_at = time.time()
         attempt = 0
         def _classify_error(message: str) -> str:
@@ -122,13 +116,12 @@ class GeminiClient(LLMClient):
             if attempt == 1:
                 self._log(agent, f"Model {self.config.model} is generating {task}...")
             else:
-                if use_time_budget:
+                if is_planning:
                     elapsed = time.time() - started_at
-                    remaining = max(0.0, PLANNING_RETRY_MAX_SECONDS - elapsed)
                     self._log(
                         agent,
                         f"Model {self.config.model} retrying {task} (attempt {attempt}, "
-                        f"{remaining:.0f}s budget remaining)."
+                        f"{elapsed:.0f}s elapsed)."
                     )
                 else:
                     self._log(
@@ -149,34 +142,20 @@ class GeminiClient(LLMClient):
                 category = _classify_error(message)
                 if category == "rate_limit":
                     _log_failure(category, exc, detail=message)
-                    if use_time_budget:
-                        elapsed = time.time() - started_at
-                        if elapsed >= PLANNING_RETRY_MAX_SECONDS:
-                            raise LLMClientError("Planning retry budget exceeded")
-                        sleep_for = 2**attempt
-                        remaining = PLANNING_RETRY_MAX_SECONDS - elapsed
-                        time.sleep(min(sleep_for, max(0.0, remaining)))
+                    sleep_for = min(PLANNING_THROTTLE_MAX_SECONDS, 2**attempt)
+                    if is_planning:
+                        self._log(
+                            agent,
+                            f"{agent} throttle: sleeping {sleep_for}s after rate limit before {task}.",
+                        )
+                        time.sleep(sleep_for)
                         continue
                     if attempt < 3:
-                        time.sleep(2**attempt)
+                        time.sleep(sleep_for)
                         continue
                     raise LLMClientError("Rate limit reached")
                 _log_failure(category, exc, detail=message)
                 raise LLMClientError(message) from exc
-
-    def _maybe_throttle_planning(self, agent: str, task: str) -> None:
-        if agent not in {"Planner", "Outliner"}:
-            return
-        now = time.time()
-        if self._planning_last_call and now - self._planning_last_call > PLANNING_THROTTLE_IDLE_RESET_SECONDS:
-            self._planning_call_count = 0
-        if self._planning_last_call:
-            self._planning_call_count += 1
-            power = min(self._planning_call_count, 5)
-            delay = min(PLANNING_THROTTLE_MAX_SECONDS, PLANNING_THROTTLE_BASE_SECONDS**power)
-            self._log(agent, f"Planner throttle: sleeping {delay}s before {task}.")
-            time.sleep(delay)
-        self._planning_last_call = time.time()
 
 
 class LMStudioClient(LLMClient):

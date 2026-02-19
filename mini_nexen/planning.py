@@ -824,6 +824,8 @@ def _normalize_json_text(text: str, replace_quotes: bool = False) -> str:
 def _repair_json_text(text: str) -> str:
     if not text:
         return ""
+    # Drop malformed unicode escapes like "\u法" to keep the following character.
+    text = re.sub(r"\\u(?![0-9a-fA-F]{4})", "", text)
     # Fix invalid unicode escapes like "\4e9b" -> "\u4e9b"
     text = re.sub(r"\\([0-9a-fA-F]{4})", r"\\u\1", text)
     # Escape any remaining invalid backslash escapes.

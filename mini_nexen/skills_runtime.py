@@ -499,6 +499,9 @@ def _launch_query_editor(path: Path) -> None:
 def skill_infer_query(ctx: SkillContext) -> SkillContext:
     if not ctx.auto_methods and not ctx.review_query:
         return ctx
+    if ctx.query_understanding and ctx.query_artifact_path:
+        log_task_event("Query understanding already initialized for this run; skipping.")
+        return ctx
     registry = SkillRegistry()
     registry.load()
     raw_query = ctx.raw_topic or ctx.topic
@@ -814,14 +817,18 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
 
     log_task_event(
         "Web retrieval: "
-        f"modes={','.join(ctx.web_modes) or 'tech,lit'} "
+        f"modes={','.join(ctx.web_modes) or 'open,lit'} "
         f"max_results={ctx.web_max_results} "
         f"max_queries={ctx.web_max_queries} "
         f"expand={ctx.web_expand_queries} "
         f"per_query={ctx.web_max_per_query} "
         f"max_new={ctx.web_max_new_sources}"
     )
-    modes = ctx.web_modes or ["tech", "lit"]
+    modes = [mode.strip().lower() for mode in (ctx.web_modes or ["open", "lit"])]
+    if "tech" in modes:
+        modes = ["open" if mode == "tech" else mode for mode in modes]
+    if "web" in modes:
+        modes = ["open" if mode == "web" else mode for mode in modes]
     interest_queries = []
     seen = set()
     cluster_interests: list[str] = []
@@ -935,9 +942,12 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         if "lit" in modes or "literature" in modes:
             if result.source in {"arxiv", "semantic_scholar", "crossref"}:
                 tags.append("literature")
-        if "tech" in modes or "web" in modes:
-            if result.source in {"duckduckgo", "brave"}:
-                tags.append("tech")
+        if "open" in modes or "web" in modes or "tech" in modes:
+            if result.source in {"duckduckgo", "brave", "google_pse", "tavily"}:
+                tags.append("open")
+        if "forum" in modes:
+            if result.source in {"reddit", "x"}:
+                tags.append("forum")
         doc = db.add_document(
             title=result.title,
             source_type="web",

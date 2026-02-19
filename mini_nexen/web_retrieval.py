@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import os
 import re
 import time
@@ -20,6 +21,8 @@ MAX_CONTENT_CHARS = 20000
 RETRY_MAX_SECONDS = 180
 RETRY_BASE_SLEEP = 2
 RETRY_MAX_SLEEP = 30
+_REDDIT_TOKEN: str | None = None
+_REDDIT_TOKEN_EXPIRES_AT = 0.0
 
 
 class RetrievalRateLimitError(RuntimeError):
@@ -53,6 +56,7 @@ def _request_with_retries(
     timeout: int,
     headers: dict[str, str] | None = None,
     data: str | None = None,
+    auth: tuple[str, str] | None = None,
     label: str = "request",
     max_retry_seconds: int = RETRY_MAX_SECONDS,
 ) -> requests.Response:
@@ -61,7 +65,14 @@ def _request_with_retries(
     start = time.monotonic()
     attempt = 0
     while True:
-        resp = requests.request(method, url, headers=headers, data=data, timeout=timeout)
+        resp = requests.request(
+            method,
+            url,
+            headers=headers,
+            data=data,
+            timeout=timeout,
+            auth=auth,
+        )
         if resp.status_code != 429:
             return resp
         attempt += 1
@@ -225,6 +236,175 @@ def search_brave(
     return results
 
 
+def search_google_pse(
+    query: str,
+    api_key: str,
+    cx: str,
+    max_results: int = 5,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> list[WebResult]:
+    q = quote_plus(query)
+    num = max(1, min(10, max_results))
+    url = f"https://www.googleapis.com/customsearch/v1?key={api_key}&cx={cx}&q={q}&num={num}"
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="google_pse")
+    resp.raise_for_status()
+    data = resp.json()
+    items = data.get("items") or []
+    results: list[WebResult] = []
+    for item in items:
+        title = _clean_text(item.get("title") or "")
+        url = item.get("link") or ""
+        snippet = _clean_text(item.get("snippet") or "")
+        if not url:
+            continue
+        results.append(WebResult(title=title or url, url=url, text=snippet, source="google_pse"))
+    return results
+
+
+def search_tavily(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> list[WebResult]:
+    url = "https://api.tavily.com/search"
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    payload = {
+        "query": query,
+        "max_results": max(0, min(20, max_results)),
+        "search_depth": "basic",
+        "include_answer": False,
+        "include_raw_content": False,
+    }
+    resp = _request_with_retries(
+        "POST",
+        url,
+        headers=headers,
+        data=json.dumps(payload),
+        timeout=timeout,
+        label="tavily",
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    items = data.get("results") or []
+    results: list[WebResult] = []
+    for item in items:
+        title = _clean_text(item.get("title") or "")
+        url = item.get("url") or ""
+        content = _clean_text(item.get("content") or "")
+        if not url:
+            continue
+        results.append(WebResult(title=title or url, url=url, text=content, source="tavily"))
+    return results
+
+
+def _get_reddit_token(
+    client_id: str,
+    client_secret: str,
+    user_agent: str,
+    timeout: int,
+) -> str | None:
+    global _REDDIT_TOKEN, _REDDIT_TOKEN_EXPIRES_AT
+    now = time.time()
+    if _REDDIT_TOKEN and now < _REDDIT_TOKEN_EXPIRES_AT - 30:
+        return _REDDIT_TOKEN
+    url = "https://www.reddit.com/api/v1/access_token"
+    headers = {"User-Agent": user_agent}
+    data = {"grant_type": "client_credentials"}
+    resp = _request_with_retries(
+        "POST",
+        url,
+        headers=headers,
+        data=data,
+        timeout=timeout,
+        auth=(client_id, client_secret),
+        label="reddit_token",
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    token = payload.get("access_token")
+    expires_in = payload.get("expires_in") or 0
+    try:
+        expires_in = float(expires_in)
+    except (TypeError, ValueError):
+        expires_in = 0
+    if token:
+        _REDDIT_TOKEN = token
+        _REDDIT_TOKEN_EXPIRES_AT = now + max(0, expires_in)
+        return token
+    return None
+
+
+def search_reddit(
+    query: str,
+    client_id: str,
+    client_secret: str,
+    user_agent: str,
+    max_results: int = 5,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> list[WebResult]:
+    token = _get_reddit_token(client_id, client_secret, user_agent, timeout)
+    if not token:
+        return []
+    limit = max(1, min(100, max_results))
+    q = quote_plus(query)
+    url = (
+        "https://oauth.reddit.com/search"
+        f"?q={q}&limit={limit}&sort=relevance&t=all&type=link"
+    )
+    headers = {"User-Agent": user_agent, "Authorization": f"bearer {token}"}
+    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="reddit")
+    resp.raise_for_status()
+    payload = resp.json()
+    items = payload.get("data", {}).get("children", []) if isinstance(payload, dict) else []
+    results: list[WebResult] = []
+    for item in items:
+        data = item.get("data", {}) if isinstance(item, dict) else {}
+        title = _clean_text(data.get("title") or "")
+        text = _clean_text(data.get("selftext") or "")
+        permalink = data.get("permalink") or ""
+        url = f"https://www.reddit.com{permalink}" if permalink else (data.get("url") or "")
+        if not url:
+            continue
+        results.append(WebResult(title=title or url, url=url, text=text, source="reddit"))
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def search_x_recent(
+    query: str,
+    bearer_token: str,
+    max_results: int = 5,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> list[WebResult]:
+    q = quote_plus(query)
+    request_max = max(10, min(100, max_results))
+    url = f"https://api.x.com/2/tweets/search/recent?query={q}&max_results={request_max}"
+    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {bearer_token}"}
+    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="x")
+    resp.raise_for_status()
+    payload = resp.json()
+    items = payload.get("data") or []
+    results: list[WebResult] = []
+    for item in items:
+        tweet_id = item.get("id") or ""
+        text = _clean_text(item.get("text") or "")
+        if not tweet_id:
+            continue
+        url = f"https://x.com/i/web/status/{tweet_id}"
+        results.append(WebResult(title=text or url, url=url, text=text, source="x"))
+        if len(results) >= max_results:
+            break
+    return results
+
+
 def search_arxiv(query: str, max_results: int = 5, timeout: int = DEFAULT_TIMEOUT) -> list[WebResult]:
     q = quote_plus(query)
     url = f"https://export.arxiv.org/api/query?search_query=all:{q}&start=0&max_results={max_results}"
@@ -311,11 +491,48 @@ def run_web_retrieval(
 ) -> list[WebResult]:
     results: list[WebResult] = []
     modes_set = {mode.strip().lower() for mode in modes}
-    tech_providers: list[tuple[str, callable]] = []
+    if "tech" in modes_set:
+        modes_set.add("open")
+    open_providers: list[tuple[str, callable]] = []
     brave_key = os.getenv("BRAVE_SEARCH_API_KEY")
     if brave_key:
-        tech_providers.append(
+        open_providers.append(
             ("brave", lambda q, max_results, timeout: search_brave(q, brave_key, max_results, timeout))
+        )
+    google_pse_key = os.getenv("GOOGLE_PSE_API_KEY")
+    google_pse_cx = os.getenv("GOOGLE_PSE_CX")
+    if google_pse_key and google_pse_cx:
+        open_providers.append(
+            (
+                "google_pse",
+                lambda q, max_results, timeout: search_google_pse(
+                    q, google_pse_key, google_pse_cx, max_results, timeout
+                ),
+            )
+        )
+    tavily_key = os.getenv("TAVILY_API_KEY")
+    if tavily_key:
+        open_providers.append(
+            ("tavily", lambda q, max_results, timeout: search_tavily(q, tavily_key, max_results, timeout))
+        )
+
+    forum_providers: list[tuple[str, callable]] = []
+    x_token = os.getenv("X_API_BEARER_TOKEN")
+    if x_token:
+        forum_providers.append(
+            ("x", lambda q, max_results, timeout: search_x_recent(q, x_token, max_results, timeout))
+        )
+    reddit_id = os.getenv("REDDIT_CLIENT_ID")
+    reddit_secret = os.getenv("REDDIT_CLIENT_SECRET")
+    reddit_user_agent = os.getenv("REDDIT_USER_AGENT")
+    if reddit_id and reddit_secret and reddit_user_agent:
+        forum_providers.append(
+            (
+                "reddit",
+                lambda q, max_results, timeout: search_reddit(
+                    q, reddit_id, reddit_secret, reddit_user_agent, max_results, timeout
+                ),
+            )
         )
     log_task_event(
         "Web retrieval start: "
@@ -327,7 +544,8 @@ def run_web_retrieval(
         f"hybrid={hybrid} "
         f"expand={expand_query_flag} "
         f"max_queries={max_queries} "
-        f"tech_sources={[label for label, _ in tech_providers]}"
+        f"open_sources={[label for label, _ in open_providers]} "
+        f"forum_sources={[label for label, _ in forum_providers]}"
     )
 
     def _safe_search(label: str, fn: callable, query_text: str) -> list[WebResult]:
@@ -347,13 +565,19 @@ def run_web_retrieval(
     if len(queries) > 1:
         log_task_event(f"Web retrieval expanded queries: {queries}")
 
-    tech_enabled = "tech" in modes_set or "web" in modes_set
-    if tech_enabled and not tech_providers:
-        log_task_event("Web retrieval tech sources skipped: no API keys configured.")
+    open_enabled = "open" in modes_set or "web" in modes_set
+    forum_enabled = "forum" in modes_set
+    if open_enabled and not open_providers:
+        log_task_event("Web retrieval open sources skipped: no API keys configured.")
+    if forum_enabled and not forum_providers:
+        log_task_event("Web retrieval forum sources skipped: no API keys configured.")
 
     for q in queries:
-        if tech_enabled and tech_providers:
-            for label, fn in tech_providers:
+        if open_enabled and open_providers:
+            for label, fn in open_providers:
+                results.extend(_safe_search(label, fn, q))
+        if forum_enabled and forum_providers:
+            for label, fn in forum_providers:
                 results.extend(_safe_search(label, fn, q))
 
         if "lit" in modes_set or "literature" in modes_set:

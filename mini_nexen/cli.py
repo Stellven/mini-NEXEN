@@ -189,13 +189,15 @@ def _research(args: argparse.Namespace) -> None:
 
     web_modes = []
     if not args.no_web:
-        if args.web or args.web_tech or args.web_lit:
-            if args.web or args.web_tech:
-                web_modes.append("tech")
+        if args.web or args.web_open or args.web_forum or args.web_lit:
+            if args.web or args.web_open:
+                web_modes.append("open")
+            if args.web or args.web_forum:
+                web_modes.append("forum")
             if args.web or args.web_lit:
                 web_modes.append("lit")
         else:
-            web_modes = ["tech", "lit"]
+            web_modes = ["open", "lit"]
     web_enabled = bool(web_modes)
     web_hybrid = web_enabled and not args.web_no_hybrid
     if args.web_hybrid:
@@ -420,7 +422,6 @@ def _prompt_model(provider: str, default: str | None = None) -> str:
             "gemini-2.5-flash",
             "gemini-2.5-pro",
             "gemini-2.5-flash-lite",
-            "gemini-2.0-pro",
             "gemini-2.0-flash",
             "gemini-2.0-flash-lite",
             "custom",
@@ -579,8 +580,20 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument("--base-url", help="Override base URL (LM Studio only)")
     research.add_argument("--temperature", type=float, help="Sampling temperature")
     research.add_argument("--max-tokens", type=int, help="Max tokens to generate")
-    research.add_argument("--web", action="store_true", help="Enable web retrieval (tech + literature)")
-    research.add_argument("--web-tech", action="store_true", help="Enable tech/news/forums retrieval")
+    research.add_argument("--web", action="store_true", help="Enable web retrieval (open + forum + literature)")
+    research.add_argument(
+        "--web-open",
+        "--web-tech",
+        dest="web_open",
+        action="store_true",
+        help="Enable open-web retrieval (Brave/Google/Tavily).",
+    )
+    research.add_argument(
+        "--web-forum",
+        dest="web_forum",
+        action="store_true",
+        help="Enable forum retrieval (X/Reddit).",
+    )
     research.add_argument("--web-lit", action="store_true", help="Enable literature retrieval")
     research.add_argument("--no-web", action="store_true", help="Disable web retrieval (default: on)")
     research.add_argument(

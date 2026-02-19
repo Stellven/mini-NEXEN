@@ -48,6 +48,14 @@ docker run --rm -it \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/plans:/app/plans" \
   -e GEMINI_API_KEY="your-key" \
+  -e BRAVE_SEARCH_API_KEY="your-key" \
+  -e GOOGLE_PSE_API_KEY="your-key" \
+  -e GOOGLE_PSE_CX="your-cx" \
+  -e TAVILY_API_KEY="your-key" \
+  -e X_API_BEARER_TOKEN="your-key" \
+  -e REDDIT_CLIENT_ID="your-id" \
+  -e REDDIT_CLIENT_SECRET="your-secret" \
+  -e REDDIT_USER_AGENT="mini-nexen/0.1" \
   mini-nexen research --topic "Agentic research systems"
 ```
 Example (equivalent to local CLI):
@@ -56,11 +64,20 @@ docker run --rm -it \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/plans:/app/plans" \
   -e GEMINI_API_KEY="your-key" \
+  -e BRAVE_SEARCH_API_KEY="your-key" \
+  -e GOOGLE_PSE_API_KEY="your-key" \
+  -e GOOGLE_PSE_CX="your-cx" \
+  -e TAVILY_API_KEY="your-key" \
+  -e X_API_BEARER_TOKEN="your-key" \
+  -e REDDIT_CLIENT_ID="your-id" \
+  -e REDDIT_CLIENT_SECRET="your-secret" \
+  -e REDDIT_USER_AGENT="mini-nexen/0.1" \
   mini-nexen research --topic "AI agent 驱动的 workflow 最近技术分析报告" --web-lit --ingest
 ```
 Notes:
 - For LM Studio running on the host, use `--network=host` (Linux) or set `LMSTUDIO_BASE_URL` to `http://host.docker.internal:1234/v1`.
 - If you want interactive provider/model prompts, keep `-it`.
+- `--review-query` requires an editor inside the container; set `MINI_NEXEN_QUERY_EDITOR` to an available editor or skip review.
 
 **Docker Compose**
 1. Configure environment variables (optional).
@@ -76,7 +93,7 @@ docker compose up --build
 docker compose run --rm mini-nexen research --topic "Agentic research systems"
 ```
 Notes:
-- Edit `.env` to set Gemini/LM Studio keys and model defaults.
+- Edit `.env` to set Gemini/LM Studio keys, Brave Search API key, and optional `MINI_NEXEN_QUERY_EDITOR`.
 - Data and plans are persisted to `./data` and `./plans`.
 
 **Setup**
@@ -95,10 +112,21 @@ LLM env vars:
 - `LMSTUDIO_API_KEY`: LM Studio auth if required
 
 Web retrieval env vars:
-- `BRAVE_SEARCH_API_KEY`: Enables API-based tech/web search via Brave Search API.
+- `BRAVE_SEARCH_API_KEY`: Enables API-based open-web search via Brave Search API.
+- `GOOGLE_PSE_API_KEY`: Google Programmable Search API key (requires `GOOGLE_PSE_CX`).
+- `GOOGLE_PSE_CX`: Google Programmable Search engine ID.
+- `TAVILY_API_KEY`: Tavily Search API key.
+- `X_API_BEARER_TOKEN`: X API bearer token for recent search.
+- `REDDIT_CLIENT_ID`: Reddit app client ID for search.
+- `REDDIT_CLIENT_SECRET`: Reddit app client secret for search.
+- `REDDIT_USER_AGENT`: User agent string for Reddit API requests.
 
 Query review env vars:
 - `MINI_NEXEN_QUERY_EDITOR`: Editor command to open the query artifact (defaults to `code --wait`).
+
+Skill hints (in query artifact):
+- `predicted_skills` is display-only.
+- `skill_hints` activates skills and accepts skill_id, display_name, aliases, or catalog index.
 
 LLM defaults:
 - Gemini default model: `gemini-2.5-flash`
@@ -130,12 +158,12 @@ Logging configuration:
 3. Increment the research run counter and optionally ingest seed files from `data/seeds/` (if you maintain your own).
 4. Decay and archive existing web documents based on usage and relevance.
 5. Optionally add the current topic to the interests table.
-6. Infer topic + analysis methodologies from the query and save a reviewable query-understanding artifact.
+6. Infer topic + analysis methodologies from the query and save a reviewable query-understanding artifact (includes predicted skills and `skill_hints` overrides).
 7. Start planning rounds (default 2).
 8. Load stored interests and methods.
 9. If the systems-engineering skill triggers on keywords, inject its guidance into the planning context.
 10. If web retrieval is enabled, build query seeds from topic + interests + graph suggestions and run retrieval.
-11. Web retrieval uses API-key web search providers for tech retrieval (currently Brave Search API when `BRAVE_SEARCH_API_KEY` is set) and arXiv/Semantic Scholar/Crossref for literature, optionally expands queries with the LLM, fetches pages, and reranks results with embeddings.
+11. Web retrieval uses API-key open-web providers (Brave Search API, Google Programmable Search, Tavily), forum providers (X/Reddit), and arXiv/Semantic Scholar/Crossref for literature, optionally expands queries with the LLM, fetches pages, and reranks results with embeddings.
 12. Web results are stored as new documents with relevance scores.
 13. Update the graph: chunk documents, embed missing chunks, cluster (HDBSCAN then KMeans fallback), and update metrics.
 14. Map the topic to the closest cluster and record it in `topic_cluster_map`.
@@ -162,7 +190,7 @@ Logging configuration:
 
 Common behavior:
 - If no provider/model is configured and stdin is not a TTY, the command exits with an error.
-- If no `--web*` flags are given, web retrieval runs with both `tech` and `lit` modes.
+- If no `--web*` flags are given, web retrieval runs with both `open` and `lit` modes.
 
 Research flags:
 | Flag | Meaning | Default |
@@ -176,8 +204,9 @@ Research flags:
 | `--base-url` | LM Studio base URL | `LMSTUDIO_BASE_URL` or default |
 | `--temperature` | LLM sampling temperature | `0.2` |
 | `--max-tokens` | LLM max tokens | `2048` |
-| `--web` | Enable tech + literature retrieval | off (enabled implicitly if no web flags and not `--no-web`) |
-| `--web-tech` | Enable tech/news retrieval | off |
+| `--web` | Enable open + forum + literature retrieval | off (enabled implicitly if no web flags and not `--no-web`) |
+| `--web-open` | Enable open-web retrieval (Brave/Google/Tavily) | off |
+| `--web-forum` | Enable forum retrieval (X/Reddit) | off |
 | `--web-lit` | Enable literature retrieval | off |
 | `--no-web` | Disable web retrieval | off |
 | `--ingest` / `--ingest-seeds` | Ingest `data/seeds/` before retrieval (user-provided) | off |
