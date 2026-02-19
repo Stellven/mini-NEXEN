@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -8,8 +9,6 @@ from typing import Iterable
 from urllib.parse import quote_plus
 from xml.etree import ElementTree
 
-import os
-import time
 import requests
 
 from .embeddings import EmbeddingClient, EmbeddingConfig, cosine_similarity
@@ -196,6 +195,36 @@ def search_duckduckgo(query: str, max_results: int = 5, timeout: int = DEFAULT_T
     return results
 
 
+def search_brave(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> list[WebResult]:
+    q = quote_plus(query)
+    url = f"https://api.search.brave.com/res/v1/web/search?q={q}&count={max_results}"
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json",
+        "X-Subscription-Token": api_key,
+    }
+    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="brave")
+    resp.raise_for_status()
+    data = resp.json()
+    results: list[WebResult] = []
+    web_block = data.get("web") or {}
+    items = web_block.get("results") or data.get("results") or []
+    for item in items:
+        title = _clean_text(item.get("title") or "")
+        url = item.get("url") or ""
+        snippet = item.get("description") or item.get("snippet") or item.get("content") or ""
+        snippet = _clean_text(snippet)
+        if not url:
+            continue
+        results.append(WebResult(title=title or url, url=url, text=snippet, source="brave"))
+    return results
+
+
 def search_arxiv(query: str, max_results: int = 5, timeout: int = DEFAULT_TIMEOUT) -> list[WebResult]:
     q = quote_plus(query)
     url = f"https://export.arxiv.org/api/query?search_query=all:{q}&start=0&max_results={max_results}"
@@ -282,6 +311,12 @@ def run_web_retrieval(
 ) -> list[WebResult]:
     results: list[WebResult] = []
     modes_set = {mode.strip().lower() for mode in modes}
+    tech_providers: list[tuple[str, callable]] = []
+    brave_key = os.getenv("BRAVE_SEARCH_API_KEY")
+    if brave_key:
+        tech_providers.append(
+            ("brave", lambda q, max_results, timeout: search_brave(q, brave_key, max_results, timeout))
+        )
     log_task_event(
         "Web retrieval start: "
         f"query='{query}' "
@@ -291,7 +326,8 @@ def run_web_retrieval(
         f"fetch_pages={fetch_pages} "
         f"hybrid={hybrid} "
         f"expand={expand_query_flag} "
-        f"max_queries={max_queries}"
+        f"max_queries={max_queries} "
+        f"tech_sources={[label for label, _ in tech_providers]}"
     )
 
     def _safe_search(label: str, fn: callable, query_text: str) -> list[WebResult]:
@@ -311,9 +347,14 @@ def run_web_retrieval(
     if len(queries) > 1:
         log_task_event(f"Web retrieval expanded queries: {queries}")
 
+    tech_enabled = "tech" in modes_set or "web" in modes_set
+    if tech_enabled and not tech_providers:
+        log_task_event("Web retrieval tech sources skipped: no API keys configured.")
+
     for q in queries:
-        if "tech" in modes_set or "web" in modes_set:
-            results.extend(_safe_search("duckduckgo", search_duckduckgo, q))
+        if tech_enabled and tech_providers:
+            for label, fn in tech_providers:
+                results.extend(_safe_search(label, fn, q))
 
         if "lit" in modes_set or "literature" in modes_set:
             results.extend(_safe_search("arxiv", search_arxiv, q))

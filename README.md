@@ -94,6 +94,12 @@ LLM env vars:
 - `LMSTUDIO_BASE_URL`: LM Studio endpoint (default `http://localhost:1234/v1`)
 - `LMSTUDIO_API_KEY`: LM Studio auth if required
 
+Web retrieval env vars:
+- `BRAVE_SEARCH_API_KEY`: Enables API-based tech/web search via Brave Search API.
+
+Query review env vars:
+- `MINI_NEXEN_QUERY_EDITOR`: Editor command to open the query artifact (defaults to `code --wait`).
+
 LLM defaults:
 - Gemini default model: `gemini-2.5-flash`
 - LM Studio default model: `local-model` (if you set `MINI_NEXEN_MODEL` to `your-local-model` and keep discovery on, the client will auto-detect a model)
@@ -116,7 +122,7 @@ Logging configuration:
 - `data/library/`: stored text copies of ingested content.
 - `data/seeds/`: optional user-provided seed files (if you use `--ingest`).
 - `data/task_events.log`: structured log of retrieval/LLM/graph events.
-- `plans/`: generated plans as `YYYY_MM_DD_HH_MM_plan.md`.
+- `plans/`: generated plans (`YYYY_MM_DD_HH_MM_plan.md`) and query understanding artifacts (`YYYY_MM_DD_HH_MM_query.md`). Query artifacts include predicted skills (display-only) and `skill_hints` for forced activation.
 
 **Pipeline (Research Command)**
 1. Resolve LLM config from flags/env/interactive prompts.
@@ -124,20 +130,21 @@ Logging configuration:
 3. Increment the research run counter and optionally ingest seed files from `data/seeds/` (if you maintain your own).
 4. Decay and archive existing web documents based on usage and relevance.
 5. Optionally add the current topic to the interests table.
-6. Start planning rounds (default 2).
-7. Load stored interests and methods.
-8. If the systems-engineering skill triggers on keywords, inject its guidance into the planning context.
-9. If web retrieval is enabled, build query seeds from topic + interests + graph suggestions and run retrieval.
-10. Web retrieval searches DuckDuckGo (tech) and arXiv/Semantic Scholar/Crossref (literature), optionally expands queries with the LLM, fetches pages, and reranks results with embeddings.
-11. Web results are stored as new documents with relevance scores.
-12. Update the graph: chunk documents, embed missing chunks, cluster (HDBSCAN then KMeans fallback), and update metrics.
-13. Map the topic to the closest cluster and record it in `topic_cluster_map`.
-14. Select local docs via cluster round-robin (top clusters + top_k); if clusters are unavailable, fall back to lexical scoring.
-15. Merge the most similar chunks per doc for LLM context and enforce a minimum count of web docs if requested.
-16. Draft a research plan with the LLM using interests, methods, extracted themes, and selected docs.
-17. If readiness checks fail (gaps or not enough sources), refine the plan and generate new query hints for the next round.
-18. Build a long-form outline (target 1000-2000 words) and render the final plan markdown.
-19. Save `plans/YYYY_MM_DD_HH_MM_plan.md` and log summary stats.
+6. Infer topic + analysis methodologies from the query and save a reviewable query-understanding artifact.
+7. Start planning rounds (default 2).
+8. Load stored interests and methods.
+9. If the systems-engineering skill triggers on keywords, inject its guidance into the planning context.
+10. If web retrieval is enabled, build query seeds from topic + interests + graph suggestions and run retrieval.
+11. Web retrieval uses API-key web search providers for tech retrieval (currently Brave Search API when `BRAVE_SEARCH_API_KEY` is set) and arXiv/Semantic Scholar/Crossref for literature, optionally expands queries with the LLM, fetches pages, and reranks results with embeddings.
+12. Web results are stored as new documents with relevance scores.
+13. Update the graph: chunk documents, embed missing chunks, cluster (HDBSCAN then KMeans fallback), and update metrics.
+14. Map the topic to the closest cluster and record it in `topic_cluster_map`.
+15. Select local docs via cluster round-robin (top clusters + top_k); if clusters are unavailable, fall back to lexical scoring.
+16. Merge the most similar chunks per doc for LLM context and enforce a minimum count of web docs if requested.
+17. Draft a research plan with the LLM using interests, methods, extracted themes, and selected docs.
+18. If readiness checks fail (gaps or not enough sources), refine the plan and generate new query hints for the next round.
+19. Build a long-form outline (target 1000-2000 words) and render the final plan markdown.
+20. Save `plans/YYYY_MM_DD_HH_MM_plan.md` and log summary stats.
 
 **Retrieval & Graph Details**
 - Chunking uses sentence splits, default chunk size `500` tokens with `100` tokens of overlap.
@@ -151,6 +158,7 @@ Logging configuration:
 **CLI Reference**
 
 `research` generates a plan and outline.
+
 
 Common behavior:
 - If no provider/model is configured and stdin is not a TTY, the command exits with an error.
@@ -174,6 +182,10 @@ Research flags:
 | `--no-web` | Disable web retrieval | off |
 | `--ingest` / `--ingest-seeds` | Ingest `data/seeds/` before retrieval (user-provided) | off |
 | `--auto-interest` | Add topic to interests table | off |
+| `--auto-methods` | Infer analysis methodologies from the query | on |
+| `--no-auto-methods` | Disable analysis methodology inference | off |
+| `--review-query` | Pause to review inferred query understanding | auto (TTY) |
+| `--no-review-query` | Skip the query understanding review step | off |
 | `--graph-semantic-labels` | Force LLM-based cluster labels on | on by default |
 | `--no-graph-semantic-labels` | Disable LLM-based cluster labels | off |
 | `--graph-top-clusters` | Clusters used for retrieval | `10` |

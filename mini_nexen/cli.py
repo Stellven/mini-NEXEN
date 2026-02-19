@@ -172,6 +172,7 @@ def _list_methods(_: argparse.Namespace) -> None:
         print(f"{method.method_id} | {method.method}")
 
 
+
 def _research(args: argparse.Namespace) -> None:
     ensure_dirs()
     provider, model = _resolve_llm_choice(args)
@@ -225,6 +226,10 @@ def _research(args: argparse.Namespace) -> None:
     else:
         print("Embeddings: disabled (web retrieval off)")
 
+    interactive = sys.stdin.isatty()
+    auto_methods = args.auto_methods if args.auto_methods is not None else True
+    review_query = args.review_query if args.review_query is not None else interactive
+
     log_task_event("--------- Task Starts ----------")
     log_task_event(f"Topic: {args.topic}")
     log_task_event(f"Provider: {llm_config.provider} | Model: {llm_config.model}")
@@ -258,9 +263,14 @@ def _research(args: argparse.Namespace) -> None:
             web_relevance_threshold=args.web_relevance_threshold,
             ingest_seeds=args.ingest_seeds,
             auto_interest=args.auto_interest,
+            auto_methods=auto_methods,
+            review_query=review_query,
+            interactive=interactive,
             graph_semantic_labels=not args.no_graph_semantic_labels or args.graph_semantic_labels,
             graph_top_clusters=args.graph_top_clusters,
         )
+        if result.query_artifact_path:
+            print(f"Query understanding artifact: {result.query_artifact_path}")
         print(f"Saved plan: {result.plan_path}")
         # print(result.plan_markdown)
         print(
@@ -618,6 +628,31 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.25,
         help="Minimum relevance score when reranking (default: 0.25)",
     )
+    research.add_argument(
+        "--auto-methods",
+        dest="auto_methods",
+        action="store_true",
+        help="Infer analysis methodologies from the query (default: on).",
+    )
+    research.add_argument(
+        "--no-auto-methods",
+        dest="auto_methods",
+        action="store_false",
+        help="Disable analysis methodology inference.",
+    )
+    research.add_argument(
+        "--review-query",
+        dest="review_query",
+        action="store_true",
+        help="Pause to review inferred query understanding before retrieval.",
+    )
+    research.add_argument(
+        "--no-review-query",
+        dest="review_query",
+        action="store_false",
+        help="Skip the query understanding review step.",
+    )
+    research.set_defaults(auto_methods=None, review_query=None)
     research.add_argument(
         "--no-model-discovery",
         action="store_true",

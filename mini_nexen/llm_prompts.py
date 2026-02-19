@@ -53,6 +53,12 @@ Example:
 {"outline":[{"title":"Search for official technical reports and release blogs to extract architecture and training details.","substeps":["List official sources and release pages to target.","Extract training scale, data sources, and capability summaries.",{"text":"Capture deployment context and version history.","substeps":["Note release cadence and changelogs.","Record published caveats or limitations."]}]},{"title":"Compare context window sizes and long-context accuracy across models.","substeps":["Collect vendor claims and independent benchmarks.","Analyze long-context recall and retrieval performance.",{"text":"Identify failure cases.","substeps":["Summarize common error patterns.","Note mitigation strategies reported by practitioners."]}]}]}
 """
 
+SYSTEM_QUERY_UNDERSTANDING_PROMPT = (
+    "You are a query understanding agent. "
+    "Infer the core topic and analysis methodologies. "
+    "Return JSON only."
+)
+
 
 def _serialize_interests(interests: Iterable[Interest]) -> list[str]:
     serialized = []
@@ -143,6 +149,35 @@ def plan_prompt(
         payload["extracted_interests"] = extracted_interests
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
+    return json.dumps(payload, indent=2)
+
+
+def query_understanding_prompt(raw_query: str, methodology_taxonomy: list[str]) -> str:
+    payload = {
+        "query": raw_query,
+        "methodology_taxonomy": methodology_taxonomy,
+        "instructions": {
+            "output_json_schema": {
+                "topic": "string",
+                "normalized_query": "string",
+                "methodologies": ["string"],
+                "confidence": "0-1 float",
+                "rationale": "string",
+                "constraints": {"timeframe": "string | null", "region": "string | null", "industry": "string | null"},
+                "audience": "string | null",
+            },
+            "methodology_rules": [
+                "Choose methodologies only from methodology_taxonomy.",
+                "Methodologies are analysis lenses, not topics.",
+                "Return 1-3 methodologies.",
+            ],
+            "topic_rules": [
+                "topic should be the core subject of the query.",
+                "normalized_query should be a concise version of the query.",
+                "normalized_query should avoid analysis methodology terms.",
+            ],
+        },
+    }
     return json.dumps(payload, indent=2)
 
 

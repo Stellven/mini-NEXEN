@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import os
+import shlex
+import subprocess
 import re
+import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -22,6 +27,7 @@ from .config import (
     WEB_MAX_NEW_SOURCES,
     WEB_MAX_PER_QUERY,
     WEB_RELEVANCE_THRESHOLD,
+    PLANS_DIR,
     ensure_dirs,
 )
 from .embeddings import EmbeddingClient, EmbeddingConfig, cosine_similarity
@@ -39,6 +45,15 @@ from .planning import (
 )
 from .text_utils import score_documents, tokenize
 from .web_retrieval import expand_queries, run_web_retrieval
+from .query_understanding import (
+    DEFAULT_METHOD_TAXONOMY,
+    QueryUnderstanding,
+    build_methodology_terms,
+    infer_query_understanding,
+    normalize_query_understanding,
+    parse_query_artifact,
+    render_query_artifact,
+)
 
 
 @dataclass
@@ -47,12 +62,24 @@ class SkillSpec:
     description: str
     inputs: list[str]
     outputs: list[str]
+    display_name: str
+    aliases: list[str]
     path: Path
 
 
 @dataclass
 class SkillContext:
     topic: str
+    raw_topic: str = ""
+    normalized_query: str = ""
+    inferred_methods: list[db.Method] = field(default_factory=list)
+    methodology_terms: list[str] = field(default_factory=list)
+    methodology_taxonomy: list[str] = field(default_factory=list)
+    auto_methods: bool = True
+    review_query: bool = False
+    interactive: bool = False
+    query_artifact_path: Optional[Path] = None
+    query_understanding: Optional[QueryUnderstanding] = None
     top_k: int = DEFAULT_TOP_K
     min_web_docs: int = 0
     max_rounds: int = DEFAULT_ROUNDS
@@ -70,6 +97,7 @@ class SkillContext:
     query_hints: list[str] = field(default_factory=list)
     active_skills: list[str] = field(default_factory=list)
     skill_guidance: list[str] = field(default_factory=list)
+    skill_hints: list[str] = field(default_factory=list)
     web_enabled: bool = False
     run_id: int = 0
     web_modes: list[str] = field(default_factory=list)
@@ -132,9 +160,19 @@ class SkillRegistry:
         if not name:
             return None
         description = meta.get("description", "")
+        display_name = meta.get("display_name", name)
+        aliases = [item.strip() for item in meta.get("aliases", "").split(",") if item.strip()]
         inputs = [item.strip() for item in meta.get("inputs", "").split(",") if item.strip()]
         outputs = [item.strip() for item in meta.get("outputs", "").split(",") if item.strip()]
-        return SkillSpec(name=name, description=description, inputs=inputs, outputs=outputs, path=path)
+        return SkillSpec(
+            name=name,
+            description=description,
+            inputs=inputs,
+            outputs=outputs,
+            display_name=display_name,
+            aliases=aliases,
+            path=path,
+        )
 
 
 class SkillRunner:
@@ -209,7 +247,28 @@ def _extract_json_payload(text: str) -> object:
         return {}
 
 
-def _clean_query_list(value: object) -> list[str]:
+def _filter_methodology_terms(queries: list[str], method_terms: list[str]) -> list[str]:
+    if not method_terms:
+        return queries
+    cleaned = []
+    for query in queries:
+        text = query
+        for term in method_terms:
+            if not term:
+                continue
+            pattern = r"\b" + re.escape(term) + r"\b"
+            if re.search(pattern, text, flags=re.IGNORECASE):
+                text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s+", " ", text).strip(" ,;:-")
+        if not text:
+            continue
+        if len(text.split()) < 2:
+            continue
+        cleaned.append(text)
+    return cleaned
+
+
+def _clean_query_list(value: object, method_terms: list[str] | None = None) -> list[str]:
     if isinstance(value, dict):
         value = value.get("queries") or []
     if not isinstance(value, list):
@@ -225,10 +284,12 @@ def _clean_query_list(value: object) -> list[str]:
             continue
         cleaned.append(text)
         seen.add(key)
+    if method_terms:
+        cleaned = _filter_methodology_terms(cleaned, method_terms)
     return cleaned
 
 
-def _expand_queries_with_llm(ctx: SkillContext, query: str, modes: list[str]) -> list[str]:
+def expand_queries_with_llm(ctx: SkillContext, query: str, modes: list[str]) -> list[str]:
     if not ctx.llm:
         return []
     prompt = {
@@ -236,6 +297,7 @@ def _expand_queries_with_llm(ctx: SkillContext, query: str, modes: list[str]) ->
         "modes": modes,
         "instructions": (
             "Generate 3-6 alternative search queries using synonyms, related terms, and alternate phrasings. "
+            "Do not include analysis methodology terms (e.g., benchmarking, SWOT). "
             "Return JSON only as either a list of strings or {\"queries\": [...]}."
         ),
     }
@@ -246,7 +308,7 @@ def _expand_queries_with_llm(ctx: SkillContext, query: str, modes: list[str]) ->
         agent="Retriever",
     )
     payload = _extract_json_payload(response)
-    return _clean_query_list(payload)
+    return _clean_query_list(payload, ctx.methodology_terms)
 
 
 def _trim_query(text: str, max_words: int = 8, max_chars: int = 80) -> str:
@@ -267,6 +329,7 @@ def _rewrite_gap_queries_with_llm(ctx: SkillContext, gaps: list[str]) -> list[st
         "instructions": (
             "Rewrite each gap into 2-3 short search queries. "
             "Queries should be 2-6 words, no negations, and focused on key entities/relationships. "
+            "Avoid analysis methodology terms (e.g., benchmarking, SWOT). "
             "Queries must be in English; translate if needed. "
             "Return JSON only as a flat list of strings."
         ),
@@ -278,10 +341,10 @@ def _rewrite_gap_queries_with_llm(ctx: SkillContext, gaps: list[str]) -> list[st
         agent="Retriever",
     )
     payload = _extract_json_payload(response)
-    return _clean_query_list(payload)
+    return _clean_query_list(payload, ctx.methodology_terms)
 
 
-def _rewrite_gap_queries_fallback(gaps: list[str]) -> list[str]:
+def _rewrite_gap_queries_fallback(gaps: list[str], method_terms: list[str] | None = None) -> list[str]:
     cleaned = []
     patterns = [
         r"^the provided documents do not contain any information on\\s+",
@@ -304,7 +367,7 @@ def _rewrite_gap_queries_fallback(gaps: list[str]) -> list[str]:
         if not text:
             continue
         cleaned.append(_trim_query(text))
-    return _clean_query_list(cleaned)
+    return _clean_query_list(cleaned, method_terms)
 
 
 def _rewrite_gap_queries(ctx: SkillContext, gaps: list[str], max_gaps: int = 6) -> list[str]:
@@ -316,8 +379,168 @@ def _rewrite_gap_queries(ctx: SkillContext, gaps: list[str], max_gaps: int = 6) 
     rewritten = _rewrite_gap_queries_with_llm(ctx, limited)
     if rewritten:
         trimmed = [_trim_query(text) for text in rewritten]
-        return _clean_query_list(trimmed)[: max_gaps * 3]
-    return _rewrite_gap_queries_fallback(limited)
+        return _clean_query_list(trimmed, ctx.methodology_terms)[: max_gaps * 3]
+    return _rewrite_gap_queries_fallback(limited, ctx.methodology_terms)
+
+
+def _build_inferred_methods(methods: list[str]) -> list[db.Method]:
+    created_at = datetime.now(timezone.utc).isoformat()
+    inferred = []
+    seen = set()
+    for method in methods:
+        text = (method or "").strip()
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        inferred.append(
+            db.Method(
+                method_id=str(uuid.uuid4()),
+                method=text,
+                notes="auto:query_inferred",
+                created_at=created_at,
+            )
+        )
+    return inferred
+
+
+def _apply_query_understanding(ctx: SkillContext, understanding: QueryUnderstanding) -> None:
+    ctx.query_understanding = understanding
+    ctx.normalized_query = understanding.normalized_query
+    if understanding.topic:
+        ctx.topic = understanding.topic
+    ctx.methodology_terms = build_methodology_terms(understanding.methodologies)
+    if ctx.auto_methods:
+        ctx.inferred_methods = _build_inferred_methods(understanding.methodologies)
+
+
+def _build_skill_catalog(registry: SkillRegistry) -> list[dict[str, object]]:
+    items = sorted(registry.skills.values(), key=lambda spec: spec.display_name.casefold())
+    catalog = []
+    for idx, spec in enumerate(items, start=1):
+        catalog.append(
+            {
+                "index": idx,
+                "skill_id": spec.name,
+                "display_name": spec.display_name,
+                "aliases": spec.aliases,
+                "description": spec.description,
+            }
+        )
+    return catalog
+
+
+def _normalize_skill_hints(raw: object, registry: SkillRegistry) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    ordered = sorted(registry.skills.values(), key=lambda spec: spec.display_name.casefold())
+    index_map = {str(idx): spec.name for idx, spec in enumerate(ordered, start=1)}
+    alias_map: dict[str, str] = {}
+    for spec in registry.skills.values():
+        alias_map[spec.name.casefold()] = spec.name
+        alias_map[spec.display_name.casefold()] = spec.name
+        for alias in spec.aliases:
+            alias_map[alias.casefold()] = spec.name
+    normalized = []
+    seen = set()
+    for item in raw:
+        text = str(item).strip()
+        if not text:
+            continue
+        if text in index_map:
+            name = index_map[text]
+        else:
+            name = alias_map.get(text.casefold())
+        if not name:
+            log_task_event(f"Skill hint ignored (unknown): {text}")
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(name)
+    return normalized
+
+
+def _predict_skills(ctx: SkillContext, registry: SkillRegistry) -> list[str]:
+    texts = [ctx.topic, ctx.normalized_query, ctx.raw_topic]
+    for method in ctx.methods:
+        if method.method:
+            texts.append(method.method)
+    for method in ctx.inferred_methods:
+        if method.method:
+            texts.append(method.method)
+    predicted = []
+    if "systems-engineering" in registry.skills:
+        if _matches_triggers(texts, SYSTEMS_ENGINEERING_TRIGGERS):
+            predicted.append("systems-engineering")
+    return predicted
+
+
+def _resolve_query_editor() -> list[str]:
+    editor = (
+        os.getenv("MINI_NEXEN_QUERY_EDITOR")
+        or os.getenv("VISUAL")
+        or os.getenv("EDITOR")
+    )
+    if editor:
+        return shlex.split(editor)
+    return ["code", "--wait"]
+
+
+def _launch_query_editor(path: Path) -> None:
+    command = _resolve_query_editor()
+    command = [*command, str(path)]
+    subprocess.run(command, check=True)
+
+
+def skill_infer_query(ctx: SkillContext) -> SkillContext:
+    if not ctx.auto_methods and not ctx.review_query:
+        return ctx
+    registry = SkillRegistry()
+    registry.load()
+    raw_query = ctx.raw_topic or ctx.topic
+    taxonomy = ctx.methodology_taxonomy or DEFAULT_METHOD_TAXONOMY
+    understanding = infer_query_understanding(ctx.llm, raw_query, taxonomy)
+    _apply_query_understanding(ctx, understanding)
+
+    ensure_dirs()
+    skill_catalog = _build_skill_catalog(registry)
+    predicted_skills = _predict_skills(ctx, registry)
+    artifact = render_query_artifact(
+        understanding,
+        raw_query,
+        taxonomy,
+        skill_catalog=skill_catalog,
+        predicted_skills=predicted_skills,
+        skill_hints=ctx.skill_hints,
+    )
+    artifact_path = PLANS_DIR / datetime.now().strftime("%Y_%m_%d_%H_%M_query.md")
+    artifact_path.write_text(artifact, encoding="utf-8")
+    ctx.query_artifact_path = artifact_path
+    log_task_event(f"Query understanding saved: {artifact_path}")
+
+    if ctx.review_query:
+        if not ctx.interactive:
+            raise SystemExit("Query review requires a TTY. Re-run with --no-review-query to skip.")
+        print(f"Query understanding saved to {artifact_path}")
+        try:
+            _launch_query_editor(artifact_path)
+        except FileNotFoundError:
+            print("Editor not found. Edit the file manually, then press Enter to continue.")
+            input("Press Enter to continue... ")
+        except subprocess.CalledProcessError:
+            print("Editor exited with a non-zero status. Review the file, then press Enter to continue.")
+            input("Press Enter to continue... ")
+        updated_payload = parse_query_artifact(artifact_path.read_text(encoding="utf-8"))
+        if updated_payload:
+            updated = normalize_query_understanding(updated_payload, raw_query, taxonomy)
+            _apply_query_understanding(ctx, updated)
+            ctx.skill_hints = _normalize_skill_hints(updated_payload.get("skill_hints"), registry)
+            log_task_event("Query understanding updated from reviewed artifact.")
+    return ctx
 
 
 def _build_embedding_config(ctx: SkillContext) -> EmbeddingConfig | None:
@@ -431,6 +654,13 @@ def skill_collect_methods(ctx: SkillContext) -> SkillContext:
     ensure_dirs()
     db.init_db()
     ctx.methods = db.list_methods(limit=20)
+    if ctx.inferred_methods:
+        merged = {method.method.casefold(): method for method in ctx.methods if method.method}
+        for method in ctx.inferred_methods:
+            key = method.method.casefold()
+            if key not in merged:
+                merged[key] = method
+        ctx.methods = list(merged.values())
     return ctx
 
 
@@ -608,8 +838,9 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         assign_similarity_min=ctx.graph_assign_similarity_min,
     )
     cluster_interests = graph.suggest_interests(ctx.topic, limit=3)
+    seed_topic = ctx.normalized_query or ctx.topic
     for item in (
-        [ctx.topic]
+        [seed_topic]
         + [interest.topic for interest in ctx.interests]
         + cluster_interests
         + ctx.query_hints
@@ -633,7 +864,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         log_task_event_quiet(f"Web retrieval query: {query}")
         extra_queries: list[str] = []
         if ctx.web_expand_queries:
-            extra_queries = _expand_queries_with_llm(ctx, query, modes)
+            extra_queries = expand_queries_with_llm(ctx, query, modes)
             expanded = expand_queries(
                 query,
                 modes,
@@ -705,7 +936,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             if result.source in {"arxiv", "semantic_scholar", "crossref"}:
                 tags.append("literature")
         if "tech" in modes or "web" in modes:
-            if result.source == "duckduckgo":
+            if result.source in {"duckduckgo", "brave"}:
                 tags.append("tech")
         doc = db.add_document(
             title=result.title,
@@ -780,7 +1011,10 @@ def skill_refine_plan(ctx: SkillContext) -> SkillContext:
         doc_text_overrides=ctx.doc_text_overrides,
         skill_guidance=ctx.skill_guidance,
     )
-    cleaned_queries = [_trim_query(text) for text in _clean_query_list(ctx.plan.retrieval_queries)]
+    cleaned_queries = [
+        _trim_query(text)
+        for text in _clean_query_list(ctx.plan.retrieval_queries, ctx.methodology_terms)
+    ]
     ctx.query_hints = cleaned_queries or fallback_queries
     ctx.plan.readiness = "refined"
     return ctx
@@ -826,7 +1060,7 @@ def build_default_runner() -> SkillRunner:
             return ctx
         if spec.name in ctx.active_skills:
             return ctx
-        texts = [ctx.topic]
+        texts = [ctx.topic, ctx.normalized_query, ctx.raw_topic]
         for method in ctx.methods:
             if method.method:
                 texts.append(method.method)
@@ -836,8 +1070,24 @@ def build_default_runner() -> SkillRunner:
         ctx.active_skills.append(spec.name)
         ctx.skill_guidance.append(content)
         return ctx
+    def skill_apply_skill_hints(ctx: SkillContext) -> SkillContext:
+        if not ctx.skill_hints:
+            return ctx
+        for name in ctx.skill_hints:
+            spec = registry.skills.get(name)
+            if not spec:
+                log_task_event(f"Skill hint not found in registry: {name}")
+                continue
+            if spec.name in ctx.active_skills:
+                continue
+            content = spec.path.read_text(encoding="utf-8")
+            ctx.active_skills.append(spec.name)
+            ctx.skill_guidance.append(content)
+        return ctx
+    runner.register("infer_query", skill_infer_query)
     runner.register("collect_interests", skill_collect_interests)
     runner.register("collect_methods", skill_collect_methods)
+    runner.register("apply_skill_hints", skill_apply_skill_hints)
     runner.register("systems-engineering", skill_systems_engineering)
     runner.register("web_retrieve", skill_web_retrieve)
     runner.register("retrieve_sources", skill_retrieve_sources)

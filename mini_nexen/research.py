@@ -25,6 +25,7 @@ class ResearchResult:
     plan_path: Path
     plan_markdown: str
     outline_word_count: int
+    query_artifact_path: Path | None = None
 
 
 def _plan_filename(now: datetime) -> str:
@@ -60,6 +61,10 @@ def run_research(
     web_relevance_threshold: float = 0.25,
     ingest_seeds: bool = False,
     auto_interest: bool = False,
+    auto_methods: bool = True,
+    review_query: bool | None = None,
+    interactive: bool = False,
+    methodology_taxonomy: list[str] | None = None,
     graph_semantic_labels: bool = True,
     graph_top_clusters: int = GRAPH_TOP_CLUSTERS,
 ) -> ResearchResult:
@@ -98,11 +103,16 @@ def run_research(
 
     ctx = SkillContext(
         topic=topic,
+        raw_topic=topic,
         max_rounds=rounds,
         top_k=top_k,
         min_web_docs=min_web_docs,
         run_id=run_id,
         llm=llm_client,
+        auto_methods=auto_methods,
+        review_query=bool(review_query),
+        interactive=interactive,
+        methodology_taxonomy=methodology_taxonomy or [],
         web_enabled=web_enabled,
         web_modes=web_modes or [],
         web_max_results=web_max_results,
@@ -133,4 +143,5 @@ def run_research(
         plan_path=plan_path,
         plan_markdown=plan_md,
         outline_word_count=outline_word_count(ctx.outline),
+        query_artifact_path=ctx.query_artifact_path,
     )

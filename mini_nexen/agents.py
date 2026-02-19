@@ -22,7 +22,15 @@ class Orchestrator:
         self.runner = runner
         self.retriever = Agent(
             "retriever",
-            ["collect_interests", "collect_methods", "systems-engineering", "web_retrieve", "retrieve_sources"],
+            [
+                "infer_query",
+                "collect_interests",
+                "collect_methods",
+                "apply_skill_hints",
+                "systems-engineering",
+                "web_retrieve",
+                "retrieve_sources",
+            ],
         )
         self.planner = Agent("planner", ["plan_research", "refine_plan"])
         self.outliner = Agent("outliner", ["build_outline", "persist_plan"])
