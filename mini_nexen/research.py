@@ -26,6 +26,7 @@ class ResearchResult:
     plan_markdown: str
     outline_word_count: int
     query_artifact_path: Path | None = None
+    web_search_artifact_path: Path | None = None
 
 
 def _plan_filename(now: datetime) -> str:
@@ -144,4 +145,5 @@ def run_research(
         plan_markdown=plan_md,
         outline_word_count=outline_word_count(ctx.outline),
         query_artifact_path=ctx.query_artifact_path,
+        web_search_artifact_path=ctx.web_search_artifact_path,
     )

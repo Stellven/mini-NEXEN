@@ -236,32 +236,6 @@ def search_brave(
     return results
 
 
-def search_google_pse(
-    query: str,
-    api_key: str,
-    cx: str,
-    max_results: int = 5,
-    timeout: int = DEFAULT_TIMEOUT,
-) -> list[WebResult]:
-    q = quote_plus(query)
-    num = max(1, min(10, max_results))
-    url = f"https://www.googleapis.com/customsearch/v1?key={api_key}&cx={cx}&q={q}&num={num}"
-    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-    resp = _request_with_retries("GET", url, headers=headers, timeout=timeout, label="google_pse")
-    resp.raise_for_status()
-    data = resp.json()
-    items = data.get("items") or []
-    results: list[WebResult] = []
-    for item in items:
-        title = _clean_text(item.get("title") or "")
-        url = item.get("link") or ""
-        snippet = _clean_text(item.get("snippet") or "")
-        if not url:
-            continue
-        results.append(WebResult(title=title or url, url=url, text=snippet, source="google_pse"))
-    return results
-
-
 def search_tavily(
     query: str,
     api_key: str,
@@ -498,17 +472,6 @@ def run_web_retrieval(
     if brave_key:
         open_providers.append(
             ("brave", lambda q, max_results, timeout: search_brave(q, brave_key, max_results, timeout))
-        )
-    google_pse_key = os.getenv("GOOGLE_PSE_API_KEY")
-    google_pse_cx = os.getenv("GOOGLE_PSE_CX")
-    if google_pse_key and google_pse_cx:
-        open_providers.append(
-            (
-                "google_pse",
-                lambda q, max_results, timeout: search_google_pse(
-                    q, google_pse_key, google_pse_cx, max_results, timeout
-                ),
-            )
         )
     tavily_key = os.getenv("TAVILY_API_KEY")
     if tavily_key:

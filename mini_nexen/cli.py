@@ -230,7 +230,7 @@ def _research(args: argparse.Namespace) -> None:
 
     interactive = sys.stdin.isatty()
     auto_methods = args.auto_methods if args.auto_methods is not None else True
-    review_query = args.review_query if args.review_query is not None else interactive
+    review_query = True
 
     log_task_event("--------- Task Starts ----------")
     log_task_event(f"Topic: {args.topic}")
@@ -273,6 +273,8 @@ def _research(args: argparse.Namespace) -> None:
         )
         if result.query_artifact_path:
             print(f"Query understanding artifact: {result.query_artifact_path}")
+        if result.web_search_artifact_path:
+            print(f"Web search plan artifact: {result.web_search_artifact_path}")
         print(f"Saved plan: {result.plan_path}")
         # print(result.plan_markdown)
         print(
@@ -653,19 +655,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Disable analysis methodology inference.",
     )
-    research.add_argument(
-        "--review-query",
-        dest="review_query",
-        action="store_true",
-        help="Pause to review inferred query understanding before retrieval.",
-    )
-    research.add_argument(
-        "--no-review-query",
-        dest="review_query",
-        action="store_false",
-        help="Skip the query understanding review step.",
-    )
-    research.set_defaults(auto_methods=None, review_query=None)
+    research.set_defaults(auto_methods=None)
     research.add_argument(
         "--no-model-discovery",
         action="store_true",

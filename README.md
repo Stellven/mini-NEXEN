@@ -49,8 +49,6 @@ docker run --rm -it \
   -v "$(pwd)/plans:/app/plans" \
   -e GEMINI_API_KEY="your-key" \
   -e BRAVE_SEARCH_API_KEY="your-key" \
-  -e GOOGLE_PSE_API_KEY="your-key" \
-  -e GOOGLE_PSE_CX="your-cx" \
   -e TAVILY_API_KEY="your-key" \
   -e X_API_BEARER_TOKEN="your-key" \
   -e REDDIT_CLIENT_ID="your-id" \
@@ -65,8 +63,6 @@ docker run --rm -it \
   -v "$(pwd)/plans:/app/plans" \
   -e GEMINI_API_KEY="your-key" \
   -e BRAVE_SEARCH_API_KEY="your-key" \
-  -e GOOGLE_PSE_API_KEY="your-key" \
-  -e GOOGLE_PSE_CX="your-cx" \
   -e TAVILY_API_KEY="your-key" \
   -e X_API_BEARER_TOKEN="your-key" \
   -e REDDIT_CLIENT_ID="your-id" \
@@ -113,8 +109,6 @@ LLM env vars:
 
 Web retrieval env vars:
 - `BRAVE_SEARCH_API_KEY`: Enables API-based open-web search via Brave Search API.
-- `GOOGLE_PSE_API_KEY`: Google Programmable Search API key (requires `GOOGLE_PSE_CX`).
-- `GOOGLE_PSE_CX`: Google Programmable Search engine ID.
 - `TAVILY_API_KEY`: Tavily Search API key.
 - `X_API_BEARER_TOKEN`: X API bearer token for recent search.
 - `REDDIT_CLIENT_ID`: Reddit app client ID for search.
@@ -163,7 +157,7 @@ Logging configuration:
 8. Load stored interests and methods.
 9. If the systems-engineering skill triggers on keywords, inject its guidance into the planning context.
 10. If web retrieval is enabled, build query seeds from topic + interests + graph suggestions and run retrieval.
-11. Web retrieval uses API-key open-web providers (Brave Search API, Google Programmable Search, Tavily), forum providers (X/Reddit), and arXiv/Semantic Scholar/Crossref for literature, optionally expands queries with the LLM, fetches pages, and reranks results with embeddings.
+11. Web retrieval uses API-key open-web providers (Brave Search API, Tavily), forum providers (X/Reddit), and arXiv/Semantic Scholar/Crossref for literature, optionally expands queries with the LLM, fetches pages, and reranks results with embeddings.
 12. Web results are stored as new documents with relevance scores.
 13. Update the graph: chunk documents, embed missing chunks, cluster (HDBSCAN then KMeans fallback), and update metrics.
 14. Map the topic to the closest cluster and record it in `topic_cluster_map`.

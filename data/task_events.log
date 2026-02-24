@@ -4110,3 +4110,499 @@
 2026-02-19T23:00:40.667783+00:00 | ***Skill activated: retrieve_sources***
 2026-02-19T23:00:40.876666+00:00 | Graph: embedding pending chunks count=807
 2026-02-19T23:01:10.902505+00:00 | ---------- Task Ends ----------
+2026-02-23T19:58:13.688757+00:00 | --------- Task Starts ----------
+2026-02-23T19:58:13.689019+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-23T19:58:13.689097+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-23T19:58:21.179751+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-23T19:58:21.183183+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-23T19:58:21.825760+00:00 | === Round 1/2 ===
+2026-02-23T19:58:21.825863+00:00 | ***Skill activated: infer_query***
+2026-02-23T19:58:21.827006+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-23T19:58:22.286814+00:00 | Planner | Model gemini-2.5-pro failed query understanding: http_403 (ClientError: 403 PERMISSION_DENIED. {'error': {'code': 403, 'message': 'Your API key was reported as leaked. Please use another API key.', 'status': 'PERMISSION_DENIED'}})
+2026-02-23T19:58:22.287148+00:00 | ---------- Task Ends ----------
+2026-02-23T20:08:31.868362+00:00 | --------- Task Starts ----------
+2026-02-23T20:08:31.870077+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-23T20:08:31.870234+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-23T20:08:31.885804+00:00 | Seed ingest: files=10 added=0 skipped=10 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-23T20:08:31.887643+00:00 | Decay summary: processed=0 archived=0 run_id=2
+2026-02-23T20:08:32.554407+00:00 | === Round 1/2 ===
+2026-02-23T20:08:32.554529+00:00 | ***Skill activated: infer_query***
+2026-02-23T20:08:32.555168+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-23T20:08:48.487636+00:00 | Planner | Model gemini-2.5-pro finished generating query understanding.
+2026-02-23T20:08:48.493646+00:00 | Query understanding saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_23_15_08_query.md
+2026-02-23T20:09:16.641813+00:00 | Query understanding updated from reviewed artifact.
+2026-02-23T20:09:16.641968+00:00 | ***Skill activated: collect_interests***
+2026-02-23T20:09:16.643139+00:00 | ***Skill activated: collect_methods***
+2026-02-23T20:09:16.645331+00:00 | ***Skill activated: apply_skill_hints***
+2026-02-23T20:09:16.645456+00:00 | ***Skill activated: systems-engineering***
+2026-02-23T20:09:16.645850+00:00 | ***Skill activated: web_retrieve***
+2026-02-23T20:09:16.645926+00:00 | Web retrieval: modes=open,forum,lit max_results=5 max_queries=10 expand=False per_query=10 max_new=200
+2026-02-23T20:09:16.646188+00:00 | Web retrieval query: A technical analysis report on recent AI agent-driven workflows
+2026-02-23T20:09:16.646272+00:00 | Web retrieval start: query='A technical analysis report on recent AI agent-driven workflows' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:09:16.646325+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:09:17.163826+00:00 | Failure: source=google_pse query='A technical analysis report on recent AI agent-driven workflows' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=A+technical+analysis+report+on+recent+AI+agent-driven+workflows&num=5
+2026-02-23T20:09:18.604754+00:00 | Success: source=tavily query='A technical analysis report on recent AI agent-driven workflows' results=5
+2026-02-23T20:09:21.145160+00:00 | Success: source=arxiv query='A technical analysis report on recent AI agent-driven workflows' results=5
+2026-02-23T20:09:21.983967+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:09:24.830637+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-23T20:09:29.679006+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-23T20:09:38.555403+00:00 | Success: source=semantic_scholar query='A technical analysis report on recent AI agent-driven workflows' results=2
+2026-02-23T20:09:39.701016+00:00 | Success: source=crossref query='A technical analysis report on recent AI agent-driven workflows' results=5
+2026-02-23T20:09:39.701295+00:00 | Web retrieval fetch pages: total=17
+2026-02-23T20:09:51.356260+00:00 | Web retrieval fetch done: fetched=17 failed=1 elapsed=11.7s
+2026-02-23T20:09:51.356770+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=17
+2026-02-23T20:09:53.364378+00:00 | Web retrieval rerank done: elapsed=2.0s items=17
+2026-02-23T20:09:55.185176+00:00 | Web retrieval summary: queries=1 raw=17 scored=17 accepted=10 added=9 skipped_existing=0 skipped_empty=1 filtered=10
+2026-02-23T20:09:55.185514+00:00 | ***Skill activated: retrieve_sources***
+2026-02-23T20:09:55.398615+00:00 | Graph: embedding pending chunks count=816
+2026-02-23T20:10:54.515934+00:00 | Graph: embedding completed chunks count=816
+2026-02-23T20:10:54.529952+00:00 | Graph: rebuilding clusters
+2026-02-23T20:10:57.587039+00:00 | Graph: HDBSCAN produced no clusters; falling back to KMeans.
+2026-02-23T20:10:57.864687+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:11:10.595856+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:11:10.602232+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:11:39.815930+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:11:39.822360+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:11:49.983919+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:11:49.987831+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:12:05.673873+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:12:05.682457+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:12:19.196086+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:12:19.201480+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:12:28.543407+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:12:28.546182+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:12:43.652899+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:12:43.659795+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:12:56.501603+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:12:56.504024+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:13:17.166665+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:13:17.172158+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:13:42.432905+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:13:42.434865+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:14:00.935750+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:14:00.942703+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:14:12.395454+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:14:12.398222+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:14:29.289330+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:14:29.292040+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:14:51.211610+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:14:51.213806+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:15:02.688635+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:15:02.692401+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:15:21.623006+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:15:21.628031+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:15:40.888548+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:15:40.895602+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:15:56.871643+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:15:56.876727+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:16:10.729455+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:16:10.739195+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T20:16:35.092034+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T20:16:36.290885+00:00 | Graph stats: chunks_total=816 chunks_new=816 chunks_pruned=0 clusters=20 assigned=816 noise_ratio=0.00 avg_sim=0.89
+2026-02-23T20:16:36.291013+00:00 | Graph rebuild: attempted=yes success=yes
+2026-02-23T20:16:36.291064+00:00 | Graph rebuild: labels added (20): AI Driven Workflow Automation, AI as a scientific collaborator, AI for Scientific Discovery, AI in Scientific Research, ART Clinic Performance Analysis, Academic and Scientific Research, Agentic AI and Automation, Asteroid Research and Data Analysis
+2026-02-23T20:16:37.736658+00:00 | Topic mapped to cluster: label='Agentic AI and Automation' similarity=0.74
+2026-02-23T20:16:38.454139+00:00 | Cluster scores (query='AI agent-driven workflows' total=20 selected=10):
+* 0.74 | Agentic AI and Automation | 6de4f08c [selected]
+* 0.71 | AI Driven Workflow Automation | 5e04edb3 [selected]
+* 0.70 | AI for Scientific Discovery | 92871668 [selected]
+* 0.69 | AI as a scientific collaborator | 69c33f0b [selected]
+* 0.67 | AI in Scientific Research | 603a01c4 [selected]
+* 0.66 | Asteroid Research and Data Analysis | b98b0312 [selected]
+* 0.66 | Scientific Claim Evaluation Guidelines | c6e327c2 [selected]
+* 0.65 | Corrupted text and binary data | 9acb9e92 [selected]
+* 0.63 | Taylor Hawkins Music Career | 3fd9cb1c [selected]
+* 0.63 | LLMs Writing Wikipedia Articles | cbeba33c [selected]
+  0.60 | Cosmology Machine Learning Research | bfe9328a
+  0.60 | Academic and Scientific Research | 2459a9ff
+  0.59 | Molecular Dynamics Simulation Analysis | 61e8bec6
+  0.58 | Computational Materials Science Research | 5b8dc6d1
+  0.57 | Physics Informed Neural Networks Latent Space | 123b08cb
+  0.55 | Mass Transfer in Massive Binaries | 54be4e60
+  0.55 | ART Clinic Performance Analysis | 8936cd28
+  0.54 | Malaria parasite single cell analysis | 0430c3f3
+  0.54 | Gravitational Wave Model Discrepancies | 3e952941
+  0.53 | Black Hole and Galaxy Evolution | e017d5ee
+2026-02-23T20:16:39.299347+00:00 | Retrieved docs: total=12 web=9 file=3
+2026-02-23T20:16:39.299553+00:00 | ***Skill activated: plan_research***
+2026-02-23T20:16:39.299964+00:00 | Source briefs: docs=12 highlights=27 per_doc=10
+2026-02-23T20:16:39.300024+00:00 | Source briefs by source_type: file=3 web=9
+2026-02-23T20:16:39.300530+00:00 | Planner | Model gemini-2.5-pro is generating plan draft...
+2026-02-23T20:17:04.224728+00:00 | Planner | Model gemini-2.5-pro finished generating plan draft.
+2026-02-23T20:17:04.225223+00:00 | ***Skill activated: refine_plan***
+2026-02-23T20:17:04.225439+00:00 | Retriever | Model gemini-2.5-pro is generating gap query rewrite...
+2026-02-23T20:17:15.701091+00:00 | Retriever | Model gemini-2.5-pro finished generating gap query rewrite.
+2026-02-23T20:17:15.702362+00:00 | Source briefs: docs=12 highlights=1 per_doc=10
+2026-02-23T20:17:15.702512+00:00 | Source briefs by source_type: file=3 web=9
+2026-02-23T20:17:15.703031+00:00 | Planner | Model gemini-2.5-pro is generating plan refinement...
+2026-02-23T20:17:50.495903+00:00 | Planner | Model gemini-2.5-pro finished generating plan refinement.
+2026-02-23T20:17:50.496871+00:00 | === Round 2/2 ===
+2026-02-23T20:17:50.497029+00:00 | ***Skill activated: infer_query***
+2026-02-23T20:17:50.497120+00:00 | Query understanding already initialized for this run; skipping.
+2026-02-23T20:17:50.497197+00:00 | ***Skill activated: collect_interests***
+2026-02-23T20:17:50.498791+00:00 | ***Skill activated: collect_methods***
+2026-02-23T20:17:50.499854+00:00 | ***Skill activated: apply_skill_hints***
+2026-02-23T20:17:50.499951+00:00 | ***Skill activated: systems-engineering***
+2026-02-23T20:17:50.499996+00:00 | ***Skill activated: web_retrieve***
+2026-02-23T20:17:50.500051+00:00 | Web retrieval: modes=open,forum,lit max_results=5 max_queries=10 expand=False per_query=10 max_new=200
+2026-02-23T20:17:51.228741+00:00 | Web retrieval query: A technical analysis report on recent AI agent-driven workflows
+2026-02-23T20:17:51.228904+00:00 | Web retrieval start: query='A technical analysis report on recent AI agent-driven workflows' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:17:51.228975+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:17:51.677892+00:00 | Failure: source=google_pse query='A technical analysis report on recent AI agent-driven workflows' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=A+technical+analysis+report+on+recent+AI+agent-driven+workflows&num=5
+2026-02-23T20:17:53.273903+00:00 | Success: source=tavily query='A technical analysis report on recent AI agent-driven workflows' results=5
+2026-02-23T20:17:54.178925+00:00 | Success: source=arxiv query='A technical analysis report on recent AI agent-driven workflows' results=5
+2026-02-23T20:17:55.026056+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:17:57.997334+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-23T20:18:02.585348+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-23T20:18:11.699030+00:00 | Success: source=semantic_scholar query='A technical analysis report on recent AI agent-driven workflows' results=2
+2026-02-23T20:18:12.813091+00:00 | Success: source=crossref query='A technical analysis report on recent AI agent-driven workflows' results=5
+2026-02-23T20:18:12.813402+00:00 | Web retrieval fetch pages: total=17
+2026-02-23T20:18:27.945248+00:00 | Web retrieval fetch done: fetched=17 failed=1 elapsed=15.1s
+2026-02-23T20:18:27.946171+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=17
+2026-02-23T20:18:29.686505+00:00 | Web retrieval rerank done: elapsed=1.7s items=17
+2026-02-23T20:18:31.574510+00:00 | Web retrieval query: Agentic AI and Automation
+2026-02-23T20:18:31.574984+00:00 | Web retrieval start: query='Agentic AI and Automation' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:18:31.575099+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:18:32.046391+00:00 | Failure: source=google_pse query='Agentic AI and Automation' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=Agentic+AI+and+Automation&num=5
+2026-02-23T20:18:33.388807+00:00 | Success: source=tavily query='Agentic AI and Automation' results=5
+2026-02-23T20:18:34.277620+00:00 | Success: source=arxiv query='Agentic AI and Automation' results=5
+2026-02-23T20:18:35.117118+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:18:39.032503+00:00 | Success: source=semantic_scholar query='Agentic AI and Automation' results=5
+2026-02-23T20:18:39.941698+00:00 | Success: source=crossref query='Agentic AI and Automation' results=5
+2026-02-23T20:18:39.942123+00:00 | Web retrieval fetch pages: total=20
+2026-02-23T20:18:44.590807+00:00 | Web retrieval fetch done: fetched=20 failed=2 elapsed=4.6s
+2026-02-23T20:18:44.591129+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-23T20:18:46.322935+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-23T20:18:48.040337+00:00 | Web retrieval query: AI Driven Workflow Automation
+2026-02-23T20:18:48.040602+00:00 | Web retrieval start: query='AI Driven Workflow Automation' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:18:48.040671+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:18:48.477924+00:00 | Failure: source=google_pse query='AI Driven Workflow Automation' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=AI+Driven+Workflow+Automation&num=5
+2026-02-23T20:18:49.884287+00:00 | Success: source=tavily query='AI Driven Workflow Automation' results=5
+2026-02-23T20:18:50.642291+00:00 | Success: source=arxiv query='AI Driven Workflow Automation' results=5
+2026-02-23T20:18:51.222212+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:18:54.051643+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-23T20:18:59.610990+00:00 | Success: source=semantic_scholar query='AI Driven Workflow Automation' results=5
+2026-02-23T20:19:00.802070+00:00 | Success: source=crossref query='AI Driven Workflow Automation' results=5
+2026-02-23T20:19:00.802402+00:00 | Web retrieval fetch pages: total=20
+2026-02-23T20:19:02.632225+00:00 | Web retrieval fetch done: fetched=20 failed=0 elapsed=1.8s
+2026-02-23T20:19:02.633059+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-23T20:19:04.363337+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-23T20:19:06.202894+00:00 | Web retrieval query: AI for Scientific Discovery
+2026-02-23T20:19:06.203312+00:00 | Web retrieval start: query='AI for Scientific Discovery' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:19:06.203380+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:19:06.644229+00:00 | Failure: source=google_pse query='AI for Scientific Discovery' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=AI+for+Scientific+Discovery&num=5
+2026-02-23T20:19:08.356458+00:00 | Success: source=tavily query='AI for Scientific Discovery' results=5
+2026-02-23T20:19:09.093008+00:00 | Success: source=arxiv query='AI for Scientific Discovery' results=5
+2026-02-23T20:19:09.924618+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:19:12.778065+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-23T20:19:17.647827+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-23T20:19:27.317863+00:00 | Success: source=semantic_scholar query='AI for Scientific Discovery' results=5
+2026-02-23T20:19:28.388734+00:00 | Success: source=crossref query='AI for Scientific Discovery' results=5
+2026-02-23T20:19:28.389287+00:00 | Web retrieval fetch pages: total=20
+2026-02-23T20:19:41.651315+00:00 | Web retrieval fetch done: fetched=20 failed=0 elapsed=13.3s
+2026-02-23T20:19:41.653376+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-23T20:19:43.428844+00:00 | Web retrieval rerank done: elapsed=1.8s items=20
+2026-02-23T20:19:44.930216+00:00 | Web retrieval query: AI agent workflow benchmarks
+2026-02-23T20:19:44.930606+00:00 | Web retrieval start: query='AI agent workflow benchmarks' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:19:44.930669+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:19:45.370485+00:00 | Failure: source=google_pse query='AI agent workflow benchmarks' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=AI+agent+workflow+benchmarks&num=5
+2026-02-23T20:19:47.519800+00:00 | Success: source=tavily query='AI agent workflow benchmarks' results=5
+2026-02-23T20:19:48.368918+00:00 | Success: source=arxiv query='AI agent workflow benchmarks' results=5
+2026-02-23T20:19:49.211075+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:19:53.082282+00:00 | Success: source=semantic_scholar query='AI agent workflow benchmarks' results=5
+2026-02-23T20:19:53.994461+00:00 | Success: source=crossref query='AI agent workflow benchmarks' results=5
+2026-02-23T20:19:53.994688+00:00 | Web retrieval fetch pages: total=20
+2026-02-23T20:19:56.481878+00:00 | Web retrieval fetch done: fetched=20 failed=0 elapsed=2.5s
+2026-02-23T20:19:56.482356+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-23T20:19:58.195121+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-23T20:19:59.910855+00:00 | Web retrieval query: robustness of multi-agent systems
+2026-02-23T20:19:59.911016+00:00 | Web retrieval start: query='robustness of multi-agent systems' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:19:59.911083+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:20:00.381750+00:00 | Failure: source=google_pse query='robustness of multi-agent systems' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=robustness+of+multi-agent+systems&num=5
+2026-02-23T20:20:02.327080+00:00 | Success: source=tavily query='robustness of multi-agent systems' results=5
+2026-02-23T20:20:03.533918+00:00 | Success: source=arxiv query='robustness of multi-agent systems' results=5
+2026-02-23T20:20:04.119044+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:20:06.971525+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-23T20:20:11.814323+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-23T20:20:20.647187+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-23T20:20:38.459147+00:00 | Success: source=semantic_scholar query='robustness of multi-agent systems' results=5
+2026-02-23T20:20:39.725865+00:00 | Success: source=crossref query='robustness of multi-agent systems' results=5
+2026-02-23T20:20:39.726148+00:00 | Web retrieval fetch pages: total=20
+2026-02-23T20:20:52.772791+00:00 | Web retrieval fetch done: fetched=20 failed=0 elapsed=13.0s
+2026-02-23T20:20:52.774802+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-23T20:20:54.524722+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-23T20:20:56.309915+00:00 | Web retrieval query: human-in-the-loop for AI agents
+2026-02-23T20:20:56.310276+00:00 | Web retrieval start: query='human-in-the-loop for AI agents' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:20:56.310351+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:20:56.762721+00:00 | Failure: source=google_pse query='human-in-the-loop for AI agents' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=human-in-the-loop+for+AI+agents&num=5
+2026-02-23T20:20:58.252637+00:00 | Success: source=tavily query='human-in-the-loop for AI agents' results=5
+2026-02-23T20:20:59.026311+00:00 | Success: source=arxiv query='human-in-the-loop for AI agents' results=5
+2026-02-23T20:21:00.890675+00:00 | Success: source=semantic_scholar query='human-in-the-loop for AI agents' results=3
+2026-02-23T20:21:01.940317+00:00 | Success: source=crossref query='human-in-the-loop for AI agents' results=5
+2026-02-23T20:21:01.940948+00:00 | Web retrieval fetch pages: total=18
+2026-02-23T20:21:08.907001+00:00 | Web retrieval fetch done: fetched=18 failed=2 elapsed=7.0s
+2026-02-23T20:21:08.907504+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=18
+2026-02-23T20:21:10.450796+00:00 | Web retrieval rerank done: elapsed=1.5s items=18
+2026-02-23T20:21:12.012007+00:00 | Web retrieval query: failure recovery in agentic workflows
+2026-02-23T20:21:12.012353+00:00 | Web retrieval start: query='failure recovery in agentic workflows' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:21:12.012418+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:21:12.475612+00:00 | Failure: source=google_pse query='failure recovery in agentic workflows' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=failure+recovery+in+agentic+workflows&num=5
+2026-02-23T20:21:14.370851+00:00 | Success: source=tavily query='failure recovery in agentic workflows' results=5
+2026-02-23T20:21:15.173160+00:00 | Success: source=arxiv query='failure recovery in agentic workflows' results=5
+2026-02-23T20:21:16.005065+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:21:18.839879+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-23T20:21:23.422120+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-23T20:21:32.270246+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-23T20:21:49.105388+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-23T20:22:19.696249+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 6) in 30s
+2026-02-23T20:22:50.535278+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 7) in 30s
+2026-02-23T20:23:21.145425+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 8) in 30s
+2026-02-23T20:23:51.753893+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 9) in 23.41982282699996s
+2026-02-23T20:24:16.027296+00:00 | Web retrieval rate limit from semantic_scholar; giving up after 10 attempts
+2026-02-23T20:24:16.027815+00:00 | Failure: source=semantic_scholar query='failure recovery in agentic workflows' error=Rate limit from semantic_scholar after 10 attempts over 181s
+2026-02-23T20:24:17.004536+00:00 | Success: source=crossref query='failure recovery in agentic workflows' results=5
+2026-02-23T20:24:17.004913+00:00 | Web retrieval fetch pages: total=15
+2026-02-23T20:24:24.296917+00:00 | Web retrieval fetch done: fetched=15 failed=3 elapsed=7.3s
+2026-02-23T20:24:24.297540+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=15
+2026-02-23T20:24:25.829147+00:00 | Web retrieval rerank done: elapsed=1.5s items=15
+2026-02-23T20:24:27.438756+00:00 | Web retrieval query: observability for LLM agent systems
+2026-02-23T20:24:27.438911+00:00 | Web retrieval start: query='observability for LLM agent systems' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:24:27.438970+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:24:27.877304+00:00 | Failure: source=google_pse query='observability for LLM agent systems' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=observability+for+LLM+agent+systems&num=5
+2026-02-23T20:24:29.607242+00:00 | Success: source=tavily query='observability for LLM agent systems' results=5
+2026-02-23T20:24:30.963000+00:00 | Success: source=arxiv query='observability for LLM agent systems' results=5
+2026-02-23T20:24:31.811113+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:24:34.821118+00:00 | Success: source=semantic_scholar query='observability for LLM agent systems' results=5
+2026-02-23T20:24:36.024220+00:00 | Success: source=crossref query='observability for LLM agent systems' results=5
+2026-02-23T20:24:36.024745+00:00 | Web retrieval fetch pages: total=20
+2026-02-23T20:24:42.709589+00:00 | Web retrieval fetch done: fetched=20 failed=0 elapsed=6.7s
+2026-02-23T20:24:42.711032+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-23T20:24:44.302936+00:00 | Web retrieval rerank done: elapsed=1.6s items=20
+2026-02-23T20:24:45.892665+00:00 | Web retrieval query: cost analysis of AI agent automation
+2026-02-23T20:24:45.893296+00:00 | Web retrieval start: query='cost analysis of AI agent automation' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T20:24:45.893449+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T20:24:46.354962+00:00 | Failure: source=google_pse query='cost analysis of AI agent automation' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=cost+analysis+of+AI+agent+automation&num=5
+2026-02-23T20:24:48.414470+00:00 | Success: source=tavily query='cost analysis of AI agent automation' results=5
+2026-02-23T20:24:49.380922+00:00 | Success: source=arxiv query='cost analysis of AI agent automation' results=5
+2026-02-23T20:24:50.226031+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T20:24:52.842026+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-23T20:24:57.829385+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-23T20:25:06.428420+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-23T20:25:24.094536+00:00 | Success: source=semantic_scholar query='cost analysis of AI agent automation' results=5
+2026-02-23T20:25:25.237432+00:00 | Success: source=crossref query='cost analysis of AI agent automation' results=5
+2026-02-23T20:25:25.237834+00:00 | Web retrieval fetch pages: total=20
+2026-02-23T20:25:32.411974+00:00 | Web retrieval fetch done: fetched=20 failed=0 elapsed=7.2s
+2026-02-23T20:25:32.412794+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-23T20:25:34.193031+00:00 | Web retrieval rerank done: elapsed=1.8s items=20
+2026-02-23T20:25:36.677289+00:00 | Web retrieval summary: queries=10 raw=190 scored=190 accepted=98 added=83 skipped_existing=6 skipped_empty=9 filtered=100
+2026-02-23T20:25:36.677458+00:00 | ***Skill activated: retrieve_sources***
+2026-02-23T20:25:36.899413+00:00 | Graph: embedding pending chunks count=91
+2026-02-23T20:25:42.911660+00:00 | Graph: embedding completed chunks count=91
+2026-02-23T20:25:42.913949+00:00 | Graph: incremental update
+2026-02-23T20:25:43.357379+00:00 | Graph stats: chunks_total=907 chunks_new=91 chunks_pruned=0 clusters=20 assigned=907 noise_ratio=0.00 avg_sim=0.87
+2026-02-23T20:25:45.028552+00:00 | Topic mapped to cluster: label='Agentic AI and Automation' similarity=0.79
+2026-02-23T20:25:45.769032+00:00 | Cluster scores (query='AI agent-driven workflows AI agent workflow benchmarks robustness of multi-agent systems human-in-the-loop for AI agents failure recovery in agentic workflows observability for LLM agent systems cost analysis of AI agent automation' total=20 selected=10):
+* 0.86 | Agentic AI and Automation | 6de4f08c [selected]
+* 0.78 | AI Driven Workflow Automation | 5e04edb3 [selected]
+* 0.73 | AI for Scientific Discovery | 92871668 [selected]
+* 0.72 | AI as a scientific collaborator | 69c33f0b [selected]
+* 0.71 | AI in Scientific Research | 603a01c4 [selected]
+* 0.70 | Corrupted text and binary data | 9acb9e92 [selected]
+* 0.69 | Scientific Claim Evaluation Guidelines | c6e327c2 [selected]
+* 0.67 | Asteroid Research and Data Analysis | b98b0312 [selected]
+* 0.67 | LLMs Writing Wikipedia Articles | cbeba33c [selected]
+* 0.64 | Taylor Hawkins Music Career | 3fd9cb1c [selected]
+  0.63 | Molecular Dynamics Simulation Analysis | 61e8bec6
+  0.62 | Cosmology Machine Learning Research | bfe9328a
+  0.61 | Academic and Scientific Research | 2459a9ff
+  0.60 | Computational Materials Science Research | 5b8dc6d1
+  0.58 | ART Clinic Performance Analysis | 8936cd28
+  0.58 | Physics Informed Neural Networks Latent Space | 123b08cb
+  0.57 | Gravitational Wave Model Discrepancies | 3e952941
+  0.56 | Mass Transfer in Massive Binaries | 54be4e60
+  0.56 | Black Hole and Galaxy Evolution | e017d5ee
+  0.54 | Malaria parasite single cell analysis | 0430c3f3
+2026-02-23T20:25:46.577692+00:00 | Retrieved docs: total=13 web=10 file=3
+2026-02-23T20:25:46.577913+00:00 | ***Skill activated: plan_research***
+2026-02-23T20:25:46.578186+00:00 | Source briefs: docs=13 highlights=24 per_doc=10
+2026-02-23T20:25:46.578241+00:00 | Source briefs by source_type: file=3 web=10
+2026-02-23T20:25:46.578670+00:00 | Planner | Model gemini-2.5-pro is generating plan draft...
+2026-02-23T20:26:14.607475+00:00 | Planner | Model gemini-2.5-pro finished generating plan draft.
+2026-02-23T20:26:14.607970+00:00 | ***Skill activated: refine_plan***
+2026-02-23T20:26:14.608212+00:00 | Retriever | Model gemini-2.5-pro is generating gap query rewrite...
+2026-02-23T20:26:25.474851+00:00 | Retriever | Model gemini-2.5-pro finished generating gap query rewrite.
+2026-02-23T20:26:25.475805+00:00 | Source briefs: docs=13 highlights=3 per_doc=10
+2026-02-23T20:26:25.475898+00:00 | Source briefs by source_type: file=3 web=10
+2026-02-23T20:26:25.476303+00:00 | Planner | Model gemini-2.5-pro is generating plan refinement...
+2026-02-23T20:27:05.713516+00:00 | Planner | Model gemini-2.5-pro finished generating plan refinement.
+2026-02-23T20:27:05.714050+00:00 | ***Skill activated: build_outline***
+2026-02-23T20:27:05.714502+00:00 | Outliner | Model gemini-2.5-pro is generating outline...
+2026-02-23T20:27:53.409404+00:00 | Outliner | Model gemini-2.5-pro finished generating outline.
+2026-02-23T20:27:53.410833+00:00 | Outliner: outline length out of range (attempt=1 words=569 target=1000-2000)
+2026-02-23T20:27:53.412886+00:00 | Outliner | Model gemini-2.5-pro is generating outline...
+2026-02-23T20:28:37.408951+00:00 | Outliner | Model gemini-2.5-pro finished generating outline.
+2026-02-23T20:28:37.410434+00:00 | Outliner: outline length out of range (attempt=2 words=558 target=1000-2000)
+2026-02-23T20:28:37.410880+00:00 | Outliner | Model gemini-2.5-pro is generating outline...
+2026-02-23T20:29:29.381500+00:00 | Outliner | Model gemini-2.5-pro finished generating outline.
+2026-02-23T20:29:29.382560+00:00 | Outliner: outline length out of range (attempt=3 words=447 target=1000-2000)
+2026-02-23T20:29:29.382714+00:00 | Outliner | Model gemini-2.5-pro is generating outline expansion...
+2026-02-23T20:30:43.447827+00:00 | Outliner | Model gemini-2.5-pro finished generating outline expansion.
+2026-02-23T20:30:43.449079+00:00 | Outliner: outline length still out of range after expansion (attempt=4 words=646 target=1000-2000)
+2026-02-23T20:30:43.449250+00:00 | Outliner | Model gemini-2.5-pro is generating outline expansion...
+2026-02-23T20:31:52.834767+00:00 | Outliner | Model gemini-2.5-pro finished generating outline expansion.
+2026-02-23T20:31:52.836148+00:00 | Outliner: outline length still out of range after expansion (attempt=5 words=724 target=1000-2000)
+2026-02-23T20:31:52.836313+00:00 | Outliner | Model gemini-2.5-pro is generating outline revision...
+2026-02-23T20:33:10.522754+00:00 | Outliner | Model gemini-2.5-pro finished generating outline revision.
+2026-02-23T20:33:10.524258+00:00 | Outliner: outline length still out of range after revision (attempt=6 words=720 target=1000-2000)
+2026-02-23T20:33:10.524442+00:00 | Outliner | Model gemini-2.5-pro is generating outline translate...
+2026-02-23T20:34:46.948078+00:00 | Outliner | Model gemini-2.5-pro finished generating outline translate.
+2026-02-23T20:34:46.949413+00:00 | Outliner: returning best-effort outline despite length constraint failure. Last count=724 target=1000-2000.
+2026-02-23T20:34:46.949533+00:00 | ***Skill activated: persist_plan***
+2026-02-23T20:34:47.696506+00:00 | Theme | Model gemini-2.5-pro is generating interest themes...
+2026-02-23T20:35:06.098980+00:00 | Theme | Model gemini-2.5-pro finished generating interest themes.
+2026-02-23T20:35:06.100549+00:00 | ---------- Task Ends ----------
+2026-02-23T20:59:32.267449+00:00 | --------- Task Starts ----------
+2026-02-23T20:59:32.267755+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-23T20:59:32.267864+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-23T20:59:39.859009+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-23T20:59:39.863579+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-23T20:59:40.531551+00:00 | === Round 1/2 ===
+2026-02-23T20:59:40.531682+00:00 | ***Skill activated: infer_query***
+2026-02-23T20:59:40.532250+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-23T20:59:56.019731+00:00 | Planner | Model gemini-2.5-pro finished generating query understanding.
+2026-02-23T20:59:56.021153+00:00 | Query understanding saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_23_15_59_query.md
+2026-02-23T21:00:21.998208+00:00 | Query understanding updated from reviewed artifact.
+2026-02-23T21:00:21.999608+00:00 | ***Skill activated: collect_interests***
+2026-02-23T21:00:22.001645+00:00 | ***Skill activated: collect_methods***
+2026-02-23T21:00:22.002606+00:00 | ***Skill activated: apply_skill_hints***
+2026-02-23T21:00:22.002714+00:00 | ***Skill activated: systems-engineering***
+2026-02-23T21:00:22.003434+00:00 | ***Skill activated: web_retrieve***
+2026-02-23T21:00:22.007927+00:00 | Web search plan saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_23_16_00_22_web_search.md
+2026-02-23T21:00:57.836489+00:00 | Web search plan updated from reviewed artifact.
+2026-02-23T21:00:57.836641+00:00 | Web retrieval: modes=open,lit max_results=5 max_queries=10 expand=False per_query=10 max_new=200
+2026-02-23T21:00:57.836688+00:00 | Web retrieval query: Recent technology analysis reports on AI agent-driven workflows
+2026-02-23T21:00:57.836751+00:00 | Web retrieval start: query='Recent technology analysis reports on AI agent-driven workflows' modes=['lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T21:00:58.293297+00:00 | Failure: source=google_pse query='Recent technology analysis reports on AI agent-driven workflows' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyA2A4dFySZkfBR1G2J3qYHGk1Faa8Bdc4o&cx=a68973990b844416e&q=Recent+technology+analysis+reports+on+AI+agent-driven+workflows&num=5
+2026-02-23T21:01:00.212292+00:00 | Success: source=tavily query='Recent technology analysis reports on AI agent-driven workflows' results=5
+2026-02-23T21:01:05.043790+00:00 | Success: source=arxiv query='Recent technology analysis reports on AI agent-driven workflows' results=5
+2026-02-23T21:01:05.923579+00:00 | Success: source=semantic_scholar query='Recent technology analysis reports on AI agent-driven workflows' results=5
+2026-02-23T21:01:06.917302+00:00 | Success: source=crossref query='Recent technology analysis reports on AI agent-driven workflows' results=5
+2026-02-23T21:01:06.917465+00:00 | Web retrieval fetch pages: total=20
+2026-02-23T21:01:17.262452+00:00 | Web retrieval fetch done: fetched=20 failed=1 elapsed=10.3s
+2026-02-23T21:01:17.263315+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-23T21:01:18.886177+00:00 | Web retrieval rerank done: elapsed=1.6s items=20
+2026-02-23T21:01:20.562482+00:00 | Web retrieval summary: queries=1 raw=20 scored=20 accepted=10 added=9 skipped_existing=0 skipped_empty=1 filtered=10
+2026-02-23T21:01:20.562650+00:00 | ***Skill activated: retrieve_sources***
+2026-02-23T21:01:20.785486+00:00 | Graph: embedding pending chunks count=808
+2026-02-23T21:02:18.176358+00:00 | Graph: embedding completed chunks count=808
+2026-02-23T21:02:18.192954+00:00 | Graph: rebuilding clusters
+2026-02-23T21:02:21.075923+00:00 | Graph: HDBSCAN produced no clusters; falling back to KMeans.
+2026-02-23T21:02:21.335504+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:02:42.325634+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:02:42.334478+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:03:06.495130+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:03:06.498565+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:03:18.611325+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:03:18.614471+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:03:34.044771+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:03:34.052046+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:03:47.097732+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:03:47.100027+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:04:12.247140+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:04:12.250738+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:04:21.494168+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:04:21.498885+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:04:41.998935+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:04:42.003092+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:04:54.912860+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:04:54.919875+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:05:13.219141+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:05:13.221788+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:05:19.542627+00:00 | ---------- Task Ends ----------
+2026-02-23T21:15:42.091464+00:00 | --------- Task Starts ----------
+2026-02-23T21:15:42.091687+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-23T21:15:42.091775+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-23T21:15:49.498509+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-23T21:15:49.501046+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-23T21:15:50.148256+00:00 | === Round 1/2 ===
+2026-02-23T21:15:50.148399+00:00 | ***Skill activated: infer_query***
+2026-02-23T21:15:50.148917+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-23T21:15:50.655971+00:00 | Planner | Model gemini-2.5-pro failed query understanding: http_403 (ClientError: 403 PERMISSION_DENIED. {'error': {'code': 403, 'message': 'Your API key was reported as leaked. Please use another API key.', 'status': 'PERMISSION_DENIED'}})
+2026-02-23T21:15:50.656183+00:00 | ---------- Task Ends ----------
+2026-02-23T21:17:22.476065+00:00 | --------- Task Starts ----------
+2026-02-23T21:17:22.479299+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-23T21:17:22.479452+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-23T21:17:30.017240+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-23T21:17:30.019889+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-23T21:17:30.654407+00:00 | === Round 1/2 ===
+2026-02-23T21:17:30.654525+00:00 | ***Skill activated: infer_query***
+2026-02-23T21:17:30.654998+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-23T21:17:46.183196+00:00 | Planner | Model gemini-2.5-pro finished generating query understanding.
+2026-02-23T21:17:46.187109+00:00 | Query understanding saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_23_16_17_query.md
+2026-02-23T21:17:57.029682+00:00 | Query understanding updated from reviewed artifact.
+2026-02-23T21:17:57.029798+00:00 | ***Skill activated: collect_interests***
+2026-02-23T21:17:57.030617+00:00 | ***Skill activated: collect_methods***
+2026-02-23T21:17:57.031174+00:00 | ***Skill activated: apply_skill_hints***
+2026-02-23T21:17:57.031243+00:00 | ***Skill activated: systems-engineering***
+2026-02-23T21:17:57.031363+00:00 | ***Skill activated: web_retrieve***
+2026-02-23T21:17:57.032867+00:00 | Web search plan saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_23_16_17_57_web_search.md
+2026-02-23T21:18:15.076329+00:00 | Web search plan updated from reviewed artifact.
+2026-02-23T21:18:15.077180+00:00 | Web retrieval: modes=open,lit max_results=5 max_queries=10 expand=False per_query=10 max_new=200
+2026-02-23T21:18:15.077270+00:00 | Web retrieval query: A recent technical analysis report on AI agent-driven workflows
+2026-02-23T21:18:15.077324+00:00 | Web retrieval start: query='A recent technical analysis report on AI agent-driven workflows' modes=['lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T21:18:15.530736+00:00 | Failure: source=google_pse query='A recent technical analysis report on AI agent-driven workflows' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyB5eJ6J052rqJfVfjXtV_qPXrIanSGSwaM&cx=a68973990b844416e&q=A+recent+technical+analysis+report+on+AI+agent-driven+workflows&num=5
+2026-02-23T21:18:17.176447+00:00 | Success: source=tavily query='A recent technical analysis report on AI agent-driven workflows' results=5
+2026-02-23T21:18:32.539121+00:00 | Failure: source=arxiv query='A recent technical analysis report on AI agent-driven workflows' error=HTTPSConnectionPool(host='export.arxiv.org', port=443): Read timed out. (read timeout=15)
+2026-02-23T21:18:33.818677+00:00 | Success: source=semantic_scholar query='A recent technical analysis report on AI agent-driven workflows' results=2
+2026-02-23T21:18:35.004414+00:00 | Success: source=crossref query='A recent technical analysis report on AI agent-driven workflows' results=5
+2026-02-23T21:18:35.004964+00:00 | Web retrieval fetch pages: total=12
+2026-02-23T21:18:46.037472+00:00 | Web retrieval fetch done: fetched=12 failed=1 elapsed=11.0s
+2026-02-23T21:18:46.037875+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=12
+2026-02-23T21:18:47.538053+00:00 | Web retrieval rerank done: elapsed=1.5s items=12
+2026-02-23T21:18:49.125052+00:00 | Web retrieval summary: queries=1 raw=12 scored=12 accepted=10 added=9 skipped_existing=0 skipped_empty=1 filtered=10
+2026-02-23T21:18:49.125146+00:00 | ***Skill activated: retrieve_sources***
+2026-02-23T21:18:49.339385+00:00 | Graph: embedding pending chunks count=816
+2026-02-23T21:19:47.791260+00:00 | Graph: embedding completed chunks count=816
+2026-02-23T21:19:47.804592+00:00 | Graph: rebuilding clusters
+2026-02-23T21:19:50.784916+00:00 | Graph: HDBSCAN produced no clusters; falling back to KMeans.
+2026-02-23T21:19:51.042806+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:20:03.354104+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:20:03.359077+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:20:21.087645+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:20:21.090332+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:20:38.779128+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:20:38.782673+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:20:49.731337+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:20:49.735919+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:21:02.904140+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:21:02.911553+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:21:11.219003+00:00 | Clusterer | Model gemini-2.5-pro finished generating cluster label.
+2026-02-23T21:21:11.222349+00:00 | Clusterer | Model gemini-2.5-pro is generating cluster label...
+2026-02-23T21:21:13.125985+00:00 | ---------- Task Ends ----------
+2026-02-23T22:45:59.909326+00:00 | --------- Task Starts ----------
+2026-02-23T22:45:59.909975+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-23T22:45:59.910264+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-23T22:46:07.604394+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-23T22:46:07.608180+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-23T22:46:08.269612+00:00 | === Round 1/2 ===
+2026-02-23T22:46:08.269735+00:00 | ***Skill activated: infer_query***
+2026-02-23T22:46:08.270225+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-23T22:46:25.480793+00:00 | Planner | Model gemini-2.5-pro finished generating query understanding.
+2026-02-23T22:46:25.482270+00:00 | Query understanding saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_23_17_46_query.md
+2026-02-23T22:46:37.849252+00:00 | Query understanding updated from reviewed artifact.
+2026-02-23T22:46:37.849375+00:00 | ***Skill activated: collect_interests***
+2026-02-23T22:46:37.850660+00:00 | ***Skill activated: collect_methods***
+2026-02-23T22:46:37.851617+00:00 | ***Skill activated: apply_skill_hints***
+2026-02-23T22:46:37.851695+00:00 | ***Skill activated: systems-engineering***
+2026-02-23T22:46:37.851829+00:00 | ***Skill activated: web_retrieve***
+2026-02-23T22:46:37.852664+00:00 | Web search plan saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_23_17_46_37_web_search.md
+2026-02-23T22:47:03.932178+00:00 | Web search plan updated from reviewed artifact.
+2026-02-23T22:47:03.932350+00:00 | Web retrieval: modes=open,forum,lit max_results=5 max_queries=10 expand=False per_query=10 max_new=200
+2026-02-23T22:47:03.932397+00:00 | Web retrieval query: Recent technical analysis report on AI agent-driven workflows
+2026-02-23T22:47:03.932471+00:00 | Web retrieval start: query='Recent technical analysis report on AI agent-driven workflows' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['google_pse', 'tavily'] forum_sources=[]
+2026-02-23T22:47:03.932510+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-23T22:47:04.397391+00:00 | Failure: source=google_pse query='Recent technical analysis report on AI agent-driven workflows' error=403 Client Error: Forbidden for url: https://www.googleapis.com/customsearch/v1?key=AIzaSyB5eJ6J052rqJfVfjXtV_qPXrIanSGSwaM&cx=a68973990b844416e&q=Recent+technical+analysis+report+on+AI+agent-driven+workflows&num=5
+2026-02-23T22:47:06.081329+00:00 | Success: source=tavily query='Recent technical analysis report on AI agent-driven workflows' results=5
+2026-02-23T22:47:07.243099+00:00 | Success: source=arxiv query='Recent technical analysis report on AI agent-driven workflows' results=5
+2026-02-23T22:47:08.096545+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-23T22:47:10.674710+00:00 | ---------- Task Ends ----------

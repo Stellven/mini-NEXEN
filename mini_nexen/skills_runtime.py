@@ -39,6 +39,7 @@ from .planning import (
     llm_build_outline,
     llm_draft_plan,
     llm_refine_plan,
+    normalize_bracket_tag,
     render_plan_md,
     merge_doc_chunks,
     select_docs_by_cluster_round_robin,
@@ -79,6 +80,7 @@ class SkillContext:
     review_query: bool = False
     interactive: bool = False
     query_artifact_path: Optional[Path] = None
+    web_search_artifact_path: Optional[Path] = None
     query_understanding: Optional[QueryUnderstanding] = None
     top_k: int = DEFAULT_TOP_K
     min_web_docs: int = 0
@@ -245,6 +247,43 @@ def _extract_json_payload(text: str) -> object:
         return json.loads(candidate)
     except json.JSONDecodeError:
         return {}
+
+
+def _infer_date_range(label: str | None) -> tuple[str | None, str | None]:
+    if not label:
+        return (None, None)
+    text = label.strip().casefold()
+    if not text:
+        return (None, None)
+    date_range = re.search(
+        r"(\d{4}-\d{2}-\d{2})\s*(?:to|through|until|–|-)\s*(\d{4}-\d{2}-\d{2})",
+        text,
+    )
+    if date_range:
+        return (date_range.group(1), date_range.group(2))
+    year_range = re.search(
+        r"(\d{4})\s*(?:to|through|until|–|-)\s*(\d{4})",
+        text,
+    )
+    if year_range:
+        return (year_range.group(1), year_range.group(2))
+    since_year = re.search(r"(since|from|after)\s+(\d{4})", text)
+    if since_year:
+        return (since_year.group(2), None)
+    until_year = re.search(r"(before|until|through|to)\s+(\d{4})", text)
+    if until_year:
+        return (None, until_year.group(2))
+    last_years = re.search(r"(last|past)\s+(\d+)\s+years?", text)
+    if last_years:
+        span = int(last_years.group(2))
+        if span > 0:
+            current_year = datetime.now(timezone.utc).year
+            start_year = current_year - span + 1
+            return (str(start_year), str(current_year))
+    lone_years = re.findall(r"\b(\d{4})\b", text)
+    if len(lone_years) == 1:
+        return (lone_years[0], lone_years[0])
+    return (None, None)
 
 
 def _filter_methodology_terms(queries: list[str], method_terms: list[str]) -> list[str]:
@@ -464,6 +503,24 @@ def _normalize_skill_hints(raw: object, registry: SkillRegistry) -> list[str]:
     return normalized
 
 
+def _build_allowed_outline_tags(active_skills: list[str]) -> set[str]:
+    if not active_skills:
+        return set()
+    registry = SkillRegistry()
+    registry.load()
+    allowed: set[str] = set()
+    for name in active_skills:
+        spec = registry.skills.get(name)
+        if not spec:
+            continue
+        candidates = [spec.display_name, spec.name, *spec.aliases]
+        for item in candidates:
+            tag = normalize_bracket_tag(str(item))
+            if tag:
+                allowed.add(tag)
+    return allowed
+
+
 def _predict_skills(ctx: SkillContext, registry: SkillRegistry) -> list[str]:
     texts = [ctx.topic, ctx.normalized_query, ctx.raw_topic]
     for method in ctx.methods:
@@ -496,6 +553,37 @@ def _launch_query_editor(path: Path) -> None:
     subprocess.run(command, check=True)
 
 
+def _available_web_platforms() -> dict[str, list[str]]:
+    platforms = {
+        "open": [],
+        "forum": [],
+        "literature": ["arxiv", "semantic_scholar", "crossref"],
+    }
+    if os.getenv("BRAVE_SEARCH_API_KEY"):
+        platforms["open"].append("brave")
+    if os.getenv("TAVILY_API_KEY"):
+        platforms["open"].append("tavily")
+    if os.getenv("X_API_BEARER_TOKEN"):
+        platforms["forum"].append("x")
+    if os.getenv("REDDIT_CLIENT_ID") and os.getenv("REDDIT_CLIENT_SECRET") and os.getenv("REDDIT_USER_AGENT"):
+        platforms["forum"].append("reddit")
+    return platforms
+
+
+def _render_web_search_artifact(payload: dict[str, object]) -> str:
+    return (
+        "# Web Search Plan (editable)\n\n"
+        "Edit the JSON below if needed. Keep it valid JSON.\n\n"
+        "Notes:\n"
+        "- `platforms_available` and `platforms_enabled` are informational.\n"
+        "- `preferred_sources` is for future use and is not applied yet.\n"
+        "- Edits are applied to `search_topics`, `modes`, and `search_modes.semantic_rerank` for this run.\n\n"
+        "```json\n"
+        f"{json.dumps(payload, indent=2, ensure_ascii=False)}\n"
+        "```\n"
+    )
+
+
 def skill_infer_query(ctx: SkillContext) -> SkillContext:
     if not ctx.auto_methods and not ctx.review_query:
         return ctx
@@ -526,17 +614,18 @@ def skill_infer_query(ctx: SkillContext) -> SkillContext:
     log_task_event(f"Query understanding saved: {artifact_path}")
 
     if ctx.review_query:
-        if not ctx.interactive:
-            raise SystemExit("Query review requires a TTY. Re-run with --no-review-query to skip.")
-        print(f"Query understanding saved to {artifact_path}")
-        try:
-            _launch_query_editor(artifact_path)
-        except FileNotFoundError:
-            print("Editor not found. Edit the file manually, then press Enter to continue.")
-            input("Press Enter to continue... ")
-        except subprocess.CalledProcessError:
-            print("Editor exited with a non-zero status. Review the file, then press Enter to continue.")
-            input("Press Enter to continue... ")
+        if ctx.interactive:
+            print(f"Query understanding saved to {artifact_path}")
+            try:
+                _launch_query_editor(artifact_path)
+            except FileNotFoundError:
+                print("Editor not found. Edit the file manually, then press Enter to continue.")
+                input("Press Enter to continue... ")
+            except subprocess.CalledProcessError:
+                print("Editor exited with a non-zero status. Review the file, then press Enter to continue.")
+                input("Press Enter to continue... ")
+        else:
+            log_task_event("Query review requested but no TTY; continuing without editor.")
         updated_payload = parse_query_artifact(artifact_path.read_text(encoding="utf-8"))
         if updated_payload:
             updated = normalize_query_understanding(updated_payload, raw_query, taxonomy)
@@ -815,20 +904,13 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
     if not ctx.web_enabled:
         return ctx
 
-    log_task_event(
-        "Web retrieval: "
-        f"modes={','.join(ctx.web_modes) or 'open,lit'} "
-        f"max_results={ctx.web_max_results} "
-        f"max_queries={ctx.web_max_queries} "
-        f"expand={ctx.web_expand_queries} "
-        f"per_query={ctx.web_max_per_query} "
-        f"max_new={ctx.web_max_new_sources}"
-    )
     modes = [mode.strip().lower() for mode in (ctx.web_modes or ["open", "lit"])]
     if "tech" in modes:
         modes = ["open" if mode == "tech" else mode for mode in modes]
     if "web" in modes:
         modes = ["open" if mode == "web" else mode for mode in modes]
+    if "literature" in modes:
+        modes = ["lit" if mode == "literature" else mode for mode in modes]
     interest_queries = []
     seen = set()
     cluster_interests: list[str] = []
@@ -862,6 +944,104 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         interest_queries.append(text)
     if not interest_queries:
         return ctx
+
+    if ctx.round_number == 1:
+        ensure_dirs()
+        platforms_available = _available_web_platforms()
+        time_constraint = None
+        if ctx.query_understanding:
+            time_constraint = ctx.query_understanding.constraints.get("timeframe") or None
+        date_from, date_to = _infer_date_range(time_constraint)
+        embed_config = _build_embedding_config(ctx)
+        semantic_available = False
+        if embed_config:
+            if embed_config.provider == "gemini" or embed_config.base_url:
+                semantic_available = True
+        payload = {
+            "run_id": ctx.run_id,
+            "round": ctx.round_number,
+            "search_topics": interest_queries,
+            "modes": modes,
+            "search_modes": {
+                "lexical": True,
+                "semantic_rerank": ctx.web_hybrid,
+                "semantic_rerank_available": semantic_available,
+            },
+            "query_expansion": {
+                "enabled": ctx.web_expand_queries,
+                "max_queries": ctx.web_max_queries,
+                "llm_expansion": bool(ctx.llm),
+            },
+            "date_range": {"from": date_from, "to": date_to, "label": time_constraint},
+            "platforms_available": platforms_available,
+            "platforms_enabled": {
+                "open": "open" in modes,
+                "forum": "forum" in modes,
+                "literature": "lit" in modes,
+            },
+            "preferred_sources": [],
+        }
+        artifact = _render_web_search_artifact(payload)
+        artifact_path = PLANS_DIR / datetime.now().strftime("%Y_%m_%d_%H_%M_%S_web_search.md")
+        artifact_path.write_text(artifact, encoding="utf-8")
+        ctx.web_search_artifact_path = artifact_path
+        log_task_event(f"Web search plan saved: {artifact_path}")
+        if ctx.review_query:
+            if ctx.interactive:
+                print(f"Web search plan saved to {artifact_path}")
+                try:
+                    _launch_query_editor(artifact_path)
+                except FileNotFoundError:
+                    print("Editor not found. Edit the file manually, then press Enter to continue.")
+                    input("Press Enter to continue... ")
+                except subprocess.CalledProcessError:
+                    print("Editor exited with a non-zero status. Review the file, then press Enter to continue.")
+                    input("Press Enter to continue... ")
+            else:
+                log_task_event("Web search plan review requested but no TTY; continuing without editor.")
+            updated_payload = _extract_json_payload(artifact_path.read_text(encoding="utf-8"))
+            if isinstance(updated_payload, dict):
+                updated_topics = _clean_query_list(updated_payload.get("search_topics"), ctx.methodology_terms)
+                if updated_topics:
+                    interest_queries = updated_topics
+                updated_modes = updated_payload.get("modes")
+                if isinstance(updated_modes, list):
+                    cleaned_modes = []
+                    for item in updated_modes:
+                        text = str(item).strip().lower()
+                        if not text:
+                            continue
+                        if text in {"web", "tech"}:
+                            text = "open"
+                        if text == "literature":
+                            text = "lit"
+                        if text not in {"open", "forum", "lit"}:
+                            continue
+                        if text in cleaned_modes:
+                            continue
+                        cleaned_modes.append(text)
+                    if cleaned_modes:
+                        modes = cleaned_modes
+                search_modes = updated_payload.get("search_modes")
+                if isinstance(search_modes, dict):
+                    semantic_flag = search_modes.get("semantic_rerank")
+                    if isinstance(semantic_flag, bool):
+                        ctx.web_hybrid = semantic_flag
+                log_task_event("Web search plan updated from reviewed artifact.")
+            else:
+                log_task_event("Web search plan review ignored (invalid JSON).")
+
+    ctx.web_modes = modes
+
+    log_task_event(
+        "Web retrieval: "
+        f"modes={','.join(modes) or 'open,lit'} "
+        f"max_results={ctx.web_max_results} "
+        f"max_queries={ctx.web_max_queries} "
+        f"expand={ctx.web_expand_queries} "
+        f"per_query={ctx.web_max_per_query} "
+        f"max_new={ctx.web_max_new_sources}"
+    )
 
     scored_results: list[tuple[float, object]] = []
     raw_count = 0
@@ -943,7 +1123,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             if result.source in {"arxiv", "semantic_scholar", "crossref"}:
                 tags.append("literature")
         if "open" in modes or "web" in modes or "tech" in modes:
-            if result.source in {"duckduckgo", "brave", "google_pse", "tavily"}:
+            if result.source in {"duckduckgo", "brave", "tavily"}:
                 tags.append("open")
         if "forum" in modes:
             if result.source in {"reddit", "x"}:
@@ -1035,6 +1215,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         return ctx
     if not ctx.llm:
         raise ValueError("LLM is required for outlining but was not configured.")
+    allowed_tags = _build_allowed_outline_tags(ctx.active_skills)
     ctx.outline = llm_build_outline(
         llm=ctx.llm,
         topic=ctx.topic,
@@ -1046,6 +1227,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         skill_guidance=ctx.skill_guidance,
         active_skills=ctx.active_skills,
         run_id=ctx.run_id,
+        allowed_bracket_tags=allowed_tags,
     )
     return ctx
 

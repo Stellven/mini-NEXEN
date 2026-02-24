@@ -1,7 +1,7 @@
 ---
 name: systems-engineering
 display_name: Systems Engineering
-aliases: systems engineering, system engineering, 系统工程, 五看三定, 三一工程, 四化设计, 系统融合, 作战地图, 产业投资
+aliases: systems engineering, system engineering, 系统工程, 系統工程, 五看三定, 三一工程, 四化设计, 系统融合, 作战地图, 产业投资
 description: >
   Use this skill for any systems engineering task: requirements analysis,
   architecture design, MBSE modeling, V-model workflows, interface control

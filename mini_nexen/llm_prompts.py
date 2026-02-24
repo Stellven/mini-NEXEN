@@ -278,7 +278,8 @@ def outline_prompt(
             "method_guidance": [
                 "Use methods as analytical lenses applied to the topic and evidence.",
                 "Do not treat methods as the topic itself.",
-                "If methods are provided, align major steps to the methods and name steps accordingly.",
+                "If methods are provided, align major steps to the methods and weave method names into the step text.",
+                "Do not add bracketed method tags in titles.",
                 "If method names are not Chinese, translate them into Chinese step titles and include the original in parentheses.",
             ],
         },

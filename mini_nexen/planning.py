@@ -859,16 +859,46 @@ def _clean_list(value: object) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
-def _normalize_outline(outline: list[object]) -> list[str]:
+def normalize_bracket_tag(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = text.casefold()
+    cleaned = re.sub(r"[\s\-_]+", "", cleaned)
+    return cleaned
+
+
+def _strip_bracket_tags(text: str, allowed_tags: set[str] | None = None) -> str:
+    if not text:
+        return ""
+    allowed_tags = allowed_tags or set()
+
+    def _repl(match: re.Match[str]) -> str:
+        content = match.group(1).strip()
+        if allowed_tags and normalize_bracket_tag(content) in allowed_tags:
+            return match.group(0)
+        return ""
+
+    cleaned = re.sub(r"[\[\【]([^\]\】]+)[\]\】]", _repl, text)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
+
+
+def _normalize_outline(
+    outline: list[object],
+    allowed_bracket_tags: set[str] | None = None,
+) -> list[str]:
     normalized: list[str] = []
     for item in outline:
         if isinstance(item, str):
-            text = item.strip()
+            text = _strip_bracket_tags(item.strip(), allowed_bracket_tags)
             if text:
                 normalized.append(text)
             continue
         if isinstance(item, dict):
-            title = str(item.get("title") or item.get("step") or item.get("name") or "").strip()
+            title = _strip_bracket_tags(
+                str(item.get("title") or item.get("step") or item.get("name") or "").strip(),
+                allowed_bracket_tags,
+            )
             if not title:
                 continue
             lines = [title]
@@ -876,19 +906,25 @@ def _normalize_outline(outline: list[object]) -> list[str]:
             if isinstance(substeps, list):
                 for sub in substeps:
                     if isinstance(sub, str):
-                        sub_text = sub.strip()
+                        sub_text = _strip_bracket_tags(sub.strip(), allowed_bracket_tags)
                         if sub_text:
                             lines.append(f"- {sub_text}")
                         continue
                     if isinstance(sub, dict):
-                        sub_text = str(sub.get("text") or sub.get("title") or "").strip()
+                        sub_text = _strip_bracket_tags(
+                            str(sub.get("text") or sub.get("title") or "").strip(),
+                            allowed_bracket_tags,
+                        )
                         if sub_text:
                             lines.append(f"- {sub_text}")
                         sub_sub = sub.get("substeps") or sub.get("items") or []
                         if isinstance(sub_sub, list):
                             for sub_item in sub_sub:
                                 if isinstance(sub_item, str):
-                                    sub_item_text = sub_item.strip()
+                                    sub_item_text = _strip_bracket_tags(
+                                        sub_item.strip(),
+                                        allowed_bracket_tags,
+                                    )
                                     if sub_item_text:
                                         lines.append(f"  - {sub_item_text}")
             normalized.append("\n".join(lines))
@@ -1140,24 +1176,25 @@ def llm_build_outline(
     active_skills: list[str] | None = None,
     run_id: int | None = None,
     save_prefix: str | None = None,
+    allowed_bracket_tags: set[str] | None = None,
 ) -> list[str]:
     def _parse_outline_response(response: str, attempt: int, task: str) -> list[str] | None:
         payload = _extract_json(response)
         outline = payload.get("outline")
         cleaned: list[str] = []
         if isinstance(outline, list):
-            cleaned = _normalize_outline(outline)
+            cleaned = _normalize_outline(outline, allowed_bracket_tags)
         if not cleaned:
             list_payload = _extract_json_list(response)
             if list_payload:
-                cleaned = _normalize_outline(list_payload)
+                cleaned = _normalize_outline(list_payload, allowed_bracket_tags)
                 if cleaned:
                     log_task_event(f"Outliner: recovered outline from JSON list fallback ({task}).")
         if not cleaned:
             fallback = _outline_from_text(response)
             if fallback:
                 log_task_event(f"Outliner: recovered outline from text fallback ({task}).")
-                cleaned = fallback
+                cleaned = _normalize_outline(fallback, allowed_bracket_tags)
         if not cleaned:
             _log_llm_failure("Outliner", f"{task} attempt {attempt}", response)
             return None
@@ -1181,12 +1218,12 @@ def llm_build_outline(
         payload = _extract_json(response)
         outline = payload.get("outline")
         if isinstance(outline, list):
-            cleaned = _normalize_outline(outline)
+            cleaned = _normalize_outline(outline, allowed_bracket_tags)
             if cleaned:
                 return cleaned
         list_payload = _extract_json_list(response)
         if list_payload:
-            cleaned = _normalize_outline(list_payload)
+            cleaned = _normalize_outline(list_payload, allowed_bracket_tags)
             if cleaned:
                 return cleaned
         return []
@@ -1372,7 +1409,8 @@ def llm_build_outline(
             "Structure major steps into contiguous sections grouped by the triggered skills in this order: "
             + ", ".join(labels)
             + ".",
-            "Prefix each major step title with the matching skill label (e.g., '[Systems Engineering] ...').",
+            "Prefix each major step title with the matching skill label (e.g., 'Systems Engineering: ...' or '[Systems Engineering] ...').",
+            "Use only the triggered skill labels; do not introduce other bracket tags.",
             "Ensure each skill has at least one major step; do not introduce new section labels.",
         ]
 
