@@ -4,10 +4,10 @@ Minimal, local-first research backend for generating research plans and detailed
 
 **What It Does**
 - Maintains a personal library of documents, URLs, and notes in SQLite.
-- Tracks user interests and analysis methods as lightweight memory.
-- Builds a topic graph from document chunks and embeddings.
-- Retrieves local sources with cluster-aware ranking and optional web retrieval.
-- Generates a multi-round research plan and a long-form outline.
+- Builds a knowledge graph (entities, relations, claims, evidence) from local + web sources.
+- Extracts a user profile (interest/intent/focus/attention) from local docs.
+- Retrieves evidence with KG subgraph expansion and optional web retrieval.
+- Generates a multi-round research plan and a long-form outline grounded in evidence.
 
 **Quick Start**
 1. Create and activate the environment.
@@ -19,6 +19,7 @@ conda activate mini-nexen
 ```bash
 python -m mini_nexen.cli research --topic "Agentic research systems"
 ```
+Web retrieval is **on by default**. Disable it with `--no-web` or narrow it with `--web-open`, `--web-forum`, or `--web-lit`.
 
 **Environment Setup (Detailed)**
 1. Create the conda environment from `environment.yml`.
@@ -106,6 +107,7 @@ LLM env vars:
 - `GEMINI_API_KEY` or `GOOGLE_API_KEY`: Gemini auth
 - `LMSTUDIO_BASE_URL`: LM Studio endpoint (default `http://localhost:1234/v1`)
 - `LMSTUDIO_API_KEY`: LM Studio auth if required
+- `MINI_NEXEN_LLM_TIMEOUT`: per-request timeout in seconds (default `60`)
 
 Web retrieval env vars:
 - `BRAVE_SEARCH_API_KEY`: Enables API-based open-web search via Brave Search API.
@@ -128,7 +130,7 @@ LLM defaults:
 - Temperature default: `0.2`
 - Max tokens default: `2048`
 
-Embedding configuration (used by web reranking and the local graph):
+Embedding configuration (used by web reranking and KG extraction support):
 - `MINI_NEXEN_EMBED_PROVIDER`: `gemini` or `lmstudio` (optional)
 - `MINI_NEXEN_EMBED_MODEL`: embedding model name (optional)
 - `MINI_NEXEN_EMBED_BASE_URL`: embedding endpoint (optional)
@@ -140,7 +142,7 @@ Logging configuration:
 - `--quiet` disables log echoing.
 
 **Data Locations**
-- `data/mini_nexen.sqlite3`: metadata, interests, graph, and stats.
+- `data/mini_nexen.sqlite3`: metadata, interests, KG, and stats.
 - `data/library/`: stored text copies of ingested content.
 - `data/seeds/`: optional user-provided seed files (if you use `--ingest`).
 - `data/task_events.log`: structured log of retrieval/LLM/graph events.
@@ -156,35 +158,57 @@ Logging configuration:
 7. Start planning rounds (default 2).
 8. Load stored interests and methods.
 9. If the systems-engineering skill triggers on keywords, inject its guidance into the planning context.
-10. If web retrieval is enabled, build query seeds from topic + interests + graph suggestions and run retrieval.
+10. If web retrieval is enabled (default), build query seeds from topic + interests + profile signals and run retrieval.
 11. Web retrieval uses API-key open-web providers (Brave Search API, Tavily), forum providers (X/Reddit), and arXiv/Semantic Scholar/Crossref for literature, optionally expands queries with the LLM, fetches pages, and reranks results with embeddings.
 12. Web results are stored as new documents with relevance scores.
-13. Update the graph: chunk documents, embed missing chunks, cluster (HDBSCAN then KMeans fallback), and update metrics.
-14. Map the topic to the closest cluster and record it in `topic_cluster_map`.
-15. Select local docs via cluster round-robin (top clusters + top_k); if clusters are unavailable, fall back to lexical scoring.
-16. Merge the most similar chunks per doc for LLM context and enforce a minimum count of web docs if requested.
+13. Retrieve local docs via lexical scoring for a seed set.
+14. Extract KG triples + claims from selected docs, store entities/relations/evidence.
+15. Extract user profile (interest/intent/focus/attention) from local docs; fall back to keyword frequency if LLM is unavailable.
+16. Retrieve a KG subgraph using query + profile seeds; expand the document set using evidence.
 17. Draft a research plan with the LLM using interests, methods, extracted themes, and selected docs.
 18. If readiness checks fail (gaps or not enough sources), refine the plan and generate new query hints for the next round.
 19. Build a long-form outline (target 1000-2000 words) and render the final plan markdown.
 20. Save `plans/YYYY_MM_DD_HH_MM_plan.md` and log summary stats.
 
-**Retrieval & Graph Details**
-- Chunking uses sentence splits, default chunk size `500` tokens with `100` tokens of overlap.
-- Each chunk is embedded and stored in `chunks.embedding_json`.
-- Clustering uses HDBSCAN when available; if it produces no clusters, KMeans is used; if dependencies are missing, a single-cluster fallback is used.
-- Rebuilds trigger when there are no clusters and at least 5 chunks, when new chunks exceed 15% of total, when quality metrics degrade, or when archived chunks are pruned.
-- Incremental updates assign new chunks to the nearest centroid when similarity is at least `0.3`.
-- Cluster labels are generated by the LLM when enabled and available.
-- Retrieval ranks clusters by query embedding similarity and selects docs with a round-robin across clusters.
+**Retrieval & KG Details**
+- KG entities are deduped by canonical name; claims are deduped by normalized text.
+- Relations store predicates + confidence; evidence links relations/claims back to sources.
+- Contradiction detection flags claim pairs with shared subject/predicate and conflicting objects.
+- KG subgraph retrieval seeds from query + profile and expands 1 hop to fetch evidence docs.
+
+**KG Visualization**
+Export a subgraph as DOT (Graphviz) or HTML (interactive):
+```bash
+python -m mini_nexen.cli kg-export-dot --seed "agentic science" --hops 2 --out ./kg.dot
+python -m mini_nexen.cli kg-export-html --seed "agentic science" --hops 2 --out ./kg.html
+```
+If you omit `--seed`, it uses top profile terms or top subject entities as seeds.
+To render DOT:
+```bash
+dot -Tpng kg.dot -o kg.png
+```
+Open `kg.html` in a browser to explore the interactive graph.
 
 **CLI Reference**
 
 `research` generates a plan and outline.
 
+KG utilities:
+```bash
+python -m mini_nexen.cli kg-report --limit 10
+python -m mini_nexen.cli kg-export-dot --seed "agentic science" --hops 2
+python -m mini_nexen.cli kg-export-html --seed "agentic science" --hops 2
+```
+
 
 Common behavior:
 - If no provider/model is configured and stdin is not a TTY, the command exits with an error.
-- If no `--web*` flags are given, web retrieval runs with both `open` and `lit` modes.
+- If no `--web*` flags are given, web retrieval runs with `open + forum + lit` by default.
+
+**KG Reporting**
+```bash
+python -m mini_nexen.cli kg-report --limit 10
+```
 
 Research flags:
 | Flag | Meaning | Default |
@@ -257,14 +281,7 @@ These are library-level defaults and can be changed in code. CLI defaults may ov
 - `DEFAULT_TOP_K = 3`
 - `DEFAULT_MIN_WEB_DOCS = 10`
 - `DEFAULT_ROUNDS = 2`
-- `DEFAULT_CHUNK_SIZE = 500`
-- `DEFAULT_CHUNK_OVERLAP = 100`
-- `GRAPH_REBUILD_RATIO = 0.15`
-- `GRAPH_NOISE_RATIO_THRESHOLD = 0.35`
-- `GRAPH_AVG_SIMILARITY_THRESHOLD = 0.2`
-- `GRAPH_UNASSIGNED_RATIO_THRESHOLD = 0.4`
-- `GRAPH_ASSIGN_SIMILARITY_MIN = 0.3`
-- `GRAPH_TOP_CLUSTERS = 10`
+- `DEFAULT_THEME_TOP_K = 10`
 - `WEB_MAX_NEW_SOURCES = 200`
 - `WEB_MAX_PER_QUERY = 10`
 - `WEB_RELEVANCE_THRESHOLD = 0.25`
@@ -275,7 +292,7 @@ These are library-level defaults and can be changed in code. CLI defaults may ov
 To modify these defaults:
 - Use CLI flags for per-run changes.
 - Use env vars for provider/model/logging changes.
-- Edit `mini_nexen/config.py` for graph and retrieval constants not exposed via CLI.
+- Edit `mini_nexen/config.py` for planning and retrieval constants not exposed via CLI.
 
 **Plan Output Structure**
 The generated markdown includes:
@@ -284,15 +301,10 @@ The generated markdown includes:
 - Manually added interests and locally extracted theme clusters.
 - A numbered research outline.
 
-**Graph & Debugging**
-Check cluster sizes:
+**KG & Debugging**
+Check KG summary:
 ```bash
-sqlite3 data/mini_nexen.sqlite3 "SELECT label, size, updated_at FROM clusters ORDER BY size DESC LIMIT 20;"
-```
-
-Check cluster quality metrics:
-```bash
-sqlite3 data/mini_nexen.sqlite3 "SELECT value FROM graph_meta WHERE key='metrics';"
+python -m mini_nexen.cli kg-report
 ```
 
 See unassigned chunk ratio:

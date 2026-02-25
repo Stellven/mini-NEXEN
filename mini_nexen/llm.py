@@ -4,6 +4,7 @@ import json
 import os
 import time
 import re
+import threading
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional
@@ -11,7 +12,10 @@ from typing import Optional
 from .config import TASK_LOG_PATH, ensure_dirs
 
 _ECHO_LOG = False
-PLANNING_THROTTLE_MAX_SECONDS = 30
+BACKOFF_INITIAL_SECONDS = 2
+BACKOFF_MAX_SECONDS = 30
+BACKOFF_TOTAL_MAX_SECONDS = 180
+DEFAULT_LLM_TIMEOUT_SECONDS = 60
 _HTTP_CODE_RE = re.compile(r"\b([45]\d{2})\b")
 
 
@@ -38,6 +42,7 @@ class LLMConfig:
     model: str
     temperature: float = 0.2
     max_tokens: int = 2048
+    timeout: float = DEFAULT_LLM_TIMEOUT_SECONDS
     base_url: Optional[str] = None
     api_key: Optional[str] = None
     discover_model: bool = True
@@ -91,12 +96,11 @@ class GeminiClient(LLMClient):
         task: str = "content",
         agent: str = "Agent",
     ) -> str:
-        is_planning = agent in {"Planner", "Outliner"}
-        started_at = time.time()
         attempt = 0
+        total_wait = 0.0
         def _classify_error(message: str) -> str:
             lowered = message.lower()
-            if "timeout" in lowered:
+            if "timeout" in lowered or "timed out" in lowered:
                 return "timeout"
             if "429" in message or "rate" in lowered or "resourceexhausted" in lowered:
                 return "rate_limit"
@@ -107,53 +111,64 @@ class GeminiClient(LLMClient):
 
         def _log_failure(category: str, exc: Exception, detail: str | None = None) -> None:
             info = detail if detail is not None else str(exc)
+            if category in {"timeout", "rate_limit"}:
+                self._log(
+                    agent,
+                    f"Model {self.config.model} failed {task}: {category} ({info})",
+                )
+                return
             self._log(
                 agent,
                 f"Model {self.config.model} failed {task}: {category} ({type(exc).__name__}: {info})",
             )
+
+        def _generate_with_timeout() -> str:
+            result: dict[str, str] = {}
+            error: dict[str, Exception] = {}
+
+            def _runner() -> None:
+                try:
+                    response = self.client.models.generate_content(
+                        model=self.config.model,
+                        contents=user_prompt,
+                        config=self._types.GenerateContentConfig(system_instruction=system_prompt),
+                    )
+                    result["text"] = getattr(response, "text", "") or ""
+                except Exception as exc:
+                    error["exc"] = exc
+
+            thread = threading.Thread(target=_runner, daemon=True)
+            thread.start()
+            thread.join(timeout=self.config.timeout)
+            if thread.is_alive():
+                raise TimeoutError(f"Gemini request timeout after {self.config.timeout}s")
+            if "exc" in error:
+                raise error["exc"]
+            return result.get("text", "")
         while True:
             attempt += 1
             if attempt == 1:
                 self._log(agent, f"Model {self.config.model} is generating {task}...")
-            else:
-                if is_planning:
-                    elapsed = time.time() - started_at
-                    self._log(
-                        agent,
-                        f"Model {self.config.model} retrying {task} (attempt {attempt}, "
-                        f"{elapsed:.0f}s elapsed)."
-                    )
-                else:
-                    self._log(
-                        agent,
-                        f"Model {self.config.model} retrying {task} (attempt {attempt}/3)."
-                    )
             try:
-                response = self.client.models.generate_content(
-                    model=self.config.model,
-                    contents=user_prompt,
-                    config=self._types.GenerateContentConfig(system_instruction=system_prompt),
-                )
-                text = getattr(response, "text", "") or ""
+                text = _generate_with_timeout()
                 self._log(agent, f"Model {self.config.model} finished generating {task}.")
                 return text
             except Exception as exc:  # pragma: no cover - provider-specific errors
                 message = str(exc)
                 category = _classify_error(message)
-                if category == "rate_limit":
+                if category in {"rate_limit", "timeout"}:
                     _log_failure(category, exc, detail=message)
-                    sleep_for = min(PLANNING_THROTTLE_MAX_SECONDS, 2**attempt)
-                    if is_planning:
-                        self._log(
-                            agent,
-                            f"{agent} throttle: sleeping {sleep_for}s after rate limit before {task}.",
-                        )
-                        time.sleep(sleep_for)
-                        continue
-                    if attempt < 3:
-                        time.sleep(sleep_for)
-                        continue
-                    raise LLMClientError("Rate limit reached")
+                    sleep_for = min(BACKOFF_MAX_SECONDS, BACKOFF_INITIAL_SECONDS * (2 ** (attempt - 1)))
+                    if total_wait + sleep_for > BACKOFF_TOTAL_MAX_SECONDS:
+                        raise LLMClientError(f"{category} retry budget exceeded")
+                    self._log(
+                        agent,
+                        f"Model {self.config.model} {category} on {task}; "
+                        f"retrying (attempt {attempt}) in {sleep_for}s.",
+                    )
+                    time.sleep(sleep_for)
+                    total_wait += sleep_for
+                    continue
                 _log_failure(category, exc, detail=message)
                 raise LLMClientError(message) from exc
 
@@ -206,8 +221,6 @@ class LMStudioClient(LLMClient):
         task: str = "content",
         agent: str = "Agent",
     ) -> str:
-        use_time_budget = agent in {"Planner", "Outliner"}
-        started_at = time.time()
         base_url = self.config.base_url or "http://localhost:1234/v1"
         self._resolve_model(agent, base_url)
         url = base_url.rstrip("/") + "/chat/completions"
@@ -226,42 +239,49 @@ class LMStudioClient(LLMClient):
         }
 
         attempt = 0
+        total_wait = 0.0
         while True:
             attempt += 1
             if attempt == 1:
                 self._log(agent, f"Model {self.config.model} is generating {task}...")
-            else:
-                if use_time_budget:
-                    elapsed = time.time() - started_at
-                    remaining = max(0.0, PLANNING_RETRY_MAX_SECONDS - elapsed)
+            try:
+                response = self._requests.post(
+                    url,
+                    headers=headers,
+                    data=json.dumps(payload),
+                    timeout=self.config.timeout,
+                )
+            except Exception as exc:
+                message = str(exc)
+                lowered = message.lower()
+                category = "timeout" if "timeout" in lowered or "timed out" in lowered else "error"
+                self._log(agent, f"Model {self.config.model} failed {task}: {category} ({message})")
+                if category == "timeout":
+                    sleep_for = min(BACKOFF_MAX_SECONDS, BACKOFF_INITIAL_SECONDS * (2 ** (attempt - 1)))
+                    if total_wait + sleep_for > BACKOFF_TOTAL_MAX_SECONDS:
+                        raise LLMClientError("timeout retry budget exceeded") from exc
                     self._log(
                         agent,
-                        f"Model {self.config.model} retrying {task} (attempt {attempt}, "
-                        f"{remaining:.0f}s budget remaining)."
+                        f"Model {self.config.model} timeout on {task}; "
+                        f"retrying (attempt {attempt}) in {sleep_for}s.",
                     )
-                else:
-                    self._log(
-                        agent,
-                        f"Model {self.config.model} retrying {task} (attempt {attempt}/3)."
-                    )
-            response = self._requests.post(url, headers=headers, data=json.dumps(payload), timeout=None)
+                    time.sleep(sleep_for)
+                    total_wait += sleep_for
+                    continue
+                raise LLMClientError(message) from exc
             if response.status_code == 429:
                 self._log(agent, f"Model {self.config.model} rate limit on {task}.")
-                if use_time_budget:
-                    elapsed = time.time() - started_at
-                    if elapsed >= PLANNING_RETRY_MAX_SECONDS:
-                        raise LLMClientError("Planning retry budget exceeded")
-                    retry_after = response.headers.get("Retry-After")
-                    sleep_for = int(retry_after) if retry_after and retry_after.isdigit() else 2**attempt
-                    remaining = PLANNING_RETRY_MAX_SECONDS - elapsed
-                    time.sleep(min(sleep_for, max(0.0, remaining)))
-                    continue
-                if attempt < 3:
-                    retry_after = response.headers.get("Retry-After")
-                    sleep_for = int(retry_after) if retry_after and retry_after.isdigit() else 2**attempt
-                    time.sleep(sleep_for)
-                    continue
-                raise LLMClientError("Rate limit reached")
+                sleep_for = min(BACKOFF_MAX_SECONDS, BACKOFF_INITIAL_SECONDS * (2 ** (attempt - 1)))
+                if total_wait + sleep_for > BACKOFF_TOTAL_MAX_SECONDS:
+                    raise LLMClientError("rate limit retry budget exceeded")
+                self._log(
+                    agent,
+                    f"Model {self.config.model} rate limit on {task}; "
+                    f"retrying (attempt {attempt}) in {sleep_for}s.",
+                )
+                time.sleep(sleep_for)
+                total_wait += sleep_for
+                continue
             if response.status_code >= 400:
                 self._log(agent, f"Model {self.config.model} failed {task}: {response.text}")
                 raise LLMClientError(f"LM Studio error {response.status_code}: {response.text}")
@@ -290,12 +310,24 @@ def log_task_event_quiet(message: str) -> None:
     _write_log_line(f"{stamp} | {message}", echo=False)
 
 
+def _load_timeout_env() -> Optional[float]:
+    value = os.getenv("MINI_NEXEN_LLM_TIMEOUT")
+    if not value:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(1.0, parsed)
+
+
 def load_llm_config(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     base_url: Optional[str] = None,
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
+    timeout: Optional[float] = None,
     api_key: Optional[str] = None,
     discover_model: Optional[bool] = None,
 ) -> Optional[LLMConfig]:
@@ -306,6 +338,7 @@ def load_llm_config(
     provider = provider.lower().strip()
     model = model or os.getenv("MINI_NEXEN_MODEL")
 
+    timeout_value = timeout or _load_timeout_env()
     if provider == "gemini":
         model = model or "gemini-2.5-flash"
         api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
@@ -314,6 +347,7 @@ def load_llm_config(
             model=model,
             temperature=temperature or 0.2,
             max_tokens=max_tokens or 2048,
+            timeout=timeout_value or DEFAULT_LLM_TIMEOUT_SECONDS,
             api_key=api_key,
             discover_model=True,
         )
@@ -327,6 +361,7 @@ def load_llm_config(
             model=model,
             temperature=temperature or 0.2,
             max_tokens=max_tokens or 2048,
+            timeout=timeout_value or DEFAULT_LLM_TIMEOUT_SECONDS,
             base_url=base_url,
             api_key=api_key,
             discover_model=bool(discover_model) if discover_model is not None else True,

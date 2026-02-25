@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 from . import db
 import os
 import sys
 
-from .config import DEFAULT_MIN_WEB_DOCS, DEFAULT_ROUNDS, DEFAULT_TOP_K, GRAPH_TOP_CLUSTERS, ensure_dirs
+from .config import (
+    DEFAULT_MIN_WEB_DOCS,
+    DEFAULT_ROUNDS,
+    DEFAULT_THEME_TOP_K,
+    DEFAULT_TOP_K,
+    PLANS_DIR,
+    WEB_AUTO_MAX_ROUNDS,
+    WEB_RELEVANCE_THRESHOLD,
+    ensure_dirs,
+)
 from .file_ingest import load_text_from_file
 from .llm import LLMClientError, load_llm_config, log_task_event, set_log_echo
+from .kg import KGStore, build_subgraph_for_terms, render_dot, render_html
 from .web_retrieval import RetrievalRateLimitError
 from .research import run_research
 
@@ -48,7 +59,7 @@ def _ingest(args: argparse.Namespace) -> None:
         )
         print(f"Recorded URL document: {doc.doc_id}")
         if not content:
-            print("Note: URL content was not fetched; provide --text to store highlights.")
+            print("Note: URL content was not fetched; provide --text to store document content.")
         return
 
     if args.text:
@@ -134,10 +145,15 @@ def _clear_library(args: argparse.Namespace) -> None:
         "Cleared library + graph: "
         f"documents={result['documents']} "
         f"document_stats={result['document_stats']} "
-        f"chunks={result['chunks']} "
-        f"clusters={result['clusters']} "
-        f"topic_cluster_map={result['topic_cluster_map']} "
         f"graph_meta={result['graph_meta']} "
+        f"kg_entities={result['kg_entities']} "
+        f"kg_relations={result['kg_relations']} "
+        f"kg_claims={result['kg_claims']} "
+        f"kg_evidence={result['kg_evidence']} "
+        f"kg_mentions={result['kg_mentions']} "
+        f"kg_profiles={result['kg_profiles']} "
+        f"kg_contradictions={result['kg_contradictions']} "
+        f"kg_doc_state={result['kg_doc_state']} "
         f"files_removed={result['files_removed']}"
     )
 
@@ -172,6 +188,155 @@ def _list_methods(_: argparse.Namespace) -> None:
         print(f"{method.method_id} | {method.method}")
 
 
+def _kg_report(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    db.init_db()
+    store = KGStore()
+    limit = max(1, int(args.limit or 10))
+    with db._connect() as conn:
+        counts = conn.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM kg_entities) AS entities,
+                (SELECT COUNT(*) FROM kg_relations) AS relations,
+                (SELECT COUNT(*) FROM kg_claims) AS claims,
+                (SELECT COUNT(*) FROM kg_evidence) AS evidence,
+                (SELECT COUNT(*) FROM kg_mentions) AS mentions,
+                (SELECT COUNT(*) FROM kg_user_profile) AS profiles,
+                (SELECT COUNT(*) FROM kg_contradictions) AS contradictions
+            """
+        ).fetchone()
+    print("KG Summary:")
+    print(
+        "entities={entities} relations={relations} claims={claims} "
+        "evidence={evidence} mentions={mentions} profiles={profiles} contradictions={contradictions}".format(
+            entities=counts["entities"],
+            relations=counts["relations"],
+            claims=counts["claims"],
+            evidence=counts["evidence"],
+            mentions=counts["mentions"],
+            profiles=counts["profiles"],
+            contradictions=counts["contradictions"],
+        )
+    )
+
+    profile = store.get_profile(profile_types=["interest", "intent", "focus", "attention"], limit=limit)
+    if profile:
+        print("")
+        print("Top Profile Signals:")
+        for item in profile:
+            label = item.get("entity") or ""
+            ptype = item.get("profile_type") or ""
+            salience = item.get("salience") or 0.0
+            print(f"{ptype} | {salience:.2f} | {label}")
+
+    with db._connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.name, COUNT(*) AS count
+            FROM kg_relations r
+            JOIN kg_entities e ON r.subject_id = e.entity_id
+            GROUP BY e.name
+            ORDER BY count DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    if rows:
+        print("")
+        print("Top Subject Entities:")
+        for row in rows:
+            print(f"{row['count']:>3} | {row['name']}")
+
+
+def _kg_export_dot(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    db.init_db()
+    store = KGStore()
+    seeds = _parse_seed_terms(args.seed)
+    if not seeds:
+        seeds = _default_seed_terms(store, limit=8)
+    subgraph = build_subgraph_for_terms(
+        store,
+        seeds,
+        hops=max(1, int(args.hops or 1)),
+        min_confidence=float(args.min_conf or 0.3),
+        limit_edges=max(50, int(args.limit_edges or 200)),
+    )
+    profile_edges = store.get_profile(limit=20)
+    dot = render_dot(subgraph, user_id=store.user_id, profile_edges=profile_edges)
+    out_path = _resolve_export_path(args.out, suffix=".dot")
+    out_path.write_text(dot, encoding="utf-8")
+    print(f"Wrote DOT: {out_path}")
+
+
+def _kg_export_html(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    db.init_db()
+    store = KGStore()
+    seeds = _parse_seed_terms(args.seed)
+    if not seeds:
+        seeds = _default_seed_terms(store, limit=8)
+    subgraph = build_subgraph_for_terms(
+        store,
+        seeds,
+        hops=max(1, int(args.hops or 1)),
+        min_confidence=float(args.min_conf or 0.3),
+        limit_edges=max(50, int(args.limit_edges or 200)),
+    )
+    profile_edges = store.get_profile(limit=20)
+    html = render_html(subgraph, title="mini-NEXEN KG", user_id=store.user_id, profile_edges=profile_edges)
+    out_path = _resolve_export_path(args.out, suffix=".html")
+    out_path.write_text(html, encoding="utf-8")
+    print(f"Wrote HTML: {out_path}")
+
+
+def _parse_seed_terms(items: list[str] | None) -> list[str]:
+    if not items:
+        return []
+    terms: list[str] = []
+    for item in items:
+        for part in (item or "").split(","):
+            text = part.strip()
+            if text:
+                terms.append(text)
+    seen = set()
+    unique = []
+    for term in terms:
+        key = term.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(term)
+    return unique
+
+
+def _default_seed_terms(store: KGStore, limit: int = 8) -> list[str]:
+    profile = store.get_profile(profile_types=["interest", "focus"], limit=limit)
+    if profile:
+        return [item["entity"] for item in profile if item.get("entity")][:limit]
+    with db._connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.name, COUNT(*) AS count
+            FROM kg_relations r
+            JOIN kg_entities e ON r.subject_id = e.entity_id
+            GROUP BY e.name
+            ORDER BY count DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [row["name"] for row in rows if row["name"]]
+
+
+def _resolve_export_path(raw: str | None, suffix: str) -> Path:
+    ensure_dirs()
+    if raw:
+        path = Path(raw)
+        return path if path.suffix else path.with_suffix(suffix)
+    stamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    return (PLANS_DIR / f"kg_export_{stamp}{suffix}").resolve()
 
 def _research(args: argparse.Namespace) -> None:
     ensure_dirs()
@@ -188,17 +353,22 @@ def _research(args: argparse.Namespace) -> None:
         raise SystemExit("LLM configuration failed. Check provider/model settings.")
 
     web_modes = []
+    explicit_web = bool(args.web or args.web_open or args.web_forum or args.web_lit)
     if not args.no_web:
-        if args.web or args.web_open or args.web_forum or args.web_lit:
+        if explicit_web:
             if args.web or args.web_open:
                 web_modes.append("open")
             if args.web or args.web_forum:
                 web_modes.append("forum")
             if args.web or args.web_lit:
                 web_modes.append("lit")
+        elif args.web_auto:
+            web_modes = ["open", "forum", "lit"]
         else:
-            web_modes = ["open", "lit"]
+            web_modes = ["open", "forum", "lit"]
     web_enabled = bool(web_modes)
+    web_forced = explicit_web and not args.no_web
+    web_auto = args.web_auto and not args.no_web
     web_hybrid = web_enabled and not args.web_no_hybrid
     if args.web_hybrid:
         web_hybrid = True
@@ -248,6 +418,8 @@ def _research(args: argparse.Namespace) -> None:
             max_tokens=args.max_tokens,
             discover_model=not args.no_model_discovery,
             web_enabled=web_enabled,
+            web_forced=web_forced,
+            web_auto=web_auto,
             web_modes=web_modes,
             web_max_results=args.web_max_results,
             web_timeout=args.web_timeout,
@@ -263,13 +435,13 @@ def _research(args: argparse.Namespace) -> None:
             web_max_new_sources=args.web_max_new,
             web_max_per_query=args.web_max_per_query,
             web_relevance_threshold=args.web_relevance_threshold,
+            web_max_rounds=args.web_max_rounds,
             ingest_seeds=args.ingest_seeds,
             auto_interest=args.auto_interest,
             auto_methods=auto_methods,
             review_query=review_query,
             interactive=interactive,
-            graph_semantic_labels=not args.no_graph_semantic_labels or args.graph_semantic_labels,
-            graph_top_clusters=args.graph_top_clusters,
+            theme_top_k=args.theme_top_k,
         )
         if result.query_artifact_path:
             print(f"Query understanding artifact: {result.query_artifact_path}")
@@ -565,6 +737,32 @@ def build_parser() -> argparse.ArgumentParser:
     list_methods.add_argument("--quiet", action="store_true", help="Disable log echoing")
     list_methods.set_defaults(func=_list_methods)
 
+    kg_report = sub.add_parser("kg-report", help="Summarize the local knowledge graph")
+    kg_report.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
+    kg_report.add_argument("--quiet", action="store_true", help="Disable log echoing")
+    kg_report.add_argument("--limit", type=int, default=10, help="Limit for top lists (default: 10)")
+    kg_report.set_defaults(func=_kg_report)
+
+    kg_export_dot = sub.add_parser("kg-export-dot", help="Export a KG subgraph as DOT")
+    kg_export_dot.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
+    kg_export_dot.add_argument("--quiet", action="store_true", help="Disable log echoing")
+    kg_export_dot.add_argument("--seed", action="append", help="Seed term (repeat or comma-separated)")
+    kg_export_dot.add_argument("--hops", type=int, default=1, help="Subgraph hops (default: 1)")
+    kg_export_dot.add_argument("--min-conf", type=float, default=0.3, help="Min relation confidence")
+    kg_export_dot.add_argument("--limit-edges", type=int, default=200, help="Max edges to export")
+    kg_export_dot.add_argument("--out", help="Output path (.dot)")
+    kg_export_dot.set_defaults(func=_kg_export_dot)
+
+    kg_export_html = sub.add_parser("kg-export-html", help="Export a KG subgraph as HTML")
+    kg_export_html.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
+    kg_export_html.add_argument("--quiet", action="store_true", help="Disable log echoing")
+    kg_export_html.add_argument("--seed", action="append", help="Seed term (repeat or comma-separated)")
+    kg_export_html.add_argument("--hops", type=int, default=1, help="Subgraph hops (default: 1)")
+    kg_export_html.add_argument("--min-conf", type=float, default=0.3, help="Min relation confidence")
+    kg_export_html.add_argument("--limit-edges", type=int, default=200, help="Max edges to export")
+    kg_export_html.add_argument("--out", help="Output path (.html)")
+    kg_export_html.set_defaults(func=_kg_export_html)
+
     research = sub.add_parser("research", help="Generate a research plan")
     research.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     research.add_argument("--quiet", action="store_true", help="Disable log echoing")
@@ -583,6 +781,11 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument("--temperature", type=float, help="Sampling temperature")
     research.add_argument("--max-tokens", type=int, help="Max tokens to generate")
     research.add_argument("--web", action="store_true", help="Enable web retrieval (open + forum + literature)")
+    research.add_argument(
+        "--web-auto",
+        action="store_true",
+        help="Enable web retrieval on-demand (only when KG expansion criteria are met).",
+    )
     research.add_argument(
         "--web-open",
         "--web-tech",
@@ -603,20 +806,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research.add_argument("--auto-interest", action="store_true", help="Add research topic to interests")
     research.add_argument(
-        "--graph-semantic-labels",
-        action="store_true",
-        help="Use LLM to label clusters (default: on)",
-    )
-    research.add_argument(
-        "--no-graph-semantic-labels",
-        action="store_true",
-        help="Disable LLM cluster labels",
+        "--theme-top-k",
+        type=int,
+        default=DEFAULT_THEME_TOP_K,
+        help="Number of top themes to include in the plan output (default: 10)",
     )
     research.add_argument(
         "--graph-top-clusters",
+        dest="theme_top_k",
         type=int,
-        default=GRAPH_TOP_CLUSTERS,
-        help="Number of top clusters to use for retrieval (default: 3)",
+        help="Deprecated. Use --theme-top-k instead.",
     )
     research.add_argument("--web-max-results", type=int, default=5, help="Max results per source")
     research.add_argument("--web-timeout", type=int, default=15, help="Web fetch timeout (seconds)")
@@ -640,8 +839,14 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument(
         "--web-relevance-threshold",
         type=float,
-        default=0.25,
+        default=WEB_RELEVANCE_THRESHOLD,
         help="Minimum relevance score when reranking (default: 0.25)",
+    )
+    research.add_argument(
+        "--web-max-rounds",
+        type=int,
+        default=WEB_AUTO_MAX_ROUNDS,
+        help="Maximum web retrieval rounds per task (default: 3).",
     )
     research.add_argument(
         "--auto-methods",

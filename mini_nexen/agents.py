@@ -28,8 +28,12 @@ class Orchestrator:
                 "collect_methods",
                 "apply_skill_hints",
                 "systems-engineering",
-                "web_retrieve",
                 "retrieve_sources",
+                "extract_kg",
+                "extract_profile",
+                "retrieve_subgraph",
+                "detect_contradictions",
+                "web_retrieve",
             ],
         )
         self.planner = Agent("planner", ["plan_research", "refine_plan"])

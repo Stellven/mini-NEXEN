@@ -3,8 +3,7 @@ from __future__ import annotations
 import json
 from typing import Iterable
 
-from .db import Document, Interest, Method, load_document_text
-from .text_utils import top_sentences
+from .db import Document, Interest, Method
 
 SYSTEM_PLAN_PROMPT = """You are a research planning agent. All natural-language content MUST be in Chinese. Produce a plan that is concise, actionable, and focused on gaps.
 Return ONE valid JSON object only. No markdown, no commentary, no extra text.
@@ -22,6 +21,7 @@ Requirements:
 - Keep JSON keys in English.
 - Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.
 - Use ASCII punctuation for JSON (":" and ","), not full-width punctuation.
+- When evidence includes confidence or recency, prefer higher-confidence and more recent evidence.
 All natural-language content MUST be in Chinese.
 
 Example:
@@ -47,6 +47,7 @@ Requirements:
 - Keep JSON keys in English.
 - Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.
 - Use ASCII punctuation for JSON (":" and ","), not full-width punctuation.
+- When evidence includes confidence or recency, prefer higher-confidence and more recent evidence.
 All natural-language content MUST be in Chinese.
 
 Example:
@@ -77,20 +78,15 @@ def _serialize_methods(methods: Iterable[Method]) -> list[str]:
 def _serialize_documents(
     documents: Iterable[Document],
     keywords: Iterable[str],
-    doc_text_overrides: dict[str, str] | None = None,
 ) -> list[dict]:
     results = []
     for doc in documents:
-        text = doc_text_overrides.get(doc.doc_id) if doc_text_overrides else None
-        if not text:
-            text = load_document_text(doc)
-        highlights = top_sentences(text, keywords, limit=10)
         results.append(
             {
                 "title": doc.title,
                 "source_type": doc.source_type,
                 "source": doc.source,
-                "highlights": highlights,
+                "doc_id": doc.doc_id,
             }
         )
     return results
@@ -103,14 +99,14 @@ def plan_prompt(
     documents: list[Document],
     keywords: list[str],
     extracted_interests: list[str] | None = None,
-    doc_text_overrides: dict[str, str] | None = None,
+    kg_fact_cards: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
         "topic": topic,
         "interests": _serialize_interests(interests),
         "methods": _serialize_methods(methods),
-        "documents": _serialize_documents(documents, keywords, doc_text_overrides=doc_text_overrides),
+        "documents": _serialize_documents(documents, keywords),
         "instructions": {
             "output_json_schema": {
                 "scope": ["string"],
@@ -143,10 +139,18 @@ def plan_prompt(
                 "Methods are analysis approaches (lenses), not standalone topics.",
                 "Apply methods to the topic and evidence.",
             ],
+            "kg_guidance": [
+                "If kg_fact_cards is provided, use it to ground claims and plan steps.",
+                "Prefer higher-confidence and more recent evidence when shaping the plan.",
+                "Do not copy evidence snippets verbatim; paraphrase.",
+                "Do not fabricate sources that are not in kg_fact_cards or documents.",
+            ],
         },
     }
     if extracted_interests:
         payload["extracted_interests"] = extracted_interests
+    if kg_fact_cards:
+        payload["kg_fact_cards"] = kg_fact_cards[:30]
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
     return json.dumps(payload, indent=2)
@@ -189,7 +193,7 @@ def refine_prompt(
     documents: list[Document],
     keywords: list[str],
     extracted_interests: list[str] | None = None,
-    doc_text_overrides: dict[str, str] | None = None,
+    kg_fact_cards: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
@@ -197,7 +201,7 @@ def refine_prompt(
         "prior_plan": prior_plan,
         "interests": _serialize_interests(interests),
         "methods": _serialize_methods(methods),
-        "documents": _serialize_documents(documents, keywords, doc_text_overrides=doc_text_overrides),
+        "documents": _serialize_documents(documents, keywords),
         "instructions": {
             "output_json_schema": {
                 "scope": ["string"],
@@ -230,10 +234,18 @@ def refine_prompt(
                 "Methods are analysis approaches (lenses), not standalone topics.",
                 "Apply methods to the topic and evidence.",
             ],
+            "kg_guidance": [
+                "If kg_fact_cards is provided, use it to ground claims and plan steps.",
+                "Prefer higher-confidence and more recent evidence when refining the plan.",
+                "Do not copy evidence snippets verbatim; paraphrase.",
+                "Do not fabricate sources that are not in kg_fact_cards or documents.",
+            ],
         },
     }
     if extracted_interests:
         payload["extracted_interests"] = extracted_interests
+    if kg_fact_cards:
+        payload["kg_fact_cards"] = kg_fact_cards[:30]
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
     return json.dumps(payload, indent=2)
@@ -245,7 +257,7 @@ def outline_prompt(
     methods: list[Method],
     documents: list[Document],
     keywords: list[str],
-    doc_text_overrides: dict[str, str] | None = None,
+    kg_fact_cards: list[dict] | None = None,
     length_hint: str | None = None,
     language_hint: str | None = None,
     structure_guidance: list[str] | None = None,
@@ -255,7 +267,7 @@ def outline_prompt(
         "topic": topic,
         "interests": _serialize_interests(interests),
         "methods": _serialize_methods(methods),
-        "documents": _serialize_documents(documents, keywords, doc_text_overrides=doc_text_overrides),
+        "documents": _serialize_documents(documents, keywords),
         "keywords": keywords,
         "instructions": {
             "output_json_schema": {
@@ -282,8 +294,20 @@ def outline_prompt(
                 "Do not add bracketed method tags in titles.",
                 "If method names are not Chinese, translate them into Chinese step titles and include the original in parentheses.",
             ],
+            "kg_guidance": [
+                "If kg_fact_cards is provided, use it to ground claims and outline steps.",
+                "Prefer higher-confidence and more recent evidence when shaping the outline.",
+                "Prefer evidence-backed relationships over unsupported assertions.",
+                "Do not copy evidence snippets verbatim; paraphrase.",
+                "When you use kg_fact_cards, add a short citation in-line like 'Sources: title1; title2'.",
+                "Do not fabricate sources that are not in kg_fact_cards or documents.",
+                "Use trend stats and contradictions in kg_fact_cards to highlight agreements, shifts, and disagreements.",
+                "Dates in kg_fact_cards come from document added_at timestamps (ingestion time), not publication dates.",
+            ],
         },
     }
+    if kg_fact_cards:
+        payload["kg_fact_cards"] = kg_fact_cards[:40]
     if structure_guidance:
         payload["instructions"]["structure_guidance"] = structure_guidance
     if skill_guidance:

@@ -4606,3 +4606,749 @@
 2026-02-23T22:47:07.243099+00:00 | Success: source=arxiv query='Recent technical analysis report on AI agent-driven workflows' results=5
 2026-02-23T22:47:08.096545+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
 2026-02-23T22:47:10.674710+00:00 | ---------- Task Ends ----------
+2026-02-24T18:53:28.738715+00:00 | --------- Task Starts ----------
+2026-02-24T18:53:28.741870+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T18:53:28.742003+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-24T18:53:36.028238+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T18:53:36.031929+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-24T18:53:36.673994+00:00 | === Round 1/2 ===
+2026-02-24T18:53:36.674334+00:00 | ***Skill activated: infer_query***
+2026-02-24T18:53:36.675097+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-24T18:57:42.346169+00:00 | ---------- Task Ends ----------
+2026-02-24T19:00:34.050898+00:00 | --------- Task Starts ----------
+2026-02-24T19:00:34.051992+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T19:00:34.052166+00:00 | Provider: gemini | Model: gemini-2.5-flash-lite
+2026-02-24T19:00:34.071684+00:00 | Seed ingest: files=10 added=0 skipped=10 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T19:00:34.073550+00:00 | Decay summary: processed=0 archived=0 run_id=2
+2026-02-24T19:00:36.419473+00:00 | === Round 1/2 ===
+2026-02-24T19:00:36.419639+00:00 | ***Skill activated: infer_query***
+2026-02-24T19:00:36.420366+00:00 | Planner | Model gemini-2.5-flash-lite is generating query understanding...
+2026-02-24T19:02:46.352367+00:00 | ---------- Task Ends ----------
+2026-02-24T19:07:05.316091+00:00 | --------- Task Starts ----------
+2026-02-24T19:07:05.316270+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T19:07:05.316331+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-24T19:07:12.708673+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T19:07:12.713154+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-24T19:07:13.142556+00:00 | === Round 1/2 ===
+2026-02-24T19:07:13.142683+00:00 | ***Skill activated: infer_query***
+2026-02-24T19:07:13.143213+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-24T19:08:13.145679+00:00 | Planner | Model gemini-2.5-pro failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:08:13.147041+00:00 | Planner | Planner throttle: sleeping 2s after timeout before query understanding.
+2026-02-24T19:08:15.147246+00:00 | Planner | Model gemini-2.5-pro retrying query understanding (attempt 2, 62s elapsed).
+2026-02-24T19:09:15.148980+00:00 | Planner | Model gemini-2.5-pro failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:09:15.149270+00:00 | ---------- Task Ends ----------
+2026-02-24T19:12:08.483771+00:00 | --------- Task Starts ----------
+2026-02-24T19:12:08.483965+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T19:12:08.484022+00:00 | Provider: gemini | Model: gemini-3-pro-preview
+2026-02-24T19:12:15.976736+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T19:12:15.981970+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-24T19:12:16.655557+00:00 | === Round 1/2 ===
+2026-02-24T19:12:16.655845+00:00 | ***Skill activated: infer_query***
+2026-02-24T19:12:16.656611+00:00 | Planner | Model gemini-3-pro-preview is generating query understanding...
+2026-02-24T19:13:16.658862+00:00 | Planner | Model gemini-3-pro-preview failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:13:16.662204+00:00 | Planner | Planner throttle: sleeping 2s after timeout before query understanding (waited=0s).
+2026-02-24T19:13:18.662440+00:00 | Planner | Model gemini-3-pro-preview retrying query understanding (attempt 2, waited=2s).
+2026-02-24T19:14:18.664645+00:00 | Planner | Model gemini-3-pro-preview failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:14:18.665553+00:00 | Planner | Planner throttle: sleeping 4s after timeout before query understanding (waited=2s).
+2026-02-24T19:14:22.666001+00:00 | Planner | Model gemini-3-pro-preview retrying query understanding (attempt 3, waited=6s).
+2026-02-24T19:15:22.670601+00:00 | Planner | Model gemini-3-pro-preview failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:15:22.670864+00:00 | Planner | Planner throttle: sleeping 8s after timeout before query understanding (waited=6s).
+2026-02-24T19:15:30.671072+00:00 | Planner | Model gemini-3-pro-preview retrying query understanding (attempt 4, waited=14s).
+2026-02-24T19:16:08.399473+00:00 | ---------- Task Ends ----------
+2026-02-24T19:18:11.265153+00:00 | --------- Task Starts ----------
+2026-02-24T19:18:11.265376+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T19:18:11.265426+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-24T19:18:11.281497+00:00 | Seed ingest: files=10 added=0 skipped=10 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T19:18:11.284448+00:00 | Decay summary: processed=0 archived=0 run_id=2
+2026-02-24T19:18:11.923057+00:00 | === Round 1/2 ===
+2026-02-24T19:18:11.923211+00:00 | ***Skill activated: infer_query***
+2026-02-24T19:18:11.923769+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-24T19:19:12.348156+00:00 | Planner | Model gemini-2.5-pro failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:19:12.348604+00:00 | Planner | Model gemini-2.5-pro timeout on query understanding; retrying (attempt 1) in 2s.
+2026-02-24T19:19:14.348833+00:00 | Planner | Model gemini-2.5-pro retrying query understanding (attempt 2, waited=2s).
+2026-02-24T19:20:14.351161+00:00 | Planner | Model gemini-2.5-pro failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:20:14.351674+00:00 | Planner | Model gemini-2.5-pro timeout on query understanding; retrying (attempt 2) in 4s.
+2026-02-24T19:20:18.351917+00:00 | Planner | Model gemini-2.5-pro retrying query understanding (attempt 3, waited=6s).
+2026-02-24T19:21:17.190644+00:00 | ---------- Task Ends ----------
+2026-02-24T19:21:23.626808+00:00 | --------- Task Starts ----------
+2026-02-24T19:21:23.626981+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T19:21:23.627068+00:00 | Provider: gemini | Model: gemini-2.0-flash-lite
+2026-02-24T19:21:23.640939+00:00 | Seed ingest: files=10 added=0 skipped=10 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T19:21:23.643945+00:00 | Decay summary: processed=0 archived=0 run_id=3
+2026-02-24T19:21:24.078945+00:00 | === Round 1/2 ===
+2026-02-24T19:21:24.079072+00:00 | ***Skill activated: infer_query***
+2026-02-24T19:21:24.079541+00:00 | Planner | Model gemini-2.0-flash-lite is generating query understanding...
+2026-02-24T19:22:24.081166+00:00 | Planner | Model gemini-2.0-flash-lite failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:22:24.081471+00:00 | Planner | Model gemini-2.0-flash-lite timeout on query understanding; retrying (attempt 1) in 2s.
+2026-02-24T19:23:26.085063+00:00 | Planner | Model gemini-2.0-flash-lite failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:23:26.085287+00:00 | Planner | Model gemini-2.0-flash-lite timeout on query understanding; retrying (attempt 2) in 4s.
+2026-02-24T19:24:30.087840+00:00 | Planner | Model gemini-2.0-flash-lite failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:24:30.088373+00:00 | Planner | Model gemini-2.0-flash-lite timeout on query understanding; retrying (attempt 3) in 8s.
+2026-02-24T19:25:38.090899+00:00 | Planner | Model gemini-2.0-flash-lite failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:25:38.094465+00:00 | Planner | Model gemini-2.0-flash-lite timeout on query understanding; retrying (attempt 4) in 16s.
+2026-02-24T19:26:54.096604+00:00 | Planner | Model gemini-2.0-flash-lite failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:26:54.096898+00:00 | Planner | Model gemini-2.0-flash-lite timeout on query understanding; retrying (attempt 5) in 30s.
+2026-02-24T19:28:25.841132+00:00 | Planner | Model gemini-2.0-flash-lite failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:28:25.842048+00:00 | Planner | Model gemini-2.0-flash-lite timeout on query understanding; retrying (attempt 6) in 30s.
+2026-02-24T19:29:57.481763+00:00 | Planner | Model gemini-2.0-flash-lite failed query understanding: timeout (TimeoutError: Gemini request timeout after 60s)
+2026-02-24T19:29:57.482052+00:00 | Planner | Model gemini-2.0-flash-lite timeout on query understanding; retrying (attempt 7) in 30s.
+2026-02-24T19:31:22.709596+00:00 | ---------- Task Ends ----------
+2026-02-24T19:40:55.429140+00:00 | --------- Task Starts ----------
+2026-02-24T19:40:55.431060+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T19:40:55.431326+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-24T19:40:55.459949+00:00 | Seed ingest: files=10 added=0 skipped=10 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T19:40:55.464869+00:00 | Decay summary: processed=0 archived=0 run_id=4
+2026-02-24T19:40:56.264110+00:00 | === Round 1/2 ===
+2026-02-24T19:40:56.264266+00:00 | ***Skill activated: infer_query***
+2026-02-24T19:40:56.265038+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-24T19:40:56.739679+00:00 | Planner | Model gemini-2.5-pro failed query understanding: http_403 (ClientError: 403 PERMISSION_DENIED. {'error': {'code': 403, 'message': 'Your API key was reported as leaked. Please use another API key.', 'status': 'PERMISSION_DENIED'}})
+2026-02-24T19:40:56.739983+00:00 | ---------- Task Ends ----------
+2026-02-24T19:47:11.109335+00:00 | --------- Task Starts ----------
+2026-02-24T19:47:11.109535+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T19:47:11.109691+00:00 | Provider: gemini | Model: gemini-2.5-pro
+2026-02-24T19:47:11.130799+00:00 | Seed ingest: files=10 added=0 skipped=10 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T19:47:11.132518+00:00 | Decay summary: processed=0 archived=0 run_id=5
+2026-02-24T19:47:11.575950+00:00 | === Round 1/2 ===
+2026-02-24T19:47:11.576071+00:00 | ***Skill activated: infer_query***
+2026-02-24T19:47:11.576683+00:00 | Planner | Model gemini-2.5-pro is generating query understanding...
+2026-02-24T19:47:27.193527+00:00 | Planner | Model gemini-2.5-pro finished generating query understanding.
+2026-02-24T19:47:27.195600+00:00 | Query understanding saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_24_14_47_query.md
+2026-02-24T19:47:42.143423+00:00 | Query understanding updated from reviewed artifact.
+2026-02-24T19:47:42.143530+00:00 | ***Skill activated: collect_interests***
+2026-02-24T19:47:42.145199+00:00 | ***Skill activated: collect_methods***
+2026-02-24T19:47:42.147209+00:00 | ***Skill activated: apply_skill_hints***
+2026-02-24T19:47:42.147292+00:00 | ***Skill activated: systems-engineering***
+2026-02-24T19:47:42.147439+00:00 | ***Skill activated: web_retrieve***
+2026-02-24T19:47:42.149528+00:00 | Web search plan saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_24_14_47_42_web_search.md
+2026-02-24T19:48:10.491566+00:00 | Web search plan updated from reviewed artifact.
+2026-02-24T19:48:10.491717+00:00 | Web retrieval: modes=open,forum,lit max_results=5 max_queries=10 expand=False per_query=10 max_new=200
+2026-02-24T19:48:10.491763+00:00 | Web retrieval query: Recent technical analysis report on AI agent-driven workflows
+2026-02-24T19:48:10.491847+00:00 | Web retrieval start: query='Recent technical analysis report on AI agent-driven workflows' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T19:48:10.491896+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T19:48:12.011275+00:00 | Success: source=tavily query='Recent technical analysis report on AI agent-driven workflows' results=5
+2026-02-24T19:48:13.039532+00:00 | Success: source=arxiv query='Recent technical analysis report on AI agent-driven workflows' results=5
+2026-02-24T19:48:13.618815+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T19:48:16.456079+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-24T19:48:21.053688+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-24T19:48:32.826640+00:00 | Success: source=semantic_scholar query='Recent technical analysis report on AI agent-driven workflows' results=5
+2026-02-24T19:48:34.166090+00:00 | Success: source=crossref query='Recent technical analysis report on AI agent-driven workflows' results=5
+2026-02-24T19:48:34.166458+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T19:48:47.628261+00:00 | Web retrieval fetch done: fetched=20 failed=1 elapsed=13.5s
+2026-02-24T19:48:47.631145+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T19:48:49.658183+00:00 | Web retrieval rerank done: elapsed=2.0s items=20
+2026-02-24T19:48:51.591389+00:00 | Web retrieval summary: queries=1 raw=20 scored=20 accepted=10 added=9 skipped_existing=0 skipped_empty=1 filtered=10
+2026-02-24T19:48:51.591941+00:00 | KGExtractor | Model gemini-2.5-pro is generating kg triples...
+2026-02-24T19:49:04.806074+00:00 | KGExtractor | Model gemini-2.5-pro finished generating kg triples.
+2026-02-24T19:49:04.875192+00:00 | KGExtractor | Model gemini-2.5-pro is generating kg triples...
+2026-02-24T19:49:24.872171+00:00 | KGExtractor | Model gemini-2.5-pro finished generating kg triples.
+2026-02-24T19:49:24.966942+00:00 | KGExtractor | Model gemini-2.5-pro is generating kg triples...
+2026-02-24T19:49:49.406012+00:00 | KGExtractor | Model gemini-2.5-pro finished generating kg triples.
+2026-02-24T19:49:49.471349+00:00 | KGExtractor | Model gemini-2.5-pro is generating kg triples...
+2026-02-24T19:50:07.319767+00:00 | KGExtractor | Model gemini-2.5-pro finished generating kg triples.
+2026-02-24T19:50:07.436440+00:00 | KGExtractor | Model gemini-2.5-pro is generating kg triples...
+2026-02-24T19:50:23.412413+00:00 | KGExtractor | Model gemini-2.5-pro finished generating kg triples.
+2026-02-24T19:50:23.533612+00:00 | KGExtractor | Model gemini-2.5-pro is generating kg triples...
+2026-02-24T19:50:44.781434+00:00 | KGExtractor | Model gemini-2.5-pro finished generating kg triples.
+2026-02-24T19:50:44.909499+00:00 | KGExtractor | Model gemini-2.5-pro is generating kg triples...
+2026-02-24T19:51:00.796179+00:00 | KGExtractor | Model gemini-2.5-pro finished generating kg triples.
+2026-02-24T19:51:00.874434+00:00 | KGExtractor | Model gemini-2.5-pro is generating kg triples...
+2026-02-24T19:51:19.169688+00:00 | KGExtractor | Model gemini-2.5-pro finished generating kg triples.
+2026-02-24T19:51:19.352862+00:00 | KGExtractor | Model gemini-2.5-pro is generating kg triples...
+2026-02-24T19:51:20.181006+00:00 | KGExtractor | Model gemini-2.5-pro failed kg triples: http_503 (ServerError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}})
+2026-02-24T19:51:20.181231+00:00 | ---------- Task Ends ----------
+2026-02-24T19:54:11.138362+00:00 | --------- Task Starts ----------
+2026-02-24T19:54:11.138535+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T19:54:11.138592+00:00 | Provider: gemini | Model: gemini-3-pro-preview
+2026-02-24T19:54:11.156475+00:00 | Seed ingest: files=10 added=0 skipped=10 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T19:54:11.161323+00:00 | Decay summary: processed=9 archived=0 run_id=6
+2026-02-24T19:54:11.801905+00:00 | === Round 1/2 ===
+2026-02-24T19:54:11.802048+00:00 | ***Skill activated: infer_query***
+2026-02-24T19:54:11.802732+00:00 | Planner | Model gemini-3-pro-preview is generating query understanding...
+2026-02-24T19:54:28.063813+00:00 | Planner | Model gemini-3-pro-preview finished generating query understanding.
+2026-02-24T19:54:28.065896+00:00 | Query understanding saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_24_14_54_query.md
+2026-02-24T19:54:40.851141+00:00 | Query understanding updated from reviewed artifact.
+2026-02-24T19:54:40.851259+00:00 | ***Skill activated: collect_interests***
+2026-02-24T19:54:40.853324+00:00 | ***Skill activated: collect_methods***
+2026-02-24T19:54:40.855677+00:00 | ***Skill activated: apply_skill_hints***
+2026-02-24T19:54:40.855764+00:00 | ***Skill activated: systems-engineering***
+2026-02-24T19:54:40.855896+00:00 | ***Skill activated: web_retrieve***
+2026-02-24T19:54:40.857987+00:00 | Web search plan saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_24_14_54_40_web_search.md
+2026-02-24T19:55:07.212058+00:00 | Web search plan updated from reviewed artifact.
+2026-02-24T19:55:07.212259+00:00 | Web retrieval: modes=open,lit max_results=5 max_queries=10 expand=False per_query=10 max_new=200
+2026-02-24T19:55:07.212320+00:00 | Web retrieval query: AI agent-driven workflow technology analysis based on Five Looks Three Determinations framework
+2026-02-24T19:55:07.212428+00:00 | Web retrieval start: query='AI agent-driven workflow technology analysis based on Five Looks Three Determinations framework' modes=['lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T19:55:09.379596+00:00 | Success: source=tavily query='AI agent-driven workflow technology analysis based on Five Looks Three Determinations framework' results=5
+2026-02-24T19:55:10.963117+00:00 | Success: source=arxiv query='AI agent-driven workflow technology analysis based on Five Looks Three Determinations framework' results=5
+2026-02-24T19:55:11.868610+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T19:55:14.427304+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-24T19:55:19.001453+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-24T19:55:27.809839+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-24T19:55:45.980821+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-24T19:56:18.354728+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 6) in 30s
+2026-02-24T19:56:50.819056+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 7) in 30s
+2026-02-24T19:57:23.340282+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 8) in 30s
+2026-02-24T19:57:34.375008+00:00 | ---------- Task Ends ----------
+2026-02-24T19:57:57.939206+00:00 | --------- Task Starts ----------
+2026-02-24T19:57:57.939388+00:00 | Topic: 從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告
+2026-02-24T19:57:57.939445+00:00 | Provider: gemini | Model: gemini-3-pro-preview
+2026-02-24T19:58:05.528190+00:00 | Seed ingest: files=10 added=10 skipped=0 dir=/home/howard_kao/projects/mini-NEXEN/data/seeds
+2026-02-24T19:58:05.533294+00:00 | Decay summary: processed=0 archived=0 run_id=1
+2026-02-24T19:58:05.958133+00:00 | === Round 1/2 ===
+2026-02-24T19:58:05.958250+00:00 | ***Skill activated: infer_query***
+2026-02-24T19:58:05.958713+00:00 | Planner | Model gemini-3-pro-preview is generating query understanding...
+2026-02-24T19:58:24.655493+00:00 | Planner | Model gemini-3-pro-preview finished generating query understanding.
+2026-02-24T19:58:24.657032+00:00 | Query understanding saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_24_14_58_query.md
+2026-02-24T19:58:55.965654+00:00 | Query understanding updated from reviewed artifact.
+2026-02-24T19:58:55.966422+00:00 | ***Skill activated: collect_interests***
+2026-02-24T19:58:55.969263+00:00 | ***Skill activated: collect_methods***
+2026-02-24T19:58:55.971994+00:00 | ***Skill activated: apply_skill_hints***
+2026-02-24T19:58:55.972092+00:00 | ***Skill activated: systems-engineering***
+2026-02-24T19:58:55.972780+00:00 | ***Skill activated: web_retrieve***
+2026-02-24T19:58:55.975148+00:00 | Web search plan saved: /home/howard_kao/projects/mini-NEXEN/plans/2026_02_24_14_58_55_web_search.md
+2026-02-24T19:59:13.670438+00:00 | Web search plan updated from reviewed artifact.
+2026-02-24T19:59:13.670580+00:00 | Web retrieval: modes=open,forum,lit max_results=5 max_queries=10 expand=False per_query=10 max_new=200
+2026-02-24T19:59:13.670658+00:00 | Web retrieval query: AI agent driven workflow technology analysis
+2026-02-24T19:59:13.670762+00:00 | Web retrieval start: query='AI agent driven workflow technology analysis' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T19:59:13.670873+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T19:59:15.410862+00:00 | Success: source=tavily query='AI agent driven workflow technology analysis' results=5
+2026-02-24T19:59:16.311204+00:00 | Success: source=arxiv query='AI agent driven workflow technology analysis' results=5
+2026-02-24T19:59:17.107806+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T19:59:21.352888+00:00 | Success: source=semantic_scholar query='AI agent driven workflow technology analysis' results=5
+2026-02-24T19:59:22.937423+00:00 | Success: source=crossref query='AI agent driven workflow technology analysis' results=5
+2026-02-24T19:59:22.937657+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T19:59:25.863173+00:00 | Web retrieval fetch done: fetched=20 failed=1 elapsed=2.9s
+2026-02-24T19:59:25.863874+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T19:59:27.591614+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-24T19:59:29.325103+00:00 | Web retrieval summary: queries=1 raw=20 scored=20 accepted=10 added=10 skipped_existing=0 skipped_empty=0 filtered=10
+2026-02-24T19:59:29.325835+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T19:59:50.140714+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T19:59:50.255176+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:00:02.390815+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:00:02.443037+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:00:19.685184+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:00:19.783539+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:00:39.518436+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:00:39.610212+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:01:02.749885+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:01:02.849367+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:01:14.153288+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:01:14.191878+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:01:32.468990+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:01:32.564200+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:01:48.564616+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:01:48.639484+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:02:13.484156+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:02:13.617406+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:02:30.995078+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:02:31.128028+00:00 | KG extraction (web): added_triples=57
+2026-02-24T20:02:31.128192+00:00 | ***Skill activated: retrieve_sources***
+2026-02-24T20:02:31.284423+00:00 | Retrieved docs: total=10 web=10 file=0
+2026-02-24T20:02:31.284536+00:00 | ***Skill activated: extract_kg***
+2026-02-24T20:02:31.289049+00:00 | ***Skill activated: extract_profile***
+2026-02-24T20:02:31.289725+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:02:43.954285+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:02:44.007242+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:02:55.043084+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:02:55.061415+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:03:06.793864+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:03:06.814559+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:03:22.624074+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:03:22.659882+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:03:37.980764+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:03:38.012348+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:03:52.710565+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:03:52.742706+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:04:08.787736+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:04:08.819738+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:04:22.896583+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:04:22.927067+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:04:35.538435+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:04:35.583478+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:04:47.788609+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:04:47.814785+00:00 | Profile extraction: items_added=50
+2026-02-24T20:04:47.840498+00:00 | ***Skill activated: retrieve_subgraph***
+2026-02-24T20:04:47.844128+00:00 | KG subgraph: entities=50 relations=39 evidence=39
+2026-02-24T20:04:47.856533+00:00 | KG subgraph retrieval: docs=10 web=10 file=0
+2026-02-24T20:04:47.856744+00:00 | ***Skill activated: detect_contradictions***
+2026-02-24T20:04:47.858939+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:04:53.663447+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:04:53.664474+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:04:58.887749+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:04:58.888373+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:05:05.329408+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:05:05.329971+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:05:13.900406+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:05:13.900988+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:05:20.696483+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:05:20.697076+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:05:24.696965+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:05:24.697618+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:05:29.999180+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:05:30.000348+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:05:35.020919+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:05:35.022176+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:05:40.259741+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:05:40.260376+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:05:48.507275+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:05:48.507507+00:00 | ***Skill activated: plan_research***
+2026-02-24T20:05:48.508219+00:00 | Source briefs: docs=10 highlights=49 per_doc=10
+2026-02-24T20:05:48.508288+00:00 | Source briefs by source_type: web=10
+2026-02-24T20:05:48.508971+00:00 | Planner | Model gemini-3-pro-preview is generating plan draft...
+2026-02-24T20:06:22.164328+00:00 | Planner | Model gemini-3-pro-preview finished generating plan draft.
+2026-02-24T20:06:22.164864+00:00 | ***Skill activated: refine_plan***
+2026-02-24T20:06:22.165002+00:00 | Retriever | Model gemini-3-pro-preview is generating gap query rewrite...
+2026-02-24T20:06:32.688925+00:00 | Retriever | Model gemini-3-pro-preview finished generating gap query rewrite.
+2026-02-24T20:06:32.690293+00:00 | Source briefs: docs=10 highlights=25 per_doc=10
+2026-02-24T20:06:32.690371+00:00 | Source briefs by source_type: web=10
+2026-02-24T20:06:32.691026+00:00 | Planner | Model gemini-3-pro-preview is generating plan refinement...
+2026-02-24T20:07:15.209679+00:00 | Planner | Model gemini-3-pro-preview finished generating plan refinement.
+2026-02-24T20:07:15.210366+00:00 | === Round 2/2 ===
+2026-02-24T20:07:15.210480+00:00 | ***Skill activated: infer_query***
+2026-02-24T20:07:15.210522+00:00 | Query understanding already initialized for this run; skipping.
+2026-02-24T20:07:15.210566+00:00 | ***Skill activated: collect_interests***
+2026-02-24T20:07:15.212306+00:00 | ***Skill activated: collect_methods***
+2026-02-24T20:07:15.213781+00:00 | ***Skill activated: apply_skill_hints***
+2026-02-24T20:07:15.213885+00:00 | ***Skill activated: systems-engineering***
+2026-02-24T20:07:15.213931+00:00 | ***Skill activated: web_retrieve***
+2026-02-24T20:07:15.215169+00:00 | Web retrieval: modes=open,forum,lit max_results=5 max_queries=10 expand=False per_query=10 max_new=200
+2026-02-24T20:07:15.215281+00:00 | Web retrieval query: AI agent driven workflow technology analysis
+2026-02-24T20:07:15.215384+00:00 | Web retrieval start: query='AI agent driven workflow technology analysis' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:07:15.215442+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:07:15.850206+00:00 | Success: source=tavily query='AI agent driven workflow technology analysis' results=5
+2026-02-24T20:07:16.277343+00:00 | Success: source=arxiv query='AI agent driven workflow technology analysis' results=5
+2026-02-24T20:07:17.080078+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T20:07:19.646681+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-24T20:07:24.454535+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-24T20:07:34.550907+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-24T20:07:53.110263+00:00 | Success: source=semantic_scholar query='AI agent driven workflow technology analysis' results=5
+2026-02-24T20:07:54.898682+00:00 | Success: source=crossref query='AI agent driven workflow technology analysis' results=5
+2026-02-24T20:07:54.898873+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:07:57.689656+00:00 | Web retrieval fetch done: fetched=20 failed=1 elapsed=2.8s
+2026-02-24T20:07:57.690531+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:08:00.737352+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-24T20:08:02.406200+00:00 | Web retrieval query: AI agents
+2026-02-24T20:08:02.406522+00:00 | Web retrieval start: query='AI agents' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:08:02.406606+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:08:03.951176+00:00 | Success: source=tavily query='AI agents' results=5
+2026-02-24T20:08:04.633538+00:00 | Success: source=arxiv query='AI agents' results=5
+2026-02-24T20:08:05.200501+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T20:08:10.987920+00:00 | Success: source=semantic_scholar query='AI agents' results=5
+2026-02-24T20:08:12.932711+00:00 | Success: source=crossref query='AI agents' results=5
+2026-02-24T20:08:12.933343+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:08:23.270280+00:00 | Web retrieval fetch done: fetched=20 failed=1 elapsed=10.3s
+2026-02-24T20:08:23.271285+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:08:24.963345+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-24T20:08:26.642901+00:00 | Web retrieval query: Agentic workflows
+2026-02-24T20:08:26.643060+00:00 | Web retrieval start: query='Agentic workflows' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:08:26.643134+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:08:28.286590+00:00 | Success: source=tavily query='Agentic workflows' results=5
+2026-02-24T20:08:28.971635+00:00 | Success: source=arxiv query='Agentic workflows' results=5
+2026-02-24T20:08:29.773686+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T20:08:34.370418+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-24T20:08:41.740352+00:00 | Success: source=semantic_scholar query='Agentic workflows' results=5
+2026-02-24T20:08:43.216092+00:00 | Success: source=crossref query='Agentic workflows' results=5
+2026-02-24T20:08:43.216583+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:08:49.935738+00:00 | Web retrieval fetch done: fetched=20 failed=3 elapsed=6.7s
+2026-02-24T20:08:49.936340+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:08:51.671499+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-24T20:08:53.328587+00:00 | Web retrieval query: AI-driven workflows
+2026-02-24T20:08:53.328816+00:00 | Web retrieval start: query='AI-driven workflows' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:08:53.328910+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:08:54.646244+00:00 | Success: source=tavily query='AI-driven workflows' results=5
+2026-02-24T20:08:55.364337+00:00 | Success: source=arxiv query='AI-driven workflows' results=5
+2026-02-24T20:08:56.152770+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T20:08:58.956928+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-24T20:09:03.514664+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-24T20:09:16.444284+00:00 | Success: source=semantic_scholar query='AI-driven workflows' results=5
+2026-02-24T20:09:17.454642+00:00 | Success: source=crossref query='AI-driven workflows' results=5
+2026-02-24T20:09:17.455038+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:09:27.510583+00:00 | Web retrieval fetch done: fetched=20 failed=3 elapsed=10.1s
+2026-02-24T20:09:27.511221+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:09:29.232568+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-24T20:09:30.924639+00:00 | Web retrieval query: multi-agent system orchestration patterns microservices
+2026-02-24T20:09:30.924785+00:00 | Web retrieval start: query='multi-agent system orchestration patterns microservices' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:09:30.924840+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:09:32.819662+00:00 | Success: source=tavily query='multi-agent system orchestration patterns microservices' results=5
+2026-02-24T20:09:33.731314+00:00 | Success: source=arxiv query='multi-agent system orchestration patterns microservices' results=5
+2026-02-24T20:09:34.287104+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T20:09:37.100417+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-24T20:09:45.699419+00:00 | Success: source=semantic_scholar query='multi-agent system orchestration patterns microservices' results=5
+2026-02-24T20:09:46.620652+00:00 | Success: source=crossref query='multi-agent system orchestration patterns microservices' results=5
+2026-02-24T20:09:46.620880+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:09:51.955061+00:00 | Web retrieval fetch done: fetched=20 failed=2 elapsed=5.3s
+2026-02-24T20:09:51.955462+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:09:53.564610+00:00 | Web retrieval rerank done: elapsed=1.6s items=20
+2026-02-24T20:09:55.238374+00:00 | Web retrieval query: PROV-AGENT workflow provenance implementation
+2026-02-24T20:09:55.238538+00:00 | Web retrieval start: query='PROV-AGENT workflow provenance implementation' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:09:55.238603+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:09:57.038087+00:00 | Success: source=tavily query='PROV-AGENT workflow provenance implementation' results=5
+2026-02-24T20:09:57.787795+00:00 | Success: source=arxiv query='PROV-AGENT workflow provenance implementation' results=5
+2026-02-24T20:09:58.580949+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T20:10:01.474496+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-24T20:10:06.293497+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-24T20:10:18.014843+00:00 | Success: source=semantic_scholar query='PROV-AGENT workflow provenance implementation' results=5
+2026-02-24T20:10:18.931157+00:00 | Success: source=crossref query='PROV-AGENT workflow provenance implementation' results=5
+2026-02-24T20:10:18.931442+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:10:25.245288+00:00 | Web retrieval fetch done: fetched=20 failed=2 elapsed=6.3s
+2026-02-24T20:10:25.245874+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:10:27.094945+00:00 | Web retrieval rerank done: elapsed=1.8s items=20
+2026-02-24T20:10:28.902819+00:00 | Web retrieval query: self-healing mechanisms in agentic workflows
+2026-02-24T20:10:28.903011+00:00 | Web retrieval start: query='self-healing mechanisms in agentic workflows' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:10:28.903646+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:10:30.836485+00:00 | Success: source=tavily query='self-healing mechanisms in agentic workflows' results=5
+2026-02-24T20:10:31.882466+00:00 | Success: source=arxiv query='self-healing mechanisms in agentic workflows' results=5
+2026-02-24T20:10:32.677781+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T20:10:37.670472+00:00 | Success: source=semantic_scholar query='self-healing mechanisms in agentic workflows' results=5
+2026-02-24T20:10:38.583564+00:00 | Success: source=crossref query='self-healing mechanisms in agentic workflows' results=5
+2026-02-24T20:10:38.583903+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:10:43.264961+00:00 | Web retrieval fetch done: fetched=20 failed=1 elapsed=4.7s
+2026-02-24T20:10:43.266793+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:10:44.953590+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-24T20:10:46.544988+00:00 | Web retrieval query: security-by-design framework for AI agents
+2026-02-24T20:10:46.545180+00:00 | Web retrieval start: query='security-by-design framework for AI agents' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:10:46.545249+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:10:49.651262+00:00 | Success: source=tavily query='security-by-design framework for AI agents' results=5
+2026-02-24T20:10:50.445328+00:00 | Success: source=arxiv query='security-by-design framework for AI agents' results=5
+2026-02-24T20:10:53.294089+00:00 | Success: source=semantic_scholar query='security-by-design framework for AI agents' results=5
+2026-02-24T20:10:54.296250+00:00 | Success: source=crossref query='security-by-design framework for AI agents' results=5
+2026-02-24T20:10:54.296671+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:10:59.696185+00:00 | Web retrieval fetch done: fetched=20 failed=0 elapsed=5.4s
+2026-02-24T20:10:59.696585+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:11:01.447797+00:00 | Web retrieval rerank done: elapsed=1.8s items=20
+2026-02-24T20:11:03.217567+00:00 | Web retrieval query: cascading error mitigation in multi-agent systems
+2026-02-24T20:11:03.217725+00:00 | Web retrieval start: query='cascading error mitigation in multi-agent systems' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:11:03.217793+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:11:05.074389+00:00 | Success: source=tavily query='cascading error mitigation in multi-agent systems' results=5
+2026-02-24T20:11:06.207133+00:00 | Success: source=arxiv query='cascading error mitigation in multi-agent systems' results=5
+2026-02-24T20:11:07.009286+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T20:11:09.824316+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-24T20:11:14.651580+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-24T20:11:26.935882+00:00 | Success: source=semantic_scholar query='cascading error mitigation in multi-agent systems' results=5
+2026-02-24T20:11:28.194458+00:00 | Success: source=crossref query='cascading error mitigation in multi-agent systems' results=5
+2026-02-24T20:11:28.194882+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:11:35.350711+00:00 | Web retrieval fetch done: fetched=20 failed=2 elapsed=7.2s
+2026-02-24T20:11:35.351121+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:11:37.111526+00:00 | Web retrieval rerank done: elapsed=1.8s items=20
+2026-02-24T20:11:38.894075+00:00 | Web retrieval query: evaluation metrics for autonomous agent workflows
+2026-02-24T20:11:38.894242+00:00 | Web retrieval start: query='evaluation metrics for autonomous agent workflows' modes=['forum', 'lit', 'open'] max_results=5 timeout=15s fetch_pages=True hybrid=True expand=False max_queries=10 open_sources=['tavily'] forum_sources=[]
+2026-02-24T20:11:38.894315+00:00 | Web retrieval forum sources skipped: no API keys configured.
+2026-02-24T20:11:43.174505+00:00 | Success: source=tavily query='evaluation metrics for autonomous agent workflows' results=5
+2026-02-24T20:11:44.218124+00:00 | Success: source=arxiv query='evaluation metrics for autonomous agent workflows' results=5
+2026-02-24T20:11:45.034908+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 1) in 2s
+2026-02-24T20:11:47.610520+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 2) in 4s
+2026-02-24T20:11:52.419388+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 3) in 8s
+2026-02-24T20:12:02.647075+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 4) in 16s
+2026-02-24T20:12:19.443459+00:00 | Web retrieval rate limit from semantic_scholar; retrying (attempt 5) in 30s
+2026-02-24T20:12:53.953288+00:00 | Success: source=semantic_scholar query='evaluation metrics for autonomous agent workflows' results=5
+2026-02-24T20:12:54.854073+00:00 | Success: source=crossref query='evaluation metrics for autonomous agent workflows' results=5
+2026-02-24T20:12:54.854396+00:00 | Web retrieval fetch pages: total=20
+2026-02-24T20:13:05.093334+00:00 | Web retrieval fetch done: fetched=20 failed=2 elapsed=8.8s
+2026-02-24T20:13:05.093990+00:00 | Web retrieval rerank start: provider=gemini model=gemini-embedding-001 timeout=15s items=20
+2026-02-24T20:13:06.762871+00:00 | Web retrieval rerank done: elapsed=1.7s items=20
+2026-02-24T20:13:09.151045+00:00 | Web retrieval summary: queries=10 raw=200 scored=200 accepted=94 added=75 skipped_existing=10 skipped_empty=9 filtered=100
+2026-02-24T20:13:09.151463+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:13:27.403140+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:13:27.476785+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:13:41.582609+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:13:41.639766+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:14:00.697313+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:14:00.855817+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:14:19.128395+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:14:19.205228+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:14:36.156828+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:14:36.337160+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:14:50.129989+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:14:50.237811+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:15:07.526525+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:15:07.679920+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:15:32.887599+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:15:32.986580+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:15:49.243482+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:15:49.310607+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:16:09.691889+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:16:09.814723+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:16:23.981743+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:16:24.053054+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:16:43.436940+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:16:43.528602+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:17:01.704063+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:17:01.762063+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:17:19.390657+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:17:19.490433+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:17:37.672638+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:17:37.832986+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:17:56.250385+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:17:56.396674+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:18:13.071665+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:18:13.141361+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:18:30.291871+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:18:30.376295+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:18:52.900041+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:18:53.003157+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:19:13.043109+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:19:13.187403+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:19:29.193110+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:19:29.350388+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:19:45.927660+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:19:46.055537+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:20:05.932603+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:20:06.044469+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:20:16.920948+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:20:16.992243+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:20:36.030307+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:20:36.100383+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:20:58.509990+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:20:58.647794+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:21:14.905253+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:21:15.053009+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:21:37.445536+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:21:37.570222+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:21:54.886874+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:21:54.977520+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:22:15.602005+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:22:15.707898+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:22:32.082958+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:22:32.184086+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:22:53.729092+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:22:53.882434+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:23:16.345109+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:23:16.482836+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:23:32.114072+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:23:32.196570+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:23:54.619180+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:23:54.736376+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:24:13.568362+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:24:13.740109+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:24:34.330833+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:24:34.429600+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:24:47.617883+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:24:47.700597+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:25:03.156948+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:25:03.355548+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:25:16.513527+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:25:16.579614+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:25:39.810336+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:25:39.972790+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:25:53.671649+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:25:53.795321+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:26:13.129349+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:26:13.326534+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:26:31.216602+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:26:31.317271+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:26:49.778452+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:26:49.907202+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:27:10.770015+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:27:10.853302+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:27:27.353674+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:27:27.510244+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:27:40.056634+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:27:40.159039+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:27:59.075238+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:27:59.189857+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:28:23.680347+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:28:23.744559+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:28:40.494752+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:28:40.616210+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:29:01.009951+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:29:01.138646+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:29:31.924531+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:29:32.022805+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:29:49.356347+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:29:49.497534+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:30:09.476020+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:30:09.612221+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:30:26.018234+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:30:26.156624+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:30:45.025829+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:30:45.100937+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:31:02.596731+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:31:02.745011+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:31:21.433021+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:31:21.609268+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:31:42.286072+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:31:42.453033+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:32:01.990709+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:32:02.097919+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:32:20.266672+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:32:20.388393+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:32:40.633995+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:32:40.769117+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:33:01.091827+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:33:01.248641+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:33:16.147390+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:33:16.298455+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:33:40.320220+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:33:40.500240+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:33:59.970807+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:34:00.075703+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:34:17.801619+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:34:17.905180+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:34:37.552061+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:34:37.713177+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:34:56.736432+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:34:56.876363+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:35:18.543554+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:35:18.646256+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:35:38.548446+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:35:38.672401+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:35:54.880107+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:35:55.031958+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:36:14.921505+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:36:15.080894+00:00 | KGExtractor | Model gemini-3-pro-preview is generating kg triples...
+2026-02-24T20:36:36.992748+00:00 | KGExtractor | Model gemini-3-pro-preview finished generating kg triples.
+2026-02-24T20:36:37.062199+00:00 | KG extraction (web): added_triples=470
+2026-02-24T20:36:37.062469+00:00 | ***Skill activated: retrieve_sources***
+2026-02-24T20:36:37.244401+00:00 | Retrieved docs: total=10 web=10 file=0
+2026-02-24T20:36:37.244587+00:00 | ***Skill activated: extract_kg***
+2026-02-24T20:36:37.247074+00:00 | ***Skill activated: extract_profile***
+2026-02-24T20:36:37.249328+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:36:55.453264+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:36:55.481419+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:37:05.936064+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:37:05.974167+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:37:15.446652+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:37:15.480502+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:37:29.054543+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:37:29.085340+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:37:40.644847+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:37:40.670635+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:37:52.161987+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:37:52.195994+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:38:01.224258+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:38:01.276050+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:38:13.544759+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:38:13.565906+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:38:29.472839+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:38:29.518161+00:00 | Profiler | Model gemini-3-pro-preview is generating profile extraction...
+2026-02-24T20:38:39.741780+00:00 | Profiler | Model gemini-3-pro-preview finished generating profile extraction.
+2026-02-24T20:38:39.769736+00:00 | Profile extraction: items_added=37
+2026-02-24T20:38:39.792854+00:00 | ***Skill activated: retrieve_subgraph***
+2026-02-24T20:38:39.797274+00:00 | KG subgraph: entities=72 relations=67 evidence=67
+2026-02-24T20:38:39.815641+00:00 | KG subgraph retrieval: docs=33 web=33 file=0
+2026-02-24T20:38:39.815794+00:00 | ***Skill activated: detect_contradictions***
+2026-02-24T20:38:39.827890+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:38:43.728439+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:38:43.729345+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:38:48.901383+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:38:48.902125+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:38:54.694291+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:38:54.694860+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:03.885171+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:03.886425+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:09.547980+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:09.549629+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:15.033690+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:15.034295+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:18.872156+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:18.872804+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:22.739905+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:22.740568+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:29.789355+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:29.790226+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:38.149287+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:38.149954+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:44.114153+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:44.115196+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:52.478582+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:52.479129+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:39:59.286623+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:39:59.287566+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:40:05.238582+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:40:05.239869+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:40:12.270436+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:40:12.271697+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:40:17.544786+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:40:17.546059+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:40:24.227415+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:40:24.228195+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:40:30.964862+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:40:30.965512+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:40:37.160799+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:40:37.161598+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:40:43.992753+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:40:43.993355+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:40:51.047868+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:40:51.048438+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:40:56.013129+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:40:56.013916+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:41:03.044577+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:41:03.045202+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:41:10.218997+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:41:10.219812+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:41:17.274334+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:41:17.274920+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:41:23.100922+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:41:23.101963+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:41:27.995449+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:41:27.996026+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:41:34.269010+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:41:34.269613+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:41:38.569732+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:41:38.570567+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:41:45.500189+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:41:45.501440+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:41:53.727162+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:41:53.728784+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:42:00.201819+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:42:00.202991+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:42:07.025048+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:42:07.025954+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:42:13.353294+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:42:13.354133+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:42:19.070605+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:42:19.071881+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:42:24.448205+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:42:24.448971+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:42:29.845048+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:42:29.845666+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:42:35.334782+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:42:35.335398+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:42:42.581577+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:42:42.582180+00:00 | KGContradiction | Model gemini-3-pro-preview is generating contradiction check...
+2026-02-24T20:42:48.678309+00:00 | KGContradiction | Model gemini-3-pro-preview finished generating contradiction check.
+2026-02-24T20:42:48.678600+00:00 | ***Skill activated: plan_research***
+2026-02-24T20:42:48.681537+00:00 | Source briefs: docs=33 highlights=158 per_doc=10
+2026-02-24T20:42:48.681695+00:00 | Source briefs by source_type: web=33
+2026-02-24T20:42:48.684332+00:00 | Planner | Model gemini-3-pro-preview is generating plan draft...
+2026-02-24T20:43:24.577993+00:00 | Planner | Model gemini-3-pro-preview finished generating plan draft.
+2026-02-24T20:43:24.578416+00:00 | ***Skill activated: refine_plan***
+2026-02-24T20:43:24.578547+00:00 | Retriever | Model gemini-3-pro-preview is generating gap query rewrite...
+2026-02-24T20:43:34.658223+00:00 | Retriever | Model gemini-3-pro-preview finished generating gap query rewrite.
+2026-02-24T20:43:34.660885+00:00 | Source briefs: docs=33 highlights=18 per_doc=10
+2026-02-24T20:43:34.660960+00:00 | Source briefs by source_type: web=33
+2026-02-24T20:43:34.662697+00:00 | Planner | Model gemini-3-pro-preview is generating plan refinement...
+2026-02-24T20:44:12.433491+00:00 | Planner | Model gemini-3-pro-preview finished generating plan refinement.
+2026-02-24T20:44:12.434022+00:00 | ***Skill activated: build_outline***
+2026-02-24T20:44:12.441177+00:00 | Outliner | Model gemini-3-pro-preview is generating outline...
+2026-02-24T20:45:02.599071+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline.
+2026-02-24T20:45:02.600461+00:00 | Outliner: outline length out of range (attempt=1 words=472 target=1000-2000)
+2026-02-24T20:45:02.602678+00:00 | Outliner | Model gemini-3-pro-preview is generating outline...
+2026-02-24T20:46:02.603935+00:00 | Outliner | Model gemini-3-pro-preview failed outline: timeout (Gemini request timeout after 60s)
+2026-02-24T20:46:02.604158+00:00 | Outliner | Model gemini-3-pro-preview timeout on outline; retrying (attempt 1) in 2s.
+2026-02-24T20:47:00.929382+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline.
+2026-02-24T20:47:00.931304+00:00 | Outliner: outline length out of range (attempt=2 words=2155 target=1000-2000)
+2026-02-24T20:47:00.931420+00:00 | Outliner: outline language ratio too low (attempt=2 cjk_ratio=0.01 min=0.40)
+2026-02-24T20:47:00.933538+00:00 | Outliner | Model gemini-3-pro-preview is generating outline...
+2026-02-24T20:48:02.214136+00:00 | Outliner | Model gemini-3-pro-preview failed outline: timeout (Gemini request timeout after 60s)
+2026-02-24T20:48:02.214483+00:00 | Outliner | Model gemini-3-pro-preview timeout on outline; retrying (attempt 1) in 2s.
+2026-02-24T20:48:50.609043+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline.
+2026-02-24T20:48:50.610901+00:00 | Outliner: outline length out of range (attempt=3 words=617 target=1000-2000)
+2026-02-24T20:48:50.611073+00:00 | Outliner | Model gemini-3-pro-preview is generating outline expansion...
+2026-02-24T20:49:49.804110+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline expansion.
+2026-02-24T20:49:49.805966+00:00 | Outliner: outline length still out of range after expansion (attempt=4 words=866 target=1000-2000)
+2026-02-24T20:49:49.806119+00:00 | Outliner | Model gemini-3-pro-preview is generating outline expansion...
+2026-02-24T20:50:47.936417+00:00 | Outliner | Model gemini-3-pro-preview finished generating outline expansion.
+2026-02-24T20:50:47.938231+00:00 | ***Skill activated: persist_plan***
+2026-02-24T20:50:47.945285+00:00 | Theme | Model gemini-3-pro-preview is generating interest themes...
+2026-02-24T20:51:17.865933+00:00 | Theme | Model gemini-3-pro-preview finished generating interest themes.
+2026-02-24T20:51:17.866161+00:00 | Theme summary missing for 'AI agents'; leaving bullets empty.
+2026-02-24T20:51:17.866225+00:00 | Theme summary missing for 'Agentic workflows'; leaving bullets empty.
+2026-02-24T20:51:17.866268+00:00 | Theme summary missing for 'Agentic AI'; leaving bullets empty.
+2026-02-24T20:51:17.866302+00:00 | Theme summary missing for 'Multi-Agent Systems'; leaving bullets empty.
+2026-02-24T20:51:17.866335+00:00 | Theme summary missing for 'Multi-Agent Failure Cascades'; leaving bullets empty.
+2026-02-24T20:51:17.866367+00:00 | Theme summary missing for 'AI-driven workflows'; leaving bullets empty.
+2026-02-24T20:51:17.866389+00:00 | Theme summary missing for 'Agile Methodology'; leaving bullets empty.
+2026-02-24T20:51:17.866408+00:00 | Theme summary missing for 'Automated Remediation'; leaving bullets empty.
+2026-02-24T20:51:17.866423+00:00 | Theme summary missing for 'AI Evaluation Metrics'; leaving bullets empty.
+2026-02-24T20:51:17.866439+00:00 | Theme summary missing for 'Robotic Process Automation'; leaving bullets empty.
+2026-02-24T20:51:17.866583+00:00 | ---------- Task Ends ----------

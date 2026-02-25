@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
+import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import shlex
 import subprocess
@@ -13,25 +15,35 @@ from typing import Callable, Optional
 
 from . import db
 from .config import (
-    DEFAULT_CHUNK_OVERLAP,
-    DEFAULT_CHUNK_SIZE,
     DEFAULT_ROUNDS,
+    DEFAULT_THEME_TOP_K,
     DEFAULT_TOP_K,
-    GRAPH_TOP_CLUSTERS,
-    GRAPH_ASSIGN_SIMILARITY_MIN,
-    GRAPH_AVG_SIMILARITY_THRESHOLD,
-    GRAPH_NOISE_RATIO_THRESHOLD,
-    GRAPH_REBUILD_RATIO,
-    GRAPH_UNASSIGNED_RATIO_THRESHOLD,
+    PLANS_DIR,
     SKILLS_DIR,
+    WEB_AUTO_MAX_ROUNDS,
+    WEB_EVIDENCE_DEFAULT_DAYS,
+    WEB_EXPAND_CONFIDENCE_MIN,
+    WEB_EXPAND_CONTRADICTION_CONF_MAX,
+    WEB_EXPAND_CONTRADICTION_STALE_DAYS,
+    WEB_EXPAND_EVIDENCE_MIN,
+    WEB_EXPAND_STALE_DAYS,
     WEB_MAX_NEW_SOURCES,
     WEB_MAX_PER_QUERY,
     WEB_RELEVANCE_THRESHOLD,
-    PLANS_DIR,
     ensure_dirs,
 )
 from .embeddings import EmbeddingClient, EmbeddingConfig, cosine_similarity
-from .graph import GraphManager
+from .kg import (
+    KGStore,
+    apply_profile_items,
+    build_seed_terms,
+    detect_contradictions,
+    extract_and_store,
+    extract_profile_items,
+    log_subgraph_summary,
+    seed_terms_from_query,
+    update_profile_from_mentions,
+)
 from .llm import LLMClient, log_task_event, log_task_event_quiet
 from .planning import (
     PlanDraft,
@@ -41,8 +53,6 @@ from .planning import (
     llm_refine_plan,
     normalize_bracket_tag,
     render_plan_md,
-    merge_doc_chunks,
-    select_docs_by_cluster_round_robin,
 )
 from .text_utils import score_documents, tokenize
 from .web_retrieval import expand_queries, run_web_retrieval
@@ -90,7 +100,7 @@ class SkillContext:
     methods: list[db.Method] = field(default_factory=list)
     extracted_interests: list[str] = field(default_factory=list)
     documents: list[db.Document] = field(default_factory=list)
-    doc_text_overrides: dict[str, str] = field(default_factory=dict)
+    kg_fact_cards: list[dict] = field(default_factory=list)
     plan: Optional[PlanDraft] = None
     outline: list[str] = field(default_factory=list)
     plan_md: str = ""
@@ -101,8 +111,13 @@ class SkillContext:
     skill_guidance: list[str] = field(default_factory=list)
     skill_hints: list[str] = field(default_factory=list)
     web_enabled: bool = False
+    web_forced: bool = False
+    web_auto: bool = False
     run_id: int = 0
     web_modes: list[str] = field(default_factory=list)
+    web_search_topics: list[str] = field(default_factory=list)
+    web_rounds_used: int = 0
+    web_max_rounds: int = WEB_AUTO_MAX_ROUNDS
     web_max_results: int = 5
     web_timeout: int = 15
     web_fetch_pages: bool = True
@@ -117,15 +132,8 @@ class SkillContext:
     web_max_new_sources: int = WEB_MAX_NEW_SOURCES
     web_max_per_query: int = WEB_MAX_PER_QUERY
     web_relevance_threshold: float = WEB_RELEVANCE_THRESHOLD
-    graph_chunk_size: int = DEFAULT_CHUNK_SIZE
-    graph_chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
-    graph_rebuild_ratio: float = GRAPH_REBUILD_RATIO
-    graph_noise_ratio_threshold: float = GRAPH_NOISE_RATIO_THRESHOLD
-    graph_avg_similarity_threshold: float = GRAPH_AVG_SIMILARITY_THRESHOLD
-    graph_unassigned_ratio_threshold: float = GRAPH_UNASSIGNED_RATIO_THRESHOLD
-    graph_assign_similarity_min: float = GRAPH_ASSIGN_SIMILARITY_MIN
-    graph_top_clusters: int = GRAPH_TOP_CLUSTERS
-    graph_semantic_labels: bool = True
+    theme_top_k: int = DEFAULT_THEME_TOP_K
+    kg_subgraph_stats: dict[str, float | int | str] = field(default_factory=dict)
     llm: Optional[LLMClient] = None
 
 
@@ -219,6 +227,43 @@ SYSTEMS_ENGINEERING_TRIGGERS = [
     "产业投资",
 ]
 
+_PROFILE_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "but",
+    "by",
+    "for",
+    "from",
+    "if",
+    "in",
+    "into",
+    "is",
+    "it",
+    "no",
+    "not",
+    "of",
+    "on",
+    "or",
+    "such",
+    "that",
+    "the",
+    "their",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "to",
+    "was",
+    "will",
+    "with",
+}
+
 
 def _matches_triggers(texts: list[str], triggers: list[str]) -> bool:
     haystack = " ".join(text for text in texts if text).casefold()
@@ -226,6 +271,148 @@ def _matches_triggers(texts: list[str], triggers: list[str]) -> bool:
         if trigger.casefold() in haystack:
             return True
     return False
+
+
+def _progress_line(label: str, current: int, total: int) -> None:
+    if total <= 0 or not sys.stdout.isatty():
+        return
+    percent = int((current / total) * 100)
+    line = f"{label} {current}/{total} ({percent}%)"
+    print("\r" + line + " " * 6, end="", flush=True)
+    if current >= total:
+        print("", flush=True)
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _coerce_date_bound(value: str | None, *, end: bool) -> datetime | None:
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if re.fullmatch(r"\d{4}", text):
+        year = int(text)
+        if end:
+            return datetime(year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+        return datetime(year, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    if end:
+        return parsed.astimezone(timezone.utc).replace(hour=23, minute=59, second=59)
+    return parsed.astimezone(timezone.utc)
+
+
+def _summarize_evidence_dates(dates: list[datetime]) -> dict[str, object]:
+    if not dates:
+        return {}
+    dates_sorted = sorted(dates)
+    now = datetime.now(timezone.utc)
+    recent_30 = sum(1 for item in dates if (now - item).days <= 30)
+    recent_180 = sum(1 for item in dates if (now - item).days <= 180)
+    return {
+        "first_seen": dates_sorted[0].isoformat(),
+        "last_seen": dates_sorted[-1].isoformat(),
+        "recent_30d": recent_30,
+        "recent_180d": recent_180,
+    }
+
+
+def _build_contradiction_map(
+    store: KGStore,
+    claim_ids: set[str],
+    claim_sources: dict[str, list[str]],
+) -> dict[str, list[dict]]:
+    if not claim_ids:
+        return {}
+    rows = store.get_contradictions_for_claims(claim_ids, limit=200)
+    if not rows:
+        return {}
+    claim_texts: dict[str, str] = {}
+    for claim_id in claim_ids:
+        text = store.get_claim_text(claim_id)
+        if text:
+            claim_texts[claim_id] = text
+    contra_map: dict[str, list[dict]] = {}
+    for row in rows:
+        claim_a = row.get("claim_id_a")
+        claim_b = row.get("claim_id_b")
+        if not claim_a or not claim_b:
+            continue
+        if claim_a not in claim_ids or claim_b not in claim_ids:
+            continue
+        confidence = float(row.get("confidence") or 0.0)
+        text_a = claim_texts.get(claim_a, "")
+        text_b = claim_texts.get(claim_b, "")
+        entry_b = {"claim": text_b, "confidence": confidence, "sources": claim_sources.get(claim_b, [])}
+        entry_a = {"claim": text_a, "confidence": confidence, "sources": claim_sources.get(claim_a, [])}
+        contra_map.setdefault(claim_a, []).append(entry_b)
+        contra_map.setdefault(claim_b, []).append(entry_a)
+    return contra_map
+
+
+def _is_stale(value: str | None, days: int) -> bool:
+    parsed = _parse_iso_datetime(value)
+    if not parsed:
+        return False
+    delta = datetime.now(timezone.utc) - parsed
+    return delta.days >= days
+
+
+def _should_expand_web(ctx: SkillContext, store: KGStore) -> tuple[bool, list[str]]:
+    if ctx.web_forced:
+        return True, ["forced"]
+
+    stats = ctx.kg_subgraph_stats or {}
+    entity_count = int(stats.get("entity_count", 0) or 0)
+    relation_count = int(stats.get("relation_count", 0) or 0)
+    claim_count = int(stats.get("claim_count", 0) or 0)
+    evidence_total = int(stats.get("evidence_total", 0) or 0)
+    evidence_count = int(stats.get("evidence_count", 0) or 0)
+    avg_confidence = float(stats.get("avg_confidence", 0.0) or 0.0)
+    latest_added_at = stats.get("latest_doc_added_at") or None
+    timeframe_specified = bool(stats.get("timeframe_specified"))
+
+    reasons: list[str] = []
+    if entity_count == 0 or relation_count == 0:
+        reasons.append("kg_empty")
+    if claim_count == 0:
+        reasons.append("claims_missing")
+    if evidence_count < WEB_EXPAND_EVIDENCE_MIN:
+        reasons.append("evidence_sparse")
+    elif avg_confidence < WEB_EXPAND_CONFIDENCE_MIN:
+        reasons.append("evidence_low_conf")
+    if evidence_total and evidence_count == 0:
+        reasons.append("evidence_out_of_range")
+    if (not timeframe_specified) and evidence_count and latest_added_at and _is_stale(latest_added_at, WEB_EXPAND_STALE_DAYS):
+        reasons.append("evidence_stale")
+
+    cutoff_iso = None
+    if WEB_EXPAND_CONTRADICTION_STALE_DAYS > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=WEB_EXPAND_CONTRADICTION_STALE_DAYS)
+        cutoff_iso = cutoff.isoformat()
+    contra_count = store.count_contradictions(
+        max_confidence=WEB_EXPAND_CONTRADICTION_CONF_MAX,
+        older_than=cutoff_iso,
+    )
+    if contra_count:
+        reasons.append(f"contradictions={contra_count}")
+
+    return bool(reasons), reasons
 
 
 def _extract_json_payload(text: str) -> object:
@@ -771,103 +958,6 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
     query = " ".join(part for part in query_parts if part).strip()
     query_tokens = tokenize(query)
 
-    graph = GraphManager(
-        embed_config=_build_embedding_config(ctx),
-        llm=ctx.llm if ctx.graph_semantic_labels else None,
-        semantic_labels=ctx.graph_semantic_labels,
-        chunk_size=ctx.graph_chunk_size,
-        chunk_overlap=ctx.graph_chunk_overlap,
-        rebuild_ratio=ctx.graph_rebuild_ratio,
-        noise_ratio_threshold=ctx.graph_noise_ratio_threshold,
-        avg_similarity_threshold=ctx.graph_avg_similarity_threshold,
-        unassigned_ratio_threshold=ctx.graph_unassigned_ratio_threshold,
-        assign_similarity_min=ctx.graph_assign_similarity_min,
-    )
-    graph_result = graph.update_graph(docs)
-    if graph_result:
-        stats = graph_result.stats
-        log_task_event(
-            "Graph stats: "
-            f"chunks_total={stats.total_chunks} "
-            f"chunks_new={graph_result.new_chunks} "
-            f"chunks_pruned={graph_result.pruned_chunks} "
-            f"clusters={stats.cluster_count} "
-            f"assigned={stats.assigned_chunks} "
-            f"noise_ratio={stats.noise_ratio:.2f} "
-            f"avg_sim={stats.avg_similarity:.2f}"
-        )
-        if graph_result.rebuild_attempted:
-            log_task_event(
-                f"Graph rebuild: attempted=yes success={'yes' if graph_result.rebuild_succeeded else 'no'}"
-            )
-            if graph_result.labels_added:
-                added = ", ".join(graph_result.labels_added[:8])
-                log_task_event(f"Graph rebuild: labels added ({len(graph_result.labels_added)}): {added}")
-            if graph_result.labels_removed:
-                removed = ", ".join(graph_result.labels_removed[:8])
-                log_task_event(f"Graph rebuild: labels removed ({len(graph_result.labels_removed)}): {removed}")
-
-    ctx.extracted_interests = graph.suggest_interests(ctx.topic, limit=3)
-
-    mapped = graph.map_topic_to_cluster(ctx.topic)
-    if mapped:
-        cluster_id, label, sim = mapped
-        db.add_topic_cluster_map(ctx.topic, cluster_id, sim, ctx.run_id)
-        log_task_event(
-            f"Topic mapped to cluster: label='{label}' similarity={sim:.2f}"
-        )
-
-    cluster_scores = graph.score_clusters(query)
-    if cluster_scores:
-        top_limit = max(1, int(ctx.graph_top_clusters)) if ctx.graph_top_clusters else 3
-        selected_ids = [
-            cid for sim, cid, _ in cluster_scores[:top_limit] if sim >= 0.2
-        ]
-        selected = [item for item in cluster_scores if item[1] in selected_ids]
-        remaining = [item for item in cluster_scores if item[1] not in selected_ids]
-        ordered = selected + remaining
-        lines = [
-            f"Cluster scores (query='{query}' total={len(cluster_scores)} selected={len(selected_ids)}):"
-        ]
-        for sim, cid, label in ordered:
-            marker = "*"
-            note = " [selected]" if cid in selected_ids else ""
-            if cid not in selected_ids:
-                marker = " "
-            label_text = label or "Unlabeled"
-            lines.append(f"{marker} {sim:.2f} | {label_text} | {cid[:8]}{note}")
-        log_task_event_quiet("\n".join(lines))
-    selected_docs: list[db.Document] = []
-    if cluster_scores:
-        embed_config = _build_embedding_config(ctx)
-        selected_doc_ids, _, _ = select_docs_by_cluster_round_robin(
-            query,
-            embed_config,
-            ctx.graph_top_clusters,
-            ctx.top_k,
-        )
-        if selected_doc_ids:
-            doc_lookup = {doc.doc_id: doc for doc in docs}
-            selected_docs = [doc_lookup[doc_id] for doc_id in selected_doc_ids if doc_id in doc_lookup]
-
-    if selected_docs:
-        selected = _ensure_min_web_docs(
-            selected_docs,
-            docs,
-            query_tokens,
-            ctx.min_web_docs,
-            ctx.top_k,
-        )
-        ctx.documents = selected
-        ctx.doc_text_overrides, _ = merge_doc_chunks([doc.doc_id for doc in selected])
-        db.mark_documents_used([doc.doc_id for doc in selected])
-        log_task_event(
-            "Retrieved docs: "
-            f"total={len(selected)} "
-            f"web={sum(1 for doc in selected if doc.source_type == 'web')} "
-            f"file={sum(1 for doc in selected if doc.source_type == 'file')}"
-        )
-        return ctx
     doc_texts = []
     for doc in docs:
         text = db.load_document_text(doc)
@@ -875,7 +965,6 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
 
     scores = score_documents(query_tokens, doc_texts)
     scores.sort(key=lambda item: item[1], reverse=True)
-
     selected = []
     for idx, score in scores[: ctx.top_k]:
         if score <= 0:
@@ -888,8 +977,8 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
         ctx.min_web_docs,
         ctx.top_k,
     )
+
     ctx.documents = selected
-    ctx.doc_text_overrides, _ = merge_doc_chunks([doc.doc_id for doc in selected])
     db.mark_documents_used([doc.doc_id for doc in selected])
     log_task_event(
         "Retrieved docs: "
@@ -900,8 +989,282 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
     return ctx
 
 
+def skill_extract_kg(ctx: SkillContext) -> SkillContext:
+    if not ctx.documents:
+        return ctx
+    store = KGStore()
+    extracted = 0
+    total_docs = len(ctx.documents)
+    for idx, doc in enumerate(ctx.documents, start=1):
+        text = db.load_document_text(doc)
+        extracted += extract_and_store(store, ctx.llm, doc.doc_id, text, topic=ctx.topic)
+        _progress_line("KG extraction", idx, total_docs)
+    if extracted:
+        log_task_event(f"KG extraction: added_triples={extracted}")
+    return ctx
+
+
+def skill_extract_profile(ctx: SkillContext) -> SkillContext:
+    store = KGStore()
+    extracted = 0
+    if ctx.documents and ctx.llm:
+        total_docs = len(ctx.documents)
+        for idx, doc in enumerate(ctx.documents, start=1):
+            text = db.load_document_text(doc)
+            items = extract_profile_items(ctx.llm, text)
+            if items:
+                extracted += apply_profile_items(store, doc.doc_id, items)
+            _progress_line("Profile extraction", idx, total_docs)
+        if extracted:
+            log_task_event(f"Profile extraction: items_added={extracted}")
+
+    if ctx.documents and not extracted:
+        token_counts: Counter[str] = Counter()
+        for doc in ctx.documents:
+            text = db.load_document_text(doc)
+            for token in tokenize(text):
+                if len(token) < 3:
+                    continue
+                if token in _PROFILE_STOPWORDS:
+                    continue
+                token_counts[token] += 1
+        if token_counts:
+            most_common = token_counts.most_common(12)
+            max_count = most_common[0][1] if most_common else 1
+            for term, count in most_common:
+                salience = 0.2 + 0.8 * (count / max_count)
+                entity_id = store.upsert_entity(term)
+                store.set_profile_edge(entity_id, "interest", salience=salience)
+            log_task_event("Profile extraction: heuristic interests applied.")
+
+    if ctx.documents:
+        update_profile_from_mentions(
+            store,
+            [doc.doc_id for doc in ctx.documents],
+            profile_type="interest",
+            limit=10,
+        )
+
+    for interest in ctx.interests:
+        if not interest.topic:
+            continue
+        entity_id = store.upsert_entity(interest.topic)
+        store.set_profile_edge(entity_id, "interest", salience=0.9)
+
+    if ctx.topic:
+        entity_id = store.upsert_entity(ctx.topic)
+        store.set_profile_edge(entity_id, "focus", salience=0.7)
+
+    ctx.extracted_interests = store.get_profile_terms("interest", limit=3)
+    return ctx
+
+
+def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
+    if not ctx.documents:
+        return ctx
+    ctx.kg_fact_cards = []
+    store = KGStore()
+    query_parts = [ctx.topic]
+    for interest in ctx.interests:
+        if interest.topic:
+            query_parts.append(interest.topic)
+    query_parts.extend(ctx.extracted_interests)
+    query_parts.extend(ctx.query_hints)
+    query = " ".join(part for part in query_parts if part).strip()
+
+    seed_terms = build_seed_terms(
+        ctx.topic,
+        [interest.topic for interest in ctx.interests if interest.topic] + ctx.extracted_interests,
+        ctx.query_hints,
+    )
+    seed_terms = seed_terms_from_query(query, seed_terms)
+    seeds = store.seed_entities_from_terms(seed_terms, limit=12)
+    subgraph = store.subgraph([entity.entity_id for entity in seeds], hops=1, min_confidence=0.3)
+    log_subgraph_summary(subgraph)
+
+    timeframe_label = None
+    if ctx.query_understanding:
+        timeframe_label = ctx.query_understanding.constraints.get("timeframe") or None
+    date_from, date_to = _infer_date_range(timeframe_label)
+    window_start = _coerce_date_bound(date_from, end=False)
+    window_end = _coerce_date_bound(date_to, end=True)
+    timeframe_specified = bool(timeframe_label and str(timeframe_label).strip())
+    if not window_start and not window_end:
+        window_end = datetime.now(timezone.utc)
+        window_start = window_end - timedelta(days=WEB_EVIDENCE_DEFAULT_DAYS)
+        timeframe_specified = False
+
+    evidence_doc_ids = list(store.evidence_doc_ids([rel.relation_id for rel in subgraph.relations]))
+    doc_lookup = {doc.doc_id: doc for doc in db.get_documents_by_ids(evidence_doc_ids)} if evidence_doc_ids else {}
+
+    def _doc_in_window(doc: db.Document) -> bool:
+        if not doc:
+            return False
+        added = _parse_iso_datetime(doc.added_at)
+        if not added:
+            return False
+        if window_start and added < window_start:
+            return False
+        if window_end and added > window_end:
+            return False
+        return True
+
+    evidence_by_relation: dict[str, list[object]] = {}
+    in_window_evidence: list[object] = []
+    for ev in subgraph.evidence:
+        doc = doc_lookup.get(ev.doc_id)
+        if not doc or not _doc_in_window(doc):
+            continue
+        in_window_evidence.append(ev)
+        evidence_by_relation.setdefault(ev.relation_id, []).append(ev)
+
+    avg_confidence = 0.0
+    if in_window_evidence:
+        avg_confidence = sum(ev.confidence for ev in in_window_evidence) / len(in_window_evidence)
+
+    claim_ids: set[str] = set()
+    latest_added_at = None
+    if in_window_evidence:
+        for ev in in_window_evidence:
+            doc = doc_lookup.get(ev.doc_id)
+            if not doc:
+                continue
+            parsed = _parse_iso_datetime(doc.added_at)
+            if parsed and (latest_added_at is None or parsed > latest_added_at):
+                latest_added_at = parsed
+
+    fact_cards: list[dict] = []
+    contradiction_rows = []
+    if in_window_evidence:
+        entity_lookup = {entity.entity_id: entity.name for entity in subgraph.entities}
+        claim_sources: dict[str, list[str]] = {}
+        for rel in subgraph.relations:
+            rel_evidence = evidence_by_relation.get(rel.relation_id, [])
+            if not rel_evidence:
+                continue
+            if rel.claim_id:
+                claim_ids.add(rel.claim_id)
+            subject = entity_lookup.get(rel.subject_id, rel.subject_id)
+            obj = entity_lookup.get(rel.object_id, rel.object_id)
+            claim_text = store.get_claim_text(rel.claim_id) if rel.claim_id else None
+            statement = claim_text or f"{subject} {rel.predicate} {obj}"
+            doc_titles: list[str] = []
+            evidence_snippets: list[str] = []
+            evidence_conf: list[float] = []
+            seen_docs: set[str] = set()
+            dates: list[datetime] = []
+            for ev in rel_evidence:
+                doc = doc_lookup.get(ev.doc_id)
+                if not doc:
+                    continue
+                evidence_conf.append(float(ev.confidence or 0.0))
+                if ev.quote:
+                    evidence_snippets.append(ev.quote)
+                if doc.doc_id not in seen_docs:
+                    seen_docs.add(doc.doc_id)
+                    title = doc.title or ""
+                    doc_titles.append(title)
+                    if rel.claim_id and title:
+                        claim_sources.setdefault(rel.claim_id, [])
+                        if title not in claim_sources[rel.claim_id]:
+                            claim_sources[rel.claim_id].append(title)
+                parsed = _parse_iso_datetime(doc.added_at)
+                if parsed:
+                    dates.append(parsed)
+
+            date_stats = _summarize_evidence_dates(dates)
+            avg_ev_conf = sum(evidence_conf) / len(evidence_conf) if evidence_conf else 0.0
+            fact_cards.append(
+                {
+                    "subject": subject,
+                    "predicate": rel.predicate,
+                    "object": obj,
+                    "claim": claim_text,
+                    "statement": statement,
+                    "sources": [title for title in doc_titles if title],
+                    "source_count": len({title for title in doc_titles if title}),
+                    "evidence_snippets": evidence_snippets[:2],
+                    "evidence_count": len(rel_evidence),
+                    "evidence_confidence_avg": avg_ev_conf,
+                    "relation_confidence": rel.confidence,
+                    "trend": date_stats,
+                    "claim_id": rel.claim_id,
+                }
+            )
+
+        contradiction_map = _build_contradiction_map(store, claim_ids, claim_sources)
+        if contradiction_map:
+            for card in fact_cards:
+                claim_id = card.get("claim_id")
+                if claim_id and claim_id in contradiction_map:
+                    card["contradictions"] = contradiction_map[claim_id][:3]
+            contradiction_rows = [item for entries in contradiction_map.values() for item in entries]
+
+    fact_cards.sort(
+        key=lambda card: (
+            int(card.get("source_count") or 0),
+            int(card.get("evidence_count") or 0),
+            float(card.get("relation_confidence") or 0.0),
+        ),
+        reverse=True,
+    )
+    ctx.kg_fact_cards = fact_cards[:60]
+
+    evidence_doc_ids_in_window = {ev.doc_id for ev in in_window_evidence}
+    ctx.kg_subgraph_stats = {
+        "entity_count": len(subgraph.entities),
+        "relation_count": len(subgraph.relations),
+        "claim_count": len(claim_ids),
+        "evidence_total": len(subgraph.evidence),
+        "evidence_count": len(in_window_evidence),
+        "fact_card_count": len(ctx.kg_fact_cards),
+        "contradiction_count": len(contradiction_rows),
+        "avg_confidence": avg_confidence,
+        "latest_doc_added_at": latest_added_at.isoformat() if latest_added_at else "",
+        "timeframe_from": window_start.isoformat() if window_start else "",
+        "timeframe_to": window_end.isoformat() if window_end else "",
+        "timeframe_specified": timeframe_specified,
+    }
+
+    if evidence_doc_ids_in_window:
+        doc_lookup = {doc.doc_id: doc for doc in db.list_documents(limit=400)}
+        selected = list(ctx.documents)
+        selected_ids = {doc.doc_id for doc in selected}
+        for doc_id in evidence_doc_ids_in_window:
+            doc = doc_lookup.get(doc_id)
+            if doc and doc.doc_id not in selected_ids:
+                selected.append(doc)
+                selected_ids.add(doc.doc_id)
+        ctx.documents = selected
+
+    db.mark_documents_used([doc.doc_id for doc in ctx.documents])
+    log_task_event(
+        "KG subgraph retrieval: "
+        f"docs={len(ctx.documents)} "
+        f"web={sum(1 for doc in ctx.documents if doc.source_type == 'web')} "
+        f"file={sum(1 for doc in ctx.documents if doc.source_type == 'file')}"
+    )
+    return ctx
+
+
+def skill_detect_contradictions(ctx: SkillContext) -> SkillContext:
+    store = KGStore()
+    def _progress(current: int, total: int) -> None:
+        _progress_line("Contradiction check", current, total)
+
+    updates = detect_contradictions(store, ctx.llm, max_pairs=40, progress=_progress)
+    if updates:
+        log_task_event(f"Contradictions detected: count={updates}")
+    return ctx
+
+
 def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
     if not ctx.web_enabled:
+        return ctx
+    if ctx.web_rounds_used >= ctx.web_max_rounds:
+        log_task_event(
+            f"Web retrieval skipped: max rounds reached ({ctx.web_rounds_used}/{ctx.web_max_rounds})."
+        )
         return ctx
 
     modes = [mode.strip().lower() for mode in (ctx.web_modes or ["open", "lit"])]
@@ -913,25 +1276,13 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         modes = ["lit" if mode == "literature" else mode for mode in modes]
     interest_queries = []
     seen = set()
-    cluster_interests: list[str] = []
-    graph = GraphManager(
-        embed_config=_build_embedding_config(ctx),
-        llm=ctx.llm if ctx.graph_semantic_labels else None,
-        semantic_labels=ctx.graph_semantic_labels,
-        chunk_size=ctx.graph_chunk_size,
-        chunk_overlap=ctx.graph_chunk_overlap,
-        rebuild_ratio=ctx.graph_rebuild_ratio,
-        noise_ratio_threshold=ctx.graph_noise_ratio_threshold,
-        avg_similarity_threshold=ctx.graph_avg_similarity_threshold,
-        unassigned_ratio_threshold=ctx.graph_unassigned_ratio_threshold,
-        assign_similarity_min=ctx.graph_assign_similarity_min,
-    )
-    cluster_interests = graph.suggest_interests(ctx.topic, limit=3)
+    store = KGStore()
+    profile_terms = store.get_profile_terms("interest", limit=3)
     seed_topic = ctx.normalized_query or ctx.topic
     for item in (
         [seed_topic]
         + [interest.topic for interest in ctx.interests]
-        + cluster_interests
+        + profile_terms
         + ctx.query_hints
     ):
         text = (item or "").strip()
@@ -942,10 +1293,29 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             continue
         seen.add(key)
         interest_queries.append(text)
+    if ctx.web_search_topics:
+        interest_queries = list(ctx.web_search_topics)
     if not interest_queries:
         return ctx
 
-    if ctx.round_number == 1:
+    should_expand, reasons = _should_expand_web(ctx, store)
+    if not should_expand:
+        stats = ctx.kg_subgraph_stats or {}
+        log_task_event(
+            "Web retrieval skipped: "
+            f"entities={stats.get('entity_count', 0)} "
+            f"relations={stats.get('relation_count', 0)} "
+            f"claims={stats.get('claim_count', 0)} "
+            f"evidence={stats.get('evidence_count', 0)} "
+            f"avg_conf={stats.get('avg_confidence', 0.0):.2f}"
+        )
+        return ctx
+    if reasons == ["forced"]:
+        log_task_event("Web retrieval forced by CLI flags.")
+    else:
+        log_task_event(f"Web retrieval triggered: {', '.join(reasons)}")
+
+    if ctx.round_number == 1 and not ctx.web_search_topics:
         ensure_dirs()
         platforms_available = _available_web_platforms()
         time_constraint = None
@@ -1000,11 +1370,11 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             else:
                 log_task_event("Web search plan review requested but no TTY; continuing without editor.")
             updated_payload = _extract_json_payload(artifact_path.read_text(encoding="utf-8"))
-            if isinstance(updated_payload, dict):
-                updated_topics = _clean_query_list(updated_payload.get("search_topics"), ctx.methodology_terms)
-                if updated_topics:
-                    interest_queries = updated_topics
-                updated_modes = updated_payload.get("modes")
+                if isinstance(updated_payload, dict):
+                    updated_topics = _clean_query_list(updated_payload.get("search_topics"), ctx.methodology_terms)
+                    if updated_topics:
+                        interest_queries = updated_topics
+                    updated_modes = updated_payload.get("modes")
                 if isinstance(updated_modes, list):
                     cleaned_modes = []
                     for item in updated_modes:
@@ -1032,6 +1402,8 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
                 log_task_event("Web search plan review ignored (invalid JSON).")
 
     ctx.web_modes = modes
+    if interest_queries:
+        ctx.web_search_topics = list(interest_queries)
 
     log_task_event(
         "Web retrieval: "
@@ -1094,6 +1466,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             filtered_count += len(filtered)
             scored_results.extend(filtered)
 
+    ctx.web_rounds_used += 1
     if not scored_results:
         return ctx
 
@@ -1109,6 +1482,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
     final = final[: ctx.web_max_new_sources]
 
     added = 0
+    added_docs: list[db.Document] = []
     skipped_existing = 0
     skipped_empty = 0
     for score, result in final:
@@ -1142,6 +1516,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             last_seen_run=ctx.run_id,
         )
         added += 1
+        added_docs.append(doc)
     log_task_event(
         "Web retrieval summary: "
         f"queries={len(interest_queries)} "
@@ -1153,6 +1528,21 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         f"skipped_empty={skipped_empty} "
         f"filtered={filtered_count}"
     )
+    if added_docs:
+        extracted = 0
+        for doc in added_docs:
+            text = db.load_document_text(doc)
+            extracted += extract_and_store(store, ctx.llm, doc.doc_id, text, topic=ctx.topic)
+        if extracted:
+            log_task_event(f"KG extraction (web): added_triples={extracted}")
+        selected = list(ctx.documents)
+        selected_ids = {doc.doc_id for doc in selected}
+        for doc in added_docs:
+            if doc.doc_id not in selected_ids:
+                selected.append(doc)
+                selected_ids.add(doc.doc_id)
+        ctx.documents = selected
+        db.mark_documents_used([doc.doc_id for doc in ctx.documents])
     return ctx
 
 
@@ -1167,9 +1557,9 @@ def skill_plan_research(ctx: SkillContext) -> SkillContext:
         extracted_interests=ctx.extracted_interests,
         documents=ctx.documents,
         round_number=ctx.round_number,
-        graph_top_clusters=ctx.graph_top_clusters,
+        theme_top_k=ctx.theme_top_k,
         top_k_docs=ctx.top_k,
-        doc_text_overrides=ctx.doc_text_overrides,
+        kg_fact_cards=ctx.kg_fact_cards,
         skill_guidance=ctx.skill_guidance,
     )
     return ctx
@@ -1196,9 +1586,9 @@ def skill_refine_plan(ctx: SkillContext) -> SkillContext:
         methods=ctx.methods,
         extracted_interests=ctx.extracted_interests,
         round_number=ctx.round_number,
-        graph_top_clusters=ctx.graph_top_clusters,
+        theme_top_k=ctx.theme_top_k,
         top_k_docs=ctx.top_k,
-        doc_text_overrides=ctx.doc_text_overrides,
+        kg_fact_cards=ctx.kg_fact_cards,
         skill_guidance=ctx.skill_guidance,
     )
     cleaned_queries = [
@@ -1223,7 +1613,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         interests=ctx.interests,
         methods=ctx.methods,
         keywords=ctx.plan.keywords,
-        doc_text_overrides=ctx.doc_text_overrides,
+        kg_fact_cards=ctx.kg_fact_cards,
         skill_guidance=ctx.skill_guidance,
         active_skills=ctx.active_skills,
         run_id=ctx.run_id,
@@ -1283,6 +1673,10 @@ def build_default_runner() -> SkillRunner:
     runner.register("systems-engineering", skill_systems_engineering)
     runner.register("web_retrieve", skill_web_retrieve)
     runner.register("retrieve_sources", skill_retrieve_sources)
+    runner.register("extract_kg", skill_extract_kg)
+    runner.register("extract_profile", skill_extract_profile)
+    runner.register("detect_contradictions", skill_detect_contradictions)
+    runner.register("retrieve_subgraph", skill_retrieve_subgraph)
     runner.register("plan_research", skill_plan_research)
     runner.register("refine_plan", skill_refine_plan)
     runner.register("build_outline", skill_build_outline)

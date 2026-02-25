@@ -11,6 +11,7 @@ Steps:
 - Search for relevant tech/blog/news/forum sources.
 - Search for relevant literature (papers, preprints).
 - Fetch and store text when available.
+- Extract KG triples for newly ingested web documents (when LLM is available).
 
 Notes:
 - Runs only when web retrieval is enabled.

@@ -88,45 +88,158 @@ CREATE TABLE IF NOT EXISTS document_stats (
     archived INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS chunks (
-    chunk_id TEXT PRIMARY KEY,
-    doc_id TEXT NOT NULL,
-    chunk_index INTEGER NOT NULL,
-    text TEXT NOT NULL,
-    token_count INTEGER NOT NULL,
-    embedding_json TEXT,
-    cluster_id TEXT,
-    similarity REAL,
+CREATE TABLE IF NOT EXISTS graph_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kg_entities (
+    entity_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    canonical_name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    aliases_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    first_seen_at TEXT,
+    last_seen_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_entities_user_canonical
+    ON kg_entities(user_id, canonical_name);
+
+CREATE INDEX IF NOT EXISTS idx_kg_entities_type
+    ON kg_entities(type);
+
+CREATE TABLE IF NOT EXISTS kg_users (
+    user_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(doc_id);
-CREATE INDEX IF NOT EXISTS idx_chunks_cluster ON chunks(cluster_id);
-
-CREATE TABLE IF NOT EXISTS clusters (
-    cluster_id TEXT PRIMARY KEY,
-    label TEXT NOT NULL,
-    centroid_json TEXT NOT NULL,
-    size INTEGER NOT NULL,
+CREATE TABLE IF NOT EXISTS kg_relations (
+    relation_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    claim_id TEXT,
+    confidence REAL NOT NULL,
+    start_date TEXT,
+    end_date TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS topic_cluster_map (
-    map_id TEXT PRIMARY KEY,
-    topic TEXT NOT NULL,
-    cluster_id TEXT NOT NULL,
-    similarity REAL NOT NULL,
-    run_id INTEGER NOT NULL,
+CREATE INDEX IF NOT EXISTS idx_kg_relations_subject
+    ON kg_relations(user_id, subject_id);
+
+CREATE INDEX IF NOT EXISTS idx_kg_relations_object
+    ON kg_relations(user_id, object_id);
+
+CREATE INDEX IF NOT EXISTS idx_kg_relations_predicate
+    ON kg_relations(user_id, predicate);
+
+CREATE INDEX IF NOT EXISTS idx_kg_relations_time
+    ON kg_relations(start_date, end_date);
+
+CREATE INDEX IF NOT EXISTS idx_kg_relations_claim
+    ON kg_relations(claim_id);
+
+CREATE TABLE IF NOT EXISTS kg_claims (
+    claim_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    normalized_text TEXT NOT NULL,
+    topic TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    first_seen_at TEXT,
+    last_seen_at TEXT,
+    confidence REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kg_claims_user_norm
+    ON kg_claims(user_id, normalized_text);
+
+CREATE TABLE IF NOT EXISTS kg_mentions (
+    mention_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    doc_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    claim_id TEXT,
+    span_start INTEGER,
+    span_end INTEGER,
+    sentence TEXT,
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_topic_cluster_topic ON topic_cluster_map(topic);
-CREATE INDEX IF NOT EXISTS idx_topic_cluster_run ON topic_cluster_map(run_id);
+CREATE INDEX IF NOT EXISTS idx_kg_mentions_doc
+    ON kg_mentions(doc_id);
 
-CREATE TABLE IF NOT EXISTS graph_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
+CREATE INDEX IF NOT EXISTS idx_kg_mentions_entity
+    ON kg_mentions(entity_id);
+
+CREATE INDEX IF NOT EXISTS idx_kg_mentions_claim
+    ON kg_mentions(claim_id);
+
+CREATE TABLE IF NOT EXISTS kg_evidence (
+    evidence_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    doc_id TEXT NOT NULL,
+    relation_id TEXT NOT NULL,
+    claim_id TEXT,
+    quote TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kg_evidence_doc
+    ON kg_evidence(doc_id);
+
+CREATE INDEX IF NOT EXISTS idx_kg_evidence_relation
+    ON kg_evidence(relation_id);
+
+CREATE INDEX IF NOT EXISTS idx_kg_evidence_claim
+    ON kg_evidence(claim_id);
+
+CREATE TABLE IF NOT EXISTS kg_user_profile (
+    profile_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    profile_type TEXT NOT NULL,
+    salience REAL NOT NULL,
+    start_date TEXT,
+    end_date TEXT,
+    source_doc_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kg_profile_user_type
+    ON kg_user_profile(user_id, profile_type);
+
+CREATE INDEX IF NOT EXISTS idx_kg_profile_entity
+    ON kg_user_profile(entity_id);
+
+CREATE TABLE IF NOT EXISTS kg_contradictions (
+    contradiction_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    claim_id_a TEXT NOT NULL,
+    claim_id_b TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kg_contradictions_claims
+    ON kg_contradictions(claim_id_a, claim_id_b);
+
+CREATE TABLE IF NOT EXISTS kg_doc_state (
+    doc_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    extracted_at TEXT NOT NULL,
+    status TEXT NOT NULL
 );
 """
 
@@ -142,6 +255,7 @@ def init_db() -> None:
     with _connect() as conn:
         conn.executescript(SCHEMA)
     _ensure_document_stats_schema()
+    _ensure_kg_schema()
 
 
 def _now_iso() -> str:
@@ -256,6 +370,27 @@ def _ensure_document_stats_schema() -> None:
             conn.execute("ALTER TABLE document_stats ADD COLUMN last_used_run INTEGER")
         if "last_seen_run" not in cols:
             conn.execute("ALTER TABLE document_stats ADD COLUMN last_seen_run INTEGER")
+
+
+def _ensure_kg_schema() -> None:
+    with _connect() as conn:
+        rows = conn.execute("PRAGMA table_info(kg_users)").fetchall()
+        if not rows:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS kg_users (user_id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL)"
+            )
+        rows = conn.execute("PRAGMA table_info(kg_relations)").fetchall()
+        cols = {row["name"] for row in rows}
+        if rows and "claim_id" not in cols:
+            conn.execute("ALTER TABLE kg_relations ADD COLUMN claim_id TEXT")
+        rows = conn.execute("PRAGMA table_info(kg_mentions)").fetchall()
+        cols = {row["name"] for row in rows}
+        if rows and "claim_id" not in cols:
+            conn.execute("ALTER TABLE kg_mentions ADD COLUMN claim_id TEXT")
+        rows = conn.execute("PRAGMA table_info(kg_evidence)").fetchall()
+        cols = {row["name"] for row in rows}
+        if rows and "claim_id" not in cols:
+            conn.execute("ALTER TABLE kg_evidence ADD COLUMN claim_id TEXT")
 
 
 def mark_documents_seen(doc_ids: Iterable[str]) -> None:
@@ -558,19 +693,29 @@ def clear_library_and_graph(clear_files: bool = True) -> dict[str, int]:
                 path.unlink()
                 removed_files += 1
     with _connect() as conn:
-        chunks = conn.execute("DELETE FROM chunks").rowcount
-        clusters = conn.execute("DELETE FROM clusters").rowcount
-        topic_maps = conn.execute("DELETE FROM topic_cluster_map").rowcount
         graph_meta = conn.execute("DELETE FROM graph_meta").rowcount
+        kg_entities = conn.execute("DELETE FROM kg_entities").rowcount
+        kg_relations = conn.execute("DELETE FROM kg_relations").rowcount
+        kg_claims = conn.execute("DELETE FROM kg_claims").rowcount
+        kg_mentions = conn.execute("DELETE FROM kg_mentions").rowcount
+        kg_evidence = conn.execute("DELETE FROM kg_evidence").rowcount
+        kg_profiles = conn.execute("DELETE FROM kg_user_profile").rowcount
+        kg_contra = conn.execute("DELETE FROM kg_contradictions").rowcount
+        kg_doc_state = conn.execute("DELETE FROM kg_doc_state").rowcount
         stats = conn.execute("DELETE FROM document_stats").rowcount
         docs = conn.execute("DELETE FROM documents").rowcount
     return {
         "documents": int(docs or 0),
         "document_stats": int(stats or 0),
-        "chunks": int(chunks or 0),
-        "clusters": int(clusters or 0),
-        "topic_cluster_map": int(topic_maps or 0),
         "graph_meta": int(graph_meta or 0),
+        "kg_entities": int(kg_entities or 0),
+        "kg_relations": int(kg_relations or 0),
+        "kg_claims": int(kg_claims or 0),
+        "kg_mentions": int(kg_mentions or 0),
+        "kg_evidence": int(kg_evidence or 0),
+        "kg_profiles": int(kg_profiles or 0),
+        "kg_contradictions": int(kg_contra or 0),
+        "kg_doc_state": int(kg_doc_state or 0),
         "files_removed": removed_files,
     }
 
@@ -605,17 +750,3 @@ def increment_research_run() -> int:
     set_meta("research_run_count", str(current))
     return current
 
-
-def add_topic_cluster_map(topic: str, cluster_id: str, similarity: float, run_id: int) -> str:
-    init_db()
-    map_id = str(uuid.uuid4())
-    created_at = _now_iso()
-    with _connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO topic_cluster_map (map_id, topic, cluster_id, similarity, run_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (map_id, topic, cluster_id, float(similarity), int(run_id), created_at),
-        )
-    return map_id

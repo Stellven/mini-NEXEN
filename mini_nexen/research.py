@@ -7,8 +7,8 @@ from pathlib import Path
 from . import db
 from .agents import Orchestrator
 from .config import (
+    DEFAULT_THEME_TOP_K,
     PLANS_DIR,
-    GRAPH_TOP_CLUSTERS,
     WEB_ARCHIVE_RUNS_UNUSED,
     WEB_ARCHIVE_SCORE_THRESHOLD,
     WEB_DECAY_PER_RUN,
@@ -45,6 +45,8 @@ def run_research(
     max_tokens: int | None = None,
     discover_model: bool | None = None,
     web_enabled: bool = True,
+    web_forced: bool = False,
+    web_auto: bool = False,
     web_modes: list[str] | None = None,
     web_max_results: int = 5,
     web_timeout: int = 15,
@@ -60,14 +62,14 @@ def run_research(
     web_max_new_sources: int = 50,
     web_max_per_query: int = 10,
     web_relevance_threshold: float = 0.25,
+    web_max_rounds: int = 3,
     ingest_seeds: bool = False,
     auto_interest: bool = False,
     auto_methods: bool = True,
     review_query: bool | None = None,
     interactive: bool = False,
     methodology_taxonomy: list[str] | None = None,
-    graph_semantic_labels: bool = True,
-    graph_top_clusters: int = GRAPH_TOP_CLUSTERS,
+    theme_top_k: int = DEFAULT_THEME_TOP_K,
 ) -> ResearchResult:
     ensure_dirs()
     db.init_db()
@@ -115,6 +117,8 @@ def run_research(
         interactive=interactive,
         methodology_taxonomy=methodology_taxonomy or [],
         web_enabled=web_enabled,
+        web_forced=web_forced,
+        web_auto=web_auto,
         web_modes=web_modes or [],
         web_max_results=web_max_results,
         web_timeout=web_timeout,
@@ -130,8 +134,8 @@ def run_research(
         web_max_new_sources=web_max_new_sources,
         web_max_per_query=web_max_per_query,
         web_relevance_threshold=web_relevance_threshold,
-        graph_semantic_labels=graph_semantic_labels,
-        graph_top_clusters=graph_top_clusters,
+        web_max_rounds=web_max_rounds,
+        theme_top_k=theme_top_k,
     )
     ctx = supervisor.run(ctx)
 
