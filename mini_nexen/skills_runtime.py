@@ -1370,11 +1370,11 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             else:
                 log_task_event("Web search plan review requested but no TTY; continuing without editor.")
             updated_payload = _extract_json_payload(artifact_path.read_text(encoding="utf-8"))
-                if isinstance(updated_payload, dict):
-                    updated_topics = _clean_query_list(updated_payload.get("search_topics"), ctx.methodology_terms)
-                    if updated_topics:
-                        interest_queries = updated_topics
-                    updated_modes = updated_payload.get("modes")
+            if isinstance(updated_payload, dict):
+                updated_topics = _clean_query_list(updated_payload.get("search_topics"), ctx.methodology_terms)
+                if updated_topics:
+                    interest_queries = updated_topics
+                updated_modes = updated_payload.get("modes")
                 if isinstance(updated_modes, list):
                     cleaned_modes = []
                     for item in updated_modes:

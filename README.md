@@ -117,6 +117,16 @@ Web retrieval env vars:
 - `REDDIT_CLIENT_SECRET`: Reddit app client secret for search.
 - `REDDIT_USER_AGENT`: User agent string for Reddit API requests.
 
+Web retrieval modes:
+- `open`: Open-web search (Brave/Tavily). `--web-open` (alias: `--web-tech`).
+- `forum`: Forum/social sources (X, Reddit). `--web-forum`.
+- `lit`: Literature sources (arXiv, Semantic Scholar, Crossref). `--web-lit`.
+- Aliases accepted in query artifacts or programmatic calls: `web` and `tech` map to `open`, `literature` maps to `lit`.
+
+Web retrieval behavior:
+- Always-on by default unless `--no-web` is set.
+- `--web-auto`: Run web retrieval only when KG expansion criteria are met.
+
 Query review env vars:
 - `MINI_NEXEN_QUERY_EDITOR`: Editor command to open the query artifact (defaults to `code --wait`).
 
