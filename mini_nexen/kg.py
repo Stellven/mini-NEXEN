@@ -46,7 +46,7 @@ PREDICATE_CANONICAL = {
 }
 
 PREDICATE_CHOICES = sorted(set(PREDICATE_CANONICAL.values()))
-PROFILE_TYPE = "profile"
+PROFILE_TYPE = "profile signal"
 ORG_TOKENS = {"inc", "corp", "co", "company", "ltd", "llc", "gmbh", "plc", "ag"}
 LAB_TOKENS = {"lab", "labs", "laboratory", "laboratories"}
 UNIVERSITY_TOKENS = {"university", "college", "institute", "school", "polytechnic"}
@@ -1074,6 +1074,7 @@ class KGStore:
         frontier = set(seeds)
         visited = set(seeds)
         relations: list[KGRelation] = []
+        seen_relations: set[str] = set()
         for _ in range(max(1, hops)):
             if not frontier:
                 break
@@ -1093,8 +1094,11 @@ class KGStore:
                 ).fetchall()
             new_frontier = set()
             for row in rows:
+                relation_id = row["relation_id"]
+                if relation_id in seen_relations:
+                    continue
                 relation = KGRelation(
-                    relation_id=row["relation_id"],
+                    relation_id=relation_id,
                     subject_id=row["subject_id"],
                     predicate=row["predicate"],
                     object_id=row["object_id"],
@@ -1102,6 +1106,7 @@ class KGStore:
                     confidence=float(row["confidence"] or 0.0),
                 )
                 relations.append(relation)
+                seen_relations.add(relation_id)
                 if relation.subject_id not in visited:
                     new_frontier.add(relation.subject_id)
                     visited.add(relation.subject_id)
@@ -1542,8 +1547,12 @@ def render_dot(
     for rel in subgraph.relations:
         label = _escape_dot(rel.predicate)
         ev_quotes = evidence_map.get(rel.relation_id, [])
+        parts: list[str] = []
+        parts.append(f"c={rel.confidence:.2f}")
         if ev_quotes:
-            label = f"{label} ({len(ev_quotes)})"
+            parts.append(f"n={len(ev_quotes)}")
+        if parts:
+            label = f"{label} ({', '.join(parts)})"
         counts = source_counts.get(rel.relation_id)
         if counts:
             local_count = counts.get("local", 0)
@@ -1699,6 +1708,7 @@ def render_html(
                 "from": rel.subject_id,
                 "to": rel.object_id,
                 "label": rel.predicate,
+                "confidence": float(rel.confidence or 0.0),
                 "title": "\n".join(title_lines),
                 "arrows": "to",
             }
@@ -1716,8 +1726,14 @@ def render_html(
             value for key, value in counts.items() if key not in {"local", "web"}
         )
         label = edge.get("label") or ""
+        parts: list[str] = []
+        confidence = edge.get("confidence")
+        if isinstance(confidence, (int, float)):
+            parts.append(f"c={confidence:.2f}")
         if ev_items:
-            label = f"{label} ({len(ev_items)})"
+            parts.append(f"n={len(ev_items)}")
+        if parts:
+            label = f"{label} ({', '.join(parts)})"
         if counts:
             label = f"{label} [L{local_count}/W{web_count}"
             if other_count:
@@ -1742,6 +1758,8 @@ def render_html(
         "edges": edges,
         "user_node_id": f"user:{user_id}" if user_id else "",
     }
+    node_count = len(nodes)
+    edge_count = len(edges)
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -1770,6 +1788,20 @@ def render_html(
       padding: 16px;
       box-sizing: border-box;
       overflow: auto;
+    }}
+    #summary {{
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 12px;
+    }}
+    #fitBtn {{
+      display: inline-block;
+      margin-top: 6px;
+      padding: 4px 8px;
+      border: 1px solid #bbb;
+      background: #fff;
+      font-size: 12px;
+      cursor: pointer;
     }}
     #details h2 {{
       margin: 0 0 8px 0;
@@ -1811,6 +1843,11 @@ def render_html(
           Show user node
         </label>
       </div>
+      <div id="summary">
+        Nodes: <span id="node-count">{node_count}</span> |
+        Edges: <span id="edge-count">{edge_count}</span>
+        <div><button id="fitBtn" type="button">Fit View</button></div>
+      </div>
       <h2>Edge Details</h2>
       <div id="edge-details" class="meta">Select an edge to see evidence.</div>
     </aside>
@@ -1819,10 +1856,25 @@ def render_html(
     const payload = {json.dumps(payload)};
     const baseNodes = payload.nodes || [];
     const baseEdges = payload.edges || [];
+    if (typeof vis === "undefined") {{
+      const panel = document.getElementById("edge-details");
+      panel.textContent = "vis-network failed to load. Check your network connection or firewall, or use a local copy of the library.";
+      throw new Error("vis-network not available");
+    }}
     const nodes = new vis.DataSet([]);
     const edges = new vis.DataSet([]);
     const container = document.getElementById("network");
     const data = {{ nodes: nodes, edges: edges }};
+    window.addEventListener("error", (event) => {{
+      const panel = document.getElementById("edge-details");
+      const message = event?.message || "Unknown error";
+      panel.textContent = "Viewer error: " + message;
+    }});
+    window.addEventListener("unhandledrejection", (event) => {{
+      const panel = document.getElementById("edge-details");
+      const reason = event?.reason || "Unhandled rejection";
+      panel.textContent = "Viewer error: " + reason;
+    }});
     const options = {{
       nodes: {{
         shape: "box",
@@ -1831,8 +1883,10 @@ def render_html(
       }},
       edges: {{
         font: {{ align: "middle" }},
-        color: {{ color: "#555" }},
+        color: {{ color: "#333" }},
         arrows: {{ to: {{ enabled: true }} }},
+        width: 1.4,
+        smooth: {{ type: "continuous" }},
       }},
       physics: {{
         stabilization: true,
@@ -1859,6 +1913,8 @@ def render_html(
       edges.clear();
       nodes.add(filteredNodes);
       edges.add(filteredEdges);
+      document.getElementById("node-count").textContent = String(filteredNodes.length);
+      document.getElementById("edge-count").textContent = String(filteredEdges.length);
     }}
 
     function renderEdgeDetails(edge) {{
@@ -1899,8 +1955,15 @@ def render_html(
     }}
 
     applyUserFilter(true);
+    network.once("stabilizationIterationsDone", () => {{
+      network.fit({{ animation: true }});
+    }});
     document.getElementById("toggleUser").addEventListener("change", (event) => {{
       applyUserFilter(event.target.checked);
+      network.fit({{ animation: true }});
+    }});
+    document.getElementById("fitBtn").addEventListener("click", () => {{
+      network.fit({{ animation: true }});
     }});
 
     network.on("selectEdge", (params) => {{

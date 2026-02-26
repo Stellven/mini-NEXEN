@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 import webbrowser
@@ -364,6 +366,111 @@ def _kg_report(args: argparse.Namespace) -> None:
             print(f"{row['count']:>3} | {row['name']}")
 
 
+def _kg_entity_edges(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    db.init_db()
+    store = KGStore()
+    min_conf = float(args.min_conf or 0.0)
+    entity_id = (args.id or "").strip()
+    entity_name = ""
+    entity_type = ""
+    if entity_id:
+        with db._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT entity_id, name, type
+                FROM kg_entities
+                WHERE user_id = ? AND entity_id = ?
+                """,
+                (store.user_id, entity_id),
+            ).fetchone()
+        if not row:
+            print(f"Entity id not found: {entity_id}")
+            return
+        entity_name = row["name"]
+        entity_type = row["type"]
+    else:
+        term = (args.entity or "").strip()
+        if not term:
+            raise SystemExit("Provide --entity or --id.")
+        matches = store.search_entities(term, limit=max(1, int(args.limit or 10)))
+        exact = [m for m in matches if m.name.casefold() == term.casefold()]
+        if len(exact) == 1:
+            chosen = exact[0]
+        elif len(matches) == 1:
+            chosen = matches[0]
+        elif not matches:
+            print(f"No entities match: {term}")
+            return
+        else:
+            print("Multiple matches found. Re-run with --id to pick one:")
+            for m in matches:
+                print(f"{m.entity_id} | {m.name} | {m.type}")
+            return
+        entity_id = chosen.entity_id
+        entity_name = chosen.name
+        entity_type = chosen.type
+
+    with db._connect() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN subject_id = ? THEN 1 ELSE 0 END) AS outgoing,
+                SUM(CASE WHEN object_id = ? THEN 1 ELSE 0 END) AS incoming
+            FROM kg_relations
+            WHERE user_id = ?
+              AND confidence >= ?
+              AND (subject_id = ? OR object_id = ?)
+            """,
+            (entity_id, entity_id, store.user_id, min_conf, entity_id, entity_id),
+        ).fetchone()
+        neighbor_rows = conn.execute(
+            """
+            SELECT DISTINCT
+                CASE WHEN subject_id = ? THEN object_id ELSE subject_id END AS neighbor_id
+            FROM kg_relations
+            WHERE user_id = ?
+              AND confidence >= ?
+              AND (subject_id = ? OR object_id = ?)
+            """,
+            (entity_id, store.user_id, min_conf, entity_id, entity_id),
+        ).fetchall()
+
+    total = int(row["total"] or 0)
+    outgoing = int(row["outgoing"] or 0)
+    incoming = int(row["incoming"] or 0)
+    neighbors = len(neighbor_rows)
+
+    print(f"Entity: {entity_name} ({entity_type})")
+    print(f"Entity ID: {entity_id}")
+    print(f"Edges: {total} (outgoing={outgoing}, incoming={incoming}, neighbors={neighbors})")
+    if args.show_neighbors and total:
+        with db._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT r.subject_id, r.predicate, r.object_id, r.confidence,
+                       es.name AS subject_name, eo.name AS object_name
+                FROM kg_relations r
+                JOIN kg_entities es ON r.subject_id = es.entity_id
+                JOIN kg_entities eo ON r.object_id = eo.entity_id
+                WHERE r.user_id = ?
+                  AND r.confidence >= ?
+                  AND (r.subject_id = ? OR r.object_id = ?)
+                ORDER BY r.confidence DESC
+                """,
+                (store.user_id, min_conf, entity_id, entity_id),
+            ).fetchall()
+        print("")
+        print("Connected Entities:")
+        for row in rows:
+            direction = "outgoing" if row["subject_id"] == entity_id else "incoming"
+            neighbor = row["object_name"] if direction == "outgoing" else row["subject_name"]
+            predicate = row["predicate"] or ""
+            confidence = float(row["confidence"] or 0.0)
+            print(f"{direction} | {predicate} | {neighbor} | c={confidence:.2f}")
+
+
 def _kg_export_dot(args: argparse.Namespace) -> None:
     ensure_dirs()
     db.init_db()
@@ -392,6 +499,30 @@ def _kg_export_dot(args: argparse.Namespace) -> None:
     out_path = _resolve_export_path(args.out, suffix=".dot")
     out_path.write_text(dot, encoding="utf-8")
     print(f"Wrote DOT: {out_path}")
+    if args.open_dot:
+        svg_path = out_path.with_suffix(".svg")
+        if not shutil.which("dot"):
+            print("Graphviz not found (missing 'dot' binary). Install graphviz to auto-render.")
+            return
+        try:
+            subprocess.run(
+                ["dot", "-Tsvg", str(out_path), "-o", str(svg_path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or str(exc)).strip()
+            print(f"Unable to render DOT to SVG: {detail}")
+            return
+        print(f"Wrote SVG: {svg_path}")
+        try:
+            opened = webbrowser.open(svg_path.as_uri())
+        except Exception as exc:
+            print(f"Unable to open SVG in browser: {exc}")
+        else:
+            if not opened:
+                print("Unable to open SVG in browser (no handler available).")
 
 
 def _kg_export_html(args: argparse.Namespace) -> None:
@@ -875,6 +1006,28 @@ def build_parser() -> argparse.ArgumentParser:
     kg_report.add_argument("--limit", type=int, default=10, help="Limit for top lists (default: 10)")
     kg_report.set_defaults(func=_kg_report)
 
+    kg_entity_edges = sub.add_parser("kg-entity-edges", help="Count edges connected to an entity")
+    kg_entity_edges.add_argument("--entity", help="Entity name to search")
+    kg_entity_edges.add_argument("--id", help="Entity id (exact)")
+    kg_entity_edges.add_argument(
+        "--min-conf",
+        type=float,
+        default=0.0,
+        help="Min relation confidence (default: 0.0)",
+    )
+    kg_entity_edges.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Max entity matches to show when searching (default: 10)",
+    )
+    kg_entity_edges.add_argument(
+        "--show-neighbors",
+        action="store_true",
+        help="List connected entities and predicates",
+    )
+    kg_entity_edges.set_defaults(func=_kg_entity_edges)
+
     kg_export_dot = sub.add_parser("kg-export-dot", help="Export a KG subgraph as DOT")
     kg_export_dot.add_argument("--seed", action="append", help="Seed term (repeat or comma-separated)")
     kg_export_dot.add_argument(
@@ -891,6 +1044,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Export the full KG (ignores --seed/--hops)",
     )
     kg_export_dot.add_argument("--out", help="Output path (.dot)")
+    kg_export_dot.add_argument(
+        "--no-open",
+        action="store_false",
+        dest="open_dot",
+        help="Do not render/open the exported DOT after writing",
+    )
+    kg_export_dot.set_defaults(open_dot=True)
     kg_export_dot.set_defaults(func=_kg_export_dot)
 
     kg_export_html = sub.add_parser("kg-export-html", help="Export a KG subgraph as HTML")
