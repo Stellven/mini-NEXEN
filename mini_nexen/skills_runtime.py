@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 import os
@@ -15,10 +13,11 @@ from typing import Callable, Optional
 
 from . import db
 from .config import (
+    ARTIFACTS_DIR,
     DEFAULT_ROUNDS,
-    DEFAULT_THEME_TOP_K,
+    DEFAULT_KG_HOPS,
+    DEFAULT_PROFILE_TOP_K,
     DEFAULT_TOP_K,
-    PLANS_DIR,
     SKILLS_DIR,
     WEB_AUTO_MAX_ROUNDS,
     WEB_EVIDENCE_DEFAULT_DAYS,
@@ -44,7 +43,13 @@ from .kg import (
     seed_terms_from_query,
     update_profile_from_mentions,
 )
-from .llm import LLMClient, log_task_event, log_task_event_quiet
+from .llm import (
+    LLMClient,
+    LLMClientError,
+    emit_progress,
+    log_task_event,
+    log_task_event_quiet,
+)
 from .planning import (
     PlanDraft,
     is_ready,
@@ -63,6 +68,7 @@ from .query_understanding import (
     infer_query_understanding,
     normalize_query_understanding,
     parse_query_artifact,
+    parse_web_search_artifact,
     render_query_artifact,
 )
 
@@ -83,6 +89,7 @@ class SkillContext:
     topic: str
     raw_topic: str = ""
     normalized_query: str = ""
+    output_language: str = "Chinese"
     inferred_methods: list[db.Method] = field(default_factory=list)
     methodology_terms: list[str] = field(default_factory=list)
     methodology_taxonomy: list[str] = field(default_factory=list)
@@ -93,7 +100,6 @@ class SkillContext:
     web_search_artifact_path: Optional[Path] = None
     query_understanding: Optional[QueryUnderstanding] = None
     top_k: int = DEFAULT_TOP_K
-    min_web_docs: int = 0
     max_rounds: int = DEFAULT_ROUNDS
     round_number: int = 1
     interests: list[db.Interest] = field(default_factory=list)
@@ -132,7 +138,8 @@ class SkillContext:
     web_max_new_sources: int = WEB_MAX_NEW_SOURCES
     web_max_per_query: int = WEB_MAX_PER_QUERY
     web_relevance_threshold: float = WEB_RELEVANCE_THRESHOLD
-    theme_top_k: int = DEFAULT_THEME_TOP_K
+    profile_top_k: int = DEFAULT_PROFILE_TOP_K
+    kg_hops: int = DEFAULT_KG_HOPS
     kg_subgraph_stats: dict[str, float | int | str] = field(default_factory=dict)
     llm: Optional[LLMClient] = None
 
@@ -227,43 +234,6 @@ SYSTEMS_ENGINEERING_TRIGGERS = [
     "产业投资",
 ]
 
-_PROFILE_STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "but",
-    "by",
-    "for",
-    "from",
-    "if",
-    "in",
-    "into",
-    "is",
-    "it",
-    "no",
-    "not",
-    "of",
-    "on",
-    "or",
-    "such",
-    "that",
-    "the",
-    "their",
-    "then",
-    "there",
-    "these",
-    "they",
-    "this",
-    "to",
-    "was",
-    "will",
-    "with",
-}
-
 
 def _matches_triggers(texts: list[str], triggers: list[str]) -> bool:
     haystack = " ".join(text for text in texts if text).casefold()
@@ -273,14 +243,15 @@ def _matches_triggers(texts: list[str], triggers: list[str]) -> bool:
     return False
 
 
-def _progress_line(label: str, current: int, total: int) -> None:
-    if total <= 0 or not sys.stdout.isatty():
-        return
-    percent = int((current / total) * 100)
-    line = f"{label} {current}/{total} ({percent}%)"
-    print("\r" + line + " " * 6, end="", flush=True)
-    if current >= total:
-        print("", flush=True)
+def _progress_line(agent: str, task: str, model: str, current: int, total: int) -> None:
+    emit_progress(
+        agent,
+        model,
+        task,
+        current,
+        total,
+        done=current >= total,
+    )
 
 
 def _parse_iso_datetime(value: str | None) -> datetime | None:
@@ -518,6 +489,8 @@ def _clean_query_list(value: object, method_terms: list[str] | None = None) -> l
 def expand_queries_with_llm(ctx: SkillContext, query: str, modes: list[str]) -> list[str]:
     if not ctx.llm:
         return []
+    model_name = ctx.llm.config.model
+    emit_progress("Retriever", model_name, "query expansion", 0, 1, done=False)
     prompt = {
         "query": query,
         "modes": modes,
@@ -527,12 +500,15 @@ def expand_queries_with_llm(ctx: SkillContext, query: str, modes: list[str]) -> 
             "Return JSON only as either a list of strings or {\"queries\": [...]}."
         ),
     }
-    response = ctx.llm.generate(
-        system_prompt="You generate search query expansions. Return JSON only.",
-        user_prompt=json.dumps(prompt, indent=2),
-        task="query expansion",
-        agent="Retriever",
-    )
+    try:
+        response = ctx.llm.generate(
+            system_prompt="You generate search query expansions. Return JSON only.",
+            user_prompt=json.dumps(prompt, indent=2),
+            task="query expansion",
+            agent="Retriever",
+        )
+    finally:
+        emit_progress("Retriever", model_name, "query expansion", 1, 1, done=True)
     payload = _extract_json_payload(response)
     return _clean_query_list(payload, ctx.methodology_terms)
 
@@ -550,6 +526,8 @@ def _trim_query(text: str, max_words: int = 8, max_chars: int = 80) -> str:
 def _rewrite_gap_queries_with_llm(ctx: SkillContext, gaps: list[str]) -> list[str]:
     if not ctx.llm:
         return []
+    model_name = ctx.llm.config.model
+    emit_progress("Retriever", model_name, "gap query rewrite", 0, 1, done=False)
     prompt = {
         "gaps": gaps,
         "instructions": (
@@ -560,12 +538,15 @@ def _rewrite_gap_queries_with_llm(ctx: SkillContext, gaps: list[str]) -> list[st
             "Return JSON only as a flat list of strings."
         ),
     }
-    response = ctx.llm.generate(
-        system_prompt="You rewrite research gaps into concise search queries. Return JSON only.",
-        user_prompt=json.dumps(prompt, indent=2),
-        task="gap query rewrite",
-        agent="Retriever",
-    )
+    try:
+        response = ctx.llm.generate(
+            system_prompt="You rewrite research gaps into concise search queries. Return JSON only.",
+            user_prompt=json.dumps(prompt, indent=2),
+            task="gap query rewrite",
+            agent="Retriever",
+        )
+    finally:
+        emit_progress("Retriever", model_name, "gap query rewrite", 1, 1, done=True)
     payload = _extract_json_payload(response)
     return _clean_query_list(payload, ctx.methodology_terms)
 
@@ -578,7 +559,7 @@ def _rewrite_gap_queries_fallback(gaps: list[str], method_terms: list[str] | Non
         r"^there is no existing literature\\s+",
         r"^there is no\\s+",
         r"^insufficient sources to\\s+",
-        r"^no (?:themes|sources) available\\s+",
+        r"^no (?:profile signals|sources) available\\s+",
         r"^lack of\\s+",
     ]
     for gap in gaps:
@@ -795,7 +776,7 @@ def skill_infer_query(ctx: SkillContext) -> SkillContext:
         predicted_skills=predicted_skills,
         skill_hints=ctx.skill_hints,
     )
-    artifact_path = PLANS_DIR / datetime.now().strftime("%Y_%m_%d_%H_%M_query.md")
+    artifact_path = ARTIFACTS_DIR / datetime.now().strftime("%Y_%m_%d_%H_%M_query.md")
     artifact_path.write_text(artifact, encoding="utf-8")
     ctx.query_artifact_path = artifact_path
     log_task_event(f"Query understanding saved: {artifact_path}")
@@ -881,47 +862,6 @@ def _score_web_results(
     return scored
 
 
-def _ensure_min_web_docs(
-    selected: list[db.Document],
-    docs: list[db.Document],
-    query_tokens: list[str],
-    min_web_docs: int,
-    target_k: int,
-) -> list[db.Document]:
-    if min_web_docs <= 0:
-        return selected
-    web_available = [doc for doc in docs if doc.source_type == "web"]
-    if not web_available:
-        return selected
-    selected_ids = {doc.doc_id for doc in selected}
-    selected_web = [doc for doc in selected if doc.source_type == "web"]
-    if len(selected_web) >= min_web_docs:
-        return selected
-
-    doc_texts = []
-    for doc in docs:
-        text = db.load_document_text(doc)
-        doc_texts.append((doc.doc_id, f"{doc.title}\n{text}"))
-    scores = score_documents(query_tokens, doc_texts)
-    scores.sort(key=lambda item: item[1], reverse=True)
-    score_map = {docs[idx].doc_id: score for idx, score in scores}
-    candidates = [
-        docs[idx]
-        for idx, score in scores
-        if score > 0 and docs[idx].source_type == "web" and docs[idx].doc_id not in selected_ids
-    ]
-
-    for candidate in candidates:
-        if len(selected_web) >= min_web_docs:
-            break
-        if candidate.doc_id in selected_ids:
-            continue
-        selected.append(candidate)
-        selected_ids.add(candidate.doc_id)
-        selected_web.append(candidate)
-
-    return selected
-
 def skill_collect_interests(ctx: SkillContext) -> SkillContext:
     ensure_dirs()
     db.init_db()
@@ -940,6 +880,12 @@ def skill_collect_methods(ctx: SkillContext) -> SkillContext:
             if key not in merged:
                 merged[key] = method
         ctx.methods = list(merged.values())
+    return ctx
+
+
+def skill_load_profile(ctx: SkillContext) -> SkillContext:
+    store = KGStore()
+    ctx.extracted_interests = store.get_profile_terms(limit=3)
     return ctx
 
 
@@ -970,14 +916,6 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
         if score <= 0:
             continue
         selected.append(docs[idx])
-    selected = _ensure_min_web_docs(
-        selected,
-        docs,
-        query_tokens,
-        ctx.min_web_docs,
-        ctx.top_k,
-    )
-
     ctx.documents = selected
     db.mark_documents_used([doc.doc_id for doc in selected])
     log_task_event(
@@ -990,78 +928,71 @@ def skill_retrieve_sources(ctx: SkillContext) -> SkillContext:
 
 
 def skill_extract_kg(ctx: SkillContext) -> SkillContext:
-    if not ctx.documents:
+    store = KGStore()
+    if not ctx.llm:
+        ctx.extracted_interests = store.get_profile_terms(limit=3)
         return ctx
-    store = KGStore()
+    local_docs = []
+    for source in ("file", "note", "url"):
+        local_docs.extend(db.list_documents_by_source(source, limit=None))
+    if not local_docs:
+        ctx.extracted_interests = store.get_profile_terms(limit=3)
+        return ctx
+
     extracted = 0
-    total_docs = len(ctx.documents)
-    for idx, doc in enumerate(ctx.documents, start=1):
+    profiled = 0
+    new_doc_ids: list[str] = []
+    total_docs = len(local_docs)
+    model_name = ctx.llm.config.model if ctx.llm else "unknown"
+    if total_docs:
+        emit_progress("KGExtractor", model_name, "kg triples", 0, total_docs, done=False)
+        emit_progress("Profiler", model_name, "profile extraction", 0, total_docs, done=False)
+    for idx, doc in enumerate(local_docs, start=1):
+        if store.is_doc_extracted(doc.doc_id):
+            _progress_line("KGExtractor", "kg triples", model_name, idx, total_docs)
+            emit_progress("Profiler", model_name, "profile extraction", idx, total_docs, done=idx >= total_docs)
+            continue
         text = db.load_document_text(doc)
-        extracted += extract_and_store(store, ctx.llm, doc.doc_id, text, topic=ctx.topic)
-        _progress_line("KG extraction", idx, total_docs)
-    if extracted:
-        log_task_event(f"KG extraction: added_triples={extracted}")
-    return ctx
+        if not text.strip():
+            _progress_line("KGExtractor", "kg triples", model_name, idx, total_docs)
+            emit_progress("Profiler", model_name, "profile extraction", idx, total_docs, done=idx >= total_docs)
+            continue
+        try:
+            extracted += extract_and_store(store, ctx.llm, doc.doc_id, text, topic=ctx.topic)
+            new_doc_ids.append(doc.doc_id)
+        except LLMClientError as exc:
+            log_task_event(f"KG extraction skipped doc={doc.doc_id} error={exc}")
 
-
-def skill_extract_profile(ctx: SkillContext) -> SkillContext:
-    store = KGStore()
-    extracted = 0
-    if ctx.documents and ctx.llm:
-        total_docs = len(ctx.documents)
-        for idx, doc in enumerate(ctx.documents, start=1):
-            text = db.load_document_text(doc)
+        try:
             items = extract_profile_items(ctx.llm, text)
-            if items:
-                extracted += apply_profile_items(store, doc.doc_id, items)
-            _progress_line("Profile extraction", idx, total_docs)
-        if extracted:
-            log_task_event(f"Profile extraction: items_added={extracted}")
+        except LLMClientError as exc:
+            log_task_event(f"Profile extraction skipped doc={doc.doc_id} error={exc}")
+            items = []
+        if items:
+            profiled += apply_profile_items(store, doc.doc_id, items)
+        _progress_line("KGExtractor", "kg triples", model_name, idx, total_docs)
+        emit_progress("Profiler", model_name, "profile extraction", idx, total_docs, done=idx >= total_docs)
 
-    if ctx.documents and not extracted:
-        token_counts: Counter[str] = Counter()
-        for doc in ctx.documents:
-            text = db.load_document_text(doc)
-            for token in tokenize(text):
-                if len(token) < 3:
-                    continue
-                if token in _PROFILE_STOPWORDS:
-                    continue
-                token_counts[token] += 1
-        if token_counts:
-            most_common = token_counts.most_common(12)
-            max_count = most_common[0][1] if most_common else 1
-            for term, count in most_common:
-                salience = 0.2 + 0.8 * (count / max_count)
-                entity_id = store.upsert_entity(term)
-                store.set_profile_edge(entity_id, "interest", salience=salience)
-            log_task_event("Profile extraction: heuristic interests applied.")
+    if extracted:
+        log_task_event(f"Local KG extraction: added_triples={extracted}")
+    if profiled:
+        log_task_event(f"Profile extraction (local): items_added={profiled}")
 
-    if ctx.documents:
+    if not profiled:
+        log_task_event("Profile extraction (local): no items extracted; leaving profile unchanged.")
+
+    if profiled and new_doc_ids:
         update_profile_from_mentions(
             store,
-            [doc.doc_id for doc in ctx.documents],
-            profile_type="interest",
+            new_doc_ids,
             limit=10,
         )
 
-    for interest in ctx.interests:
-        if not interest.topic:
-            continue
-        entity_id = store.upsert_entity(interest.topic)
-        store.set_profile_edge(entity_id, "interest", salience=0.9)
-
-    if ctx.topic:
-        entity_id = store.upsert_entity(ctx.topic)
-        store.set_profile_edge(entity_id, "focus", salience=0.7)
-
-    ctx.extracted_interests = store.get_profile_terms("interest", limit=3)
+    ctx.extracted_interests = store.get_profile_terms(limit=3)
     return ctx
 
 
 def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
-    if not ctx.documents:
-        return ctx
     ctx.kg_fact_cards = []
     store = KGStore()
     query_parts = [ctx.topic]
@@ -1079,7 +1010,11 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
     )
     seed_terms = seed_terms_from_query(query, seed_terms)
     seeds = store.seed_entities_from_terms(seed_terms, limit=12)
-    subgraph = store.subgraph([entity.entity_id for entity in seeds], hops=1, min_confidence=0.3)
+    subgraph = store.subgraph(
+        [entity.entity_id for entity in seeds],
+        hops=max(1, int(ctx.kg_hops or 1)),
+        min_confidence=0.3,
+    )
     log_subgraph_summary(subgraph)
 
     timeframe_label = None
@@ -1152,6 +1087,7 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
             evidence_snippets: list[str] = []
             evidence_conf: list[float] = []
             seen_docs: set[str] = set()
+            source_type_counts: dict[str, int] = {}
             dates: list[datetime] = []
             for ev in rel_evidence:
                 doc = doc_lookup.get(ev.doc_id)
@@ -1164,6 +1100,14 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
                     seen_docs.add(doc.doc_id)
                     title = doc.title or ""
                     doc_titles.append(title)
+                    source_type = (doc.source_type or "").strip().lower() or "unknown"
+                    if source_type in {"file", "note", "url"}:
+                        bucket = "local"
+                    elif source_type == "web":
+                        bucket = "web"
+                    else:
+                        bucket = source_type
+                    source_type_counts[bucket] = source_type_counts.get(bucket, 0) + 1
                     if rel.claim_id and title:
                         claim_sources.setdefault(rel.claim_id, [])
                         if title not in claim_sources[rel.claim_id]:
@@ -1174,6 +1118,13 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
 
             date_stats = _summarize_evidence_dates(dates)
             avg_ev_conf = sum(evidence_conf) / len(evidence_conf) if evidence_conf else 0.0
+            scope = "unknown"
+            if source_type_counts:
+                scope = "mixed"
+                if source_type_counts.get("local", 0) and not source_type_counts.get("web", 0):
+                    scope = "local_only"
+                elif source_type_counts.get("web", 0) and not source_type_counts.get("local", 0):
+                    scope = "web_only"
             fact_cards.append(
                 {
                     "subject": subject,
@@ -1183,6 +1134,8 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
                     "statement": statement,
                     "sources": [title for title in doc_titles if title],
                     "source_count": len({title for title in doc_titles if title}),
+                    "source_type_counts": source_type_counts,
+                    "source_scope": scope,
                     "evidence_snippets": evidence_snippets[:2],
                     "evidence_count": len(rel_evidence),
                     "evidence_confidence_avg": avg_ev_conf,
@@ -1227,15 +1180,11 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
     }
 
     if evidence_doc_ids_in_window:
-        doc_lookup = {doc.doc_id: doc for doc in db.list_documents(limit=400)}
-        selected = list(ctx.documents)
-        selected_ids = {doc.doc_id for doc in selected}
-        for doc_id in evidence_doc_ids_in_window:
-            doc = doc_lookup.get(doc_id)
-            if doc and doc.doc_id not in selected_ids:
-                selected.append(doc)
-                selected_ids.add(doc.doc_id)
-        ctx.documents = selected
+        docs = [doc_lookup[doc_id] for doc_id in evidence_doc_ids_in_window if doc_id in doc_lookup]
+        docs.sort(key=lambda doc: doc.added_at or "", reverse=True)
+        ctx.documents = docs
+    else:
+        ctx.documents = []
 
     db.mark_documents_used([doc.doc_id for doc in ctx.documents])
     log_task_event(
@@ -1250,7 +1199,15 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
 def skill_detect_contradictions(ctx: SkillContext) -> SkillContext:
     store = KGStore()
     def _progress(current: int, total: int) -> None:
-        _progress_line("Contradiction check", current, total)
+        model_name = ctx.llm.config.model if ctx.llm else "unknown"
+        emit_progress(
+            "KGContradiction",
+            model_name,
+            "contradiction check",
+            current,
+            total,
+            done=current >= total,
+        )
 
     updates = detect_contradictions(store, ctx.llm, max_pairs=40, progress=_progress)
     if updates:
@@ -1267,6 +1224,9 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         )
         return ctx
 
+    if not ctx.kg_subgraph_stats:
+        ctx = skill_retrieve_subgraph(ctx)
+
     modes = [mode.strip().lower() for mode in (ctx.web_modes or ["open", "lit"])]
     if "tech" in modes:
         modes = ["open" if mode == "tech" else mode for mode in modes]
@@ -1277,7 +1237,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
     interest_queries = []
     seen = set()
     store = KGStore()
-    profile_terms = store.get_profile_terms("interest", limit=3)
+    profile_terms = store.get_profile_terms(limit=3)
     seed_topic = ctx.normalized_query or ctx.topic
     for item in (
         [seed_topic]
@@ -1297,23 +1257,6 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         interest_queries = list(ctx.web_search_topics)
     if not interest_queries:
         return ctx
-
-    should_expand, reasons = _should_expand_web(ctx, store)
-    if not should_expand:
-        stats = ctx.kg_subgraph_stats or {}
-        log_task_event(
-            "Web retrieval skipped: "
-            f"entities={stats.get('entity_count', 0)} "
-            f"relations={stats.get('relation_count', 0)} "
-            f"claims={stats.get('claim_count', 0)} "
-            f"evidence={stats.get('evidence_count', 0)} "
-            f"avg_conf={stats.get('avg_confidence', 0.0):.2f}"
-        )
-        return ctx
-    if reasons == ["forced"]:
-        log_task_event("Web retrieval forced by CLI flags.")
-    else:
-        log_task_event(f"Web retrieval triggered: {', '.join(reasons)}")
 
     if ctx.round_number == 1 and not ctx.web_search_topics:
         ensure_dirs()
@@ -1351,14 +1294,33 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             },
             "preferred_sources": [],
         }
-        artifact = _render_web_search_artifact(payload)
-        artifact_path = PLANS_DIR / datetime.now().strftime("%Y_%m_%d_%H_%M_%S_web_search.md")
+        registry = SkillRegistry()
+        registry.load()
+        raw_query = ctx.raw_topic or ctx.topic
+        taxonomy = ctx.methodology_taxonomy or DEFAULT_METHOD_TAXONOMY
+        understanding = ctx.query_understanding
+        if not understanding:
+            understanding = normalize_query_understanding({}, raw_query, taxonomy)
+            _apply_query_understanding(ctx, understanding)
+        skill_catalog = _build_skill_catalog(registry)
+        predicted_skills = _predict_skills(ctx, registry)
+        artifact = render_query_artifact(
+            understanding,
+            raw_query,
+            taxonomy,
+            skill_catalog=skill_catalog,
+            predicted_skills=predicted_skills,
+            skill_hints=ctx.skill_hints,
+            web_search_payload=payload,
+        )
+        artifact_path = ctx.query_artifact_path or ARTIFACTS_DIR / datetime.now().strftime("%Y_%m_%d_%H_%M_query.md")
         artifact_path.write_text(artifact, encoding="utf-8")
+        ctx.query_artifact_path = artifact_path
         ctx.web_search_artifact_path = artifact_path
-        log_task_event(f"Web search plan saved: {artifact_path}")
+        log_task_event(f"Query + web search artifact saved: {artifact_path}")
         if ctx.review_query:
             if ctx.interactive:
-                print(f"Web search plan saved to {artifact_path}")
+                print(f"Query + web search artifact saved to {artifact_path}")
                 try:
                     _launch_query_editor(artifact_path)
                 except FileNotFoundError:
@@ -1369,8 +1331,15 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
                     input("Press Enter to continue... ")
             else:
                 log_task_event("Web search plan review requested but no TTY; continuing without editor.")
-            updated_payload = _extract_json_payload(artifact_path.read_text(encoding="utf-8"))
-            if isinstance(updated_payload, dict):
+            updated_text = artifact_path.read_text(encoding="utf-8")
+            updated_query_payload = parse_query_artifact(updated_text)
+            if updated_query_payload:
+                updated = normalize_query_understanding(updated_query_payload, raw_query, taxonomy)
+                _apply_query_understanding(ctx, updated)
+                ctx.skill_hints = _normalize_skill_hints(updated_query_payload.get("skill_hints"), registry)
+                log_task_event("Query understanding updated from reviewed artifact.")
+            updated_payload = parse_web_search_artifact(updated_text)
+            if isinstance(updated_payload, dict) and updated_payload:
                 updated_topics = _clean_query_list(updated_payload.get("search_topics"), ctx.methodology_terms)
                 if updated_topics:
                     interest_queries = updated_topics
@@ -1400,6 +1369,23 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
                 log_task_event("Web search plan updated from reviewed artifact.")
             else:
                 log_task_event("Web search plan review ignored (invalid JSON).")
+
+    should_expand, reasons = _should_expand_web(ctx, store)
+    if not should_expand:
+        stats = ctx.kg_subgraph_stats or {}
+        log_task_event(
+            "Web retrieval skipped: "
+            f"entities={stats.get('entity_count', 0)} "
+            f"relations={stats.get('relation_count', 0)} "
+            f"claims={stats.get('claim_count', 0)} "
+            f"evidence={stats.get('evidence_count', 0)} "
+            f"avg_conf={stats.get('avg_confidence', 0.0):.2f}"
+        )
+        return ctx
+    if reasons == ["forced"]:
+        log_task_event("Web retrieval forced by CLI flags.")
+    else:
+        log_task_event(f"Web retrieval triggered: {', '.join(reasons)}")
 
     ctx.web_modes = modes
     if interest_queries:
@@ -1484,13 +1470,11 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
     added = 0
     added_docs: list[db.Document] = []
     skipped_existing = 0
+    skipped_content = 0
     skipped_empty = 0
     for score, result in final:
         if not getattr(result, "text", ""):
             skipped_empty += 1
-            continue
-        if db.document_exists(result.url):
-            skipped_existing += 1
             continue
         tags = ["web", result.source]
         if "lit" in modes or "literature" in modes:
@@ -1502,13 +1486,24 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         if "forum" in modes:
             if result.source in {"reddit", "x"}:
                 tags.append("forum")
-        doc = db.add_document(
+        doc, created, dedupe_reason = db.add_document_dedup(
             title=result.title,
             source_type="web",
             source=result.url,
             content_text=result.text,
             tags=tags,
         )
+        if not created:
+            skipped_existing += 1
+            if dedupe_reason == "content_hash":
+                skipped_content += 1
+            db.update_document_stats(
+                doc.doc_id,
+                relevance_score=max(0.1, min(1.0, score)),
+                last_seen_at=datetime.now(timezone.utc).isoformat(),
+                last_seen_run=ctx.run_id,
+            )
+            continue
         db.update_document_stats(
             doc.doc_id,
             relevance_score=max(0.1, min(1.0, score)),
@@ -1525,6 +1520,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         f"accepted={len(final)} "
         f"added={added} "
         f"skipped_existing={skipped_existing} "
+        f"skipped_content={skipped_content} "
         f"skipped_empty={skipped_empty} "
         f"filtered={filtered_count}"
     )
@@ -1535,14 +1531,6 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             extracted += extract_and_store(store, ctx.llm, doc.doc_id, text, topic=ctx.topic)
         if extracted:
             log_task_event(f"KG extraction (web): added_triples={extracted}")
-        selected = list(ctx.documents)
-        selected_ids = {doc.doc_id for doc in selected}
-        for doc in added_docs:
-            if doc.doc_id not in selected_ids:
-                selected.append(doc)
-                selected_ids.add(doc.doc_id)
-        ctx.documents = selected
-        db.mark_documents_used([doc.doc_id for doc in ctx.documents])
     return ctx
 
 
@@ -1557,10 +1545,12 @@ def skill_plan_research(ctx: SkillContext) -> SkillContext:
         extracted_interests=ctx.extracted_interests,
         documents=ctx.documents,
         round_number=ctx.round_number,
-        theme_top_k=ctx.theme_top_k,
+        profile_top_k=ctx.profile_top_k,
         top_k_docs=ctx.top_k,
         kg_fact_cards=ctx.kg_fact_cards,
+        output_language=ctx.output_language,
         skill_guidance=ctx.skill_guidance,
+        run_id=ctx.run_id,
     )
     return ctx
 
@@ -1586,10 +1576,12 @@ def skill_refine_plan(ctx: SkillContext) -> SkillContext:
         methods=ctx.methods,
         extracted_interests=ctx.extracted_interests,
         round_number=ctx.round_number,
-        theme_top_k=ctx.theme_top_k,
+        profile_top_k=ctx.profile_top_k,
         top_k_docs=ctx.top_k,
         kg_fact_cards=ctx.kg_fact_cards,
+        output_language=ctx.output_language,
         skill_guidance=ctx.skill_guidance,
+        run_id=ctx.run_id,
     )
     cleaned_queries = [
         _trim_query(text)
@@ -1614,6 +1606,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         methods=ctx.methods,
         keywords=ctx.plan.keywords,
         kg_fact_cards=ctx.kg_fact_cards,
+        output_language=ctx.output_language,
         skill_guidance=ctx.skill_guidance,
         active_skills=ctx.active_skills,
         run_id=ctx.run_id,
@@ -1669,12 +1662,11 @@ def build_default_runner() -> SkillRunner:
     runner.register("infer_query", skill_infer_query)
     runner.register("collect_interests", skill_collect_interests)
     runner.register("collect_methods", skill_collect_methods)
+    runner.register("load_profile", skill_load_profile)
     runner.register("apply_skill_hints", skill_apply_skill_hints)
     runner.register("systems-engineering", skill_systems_engineering)
-    runner.register("web_retrieve", skill_web_retrieve)
-    runner.register("retrieve_sources", skill_retrieve_sources)
     runner.register("extract_kg", skill_extract_kg)
-    runner.register("extract_profile", skill_extract_profile)
+    runner.register("web_retrieve", skill_web_retrieve)
     runner.register("detect_contradictions", skill_detect_contradictions)
     runner.register("retrieve_subgraph", skill_retrieve_subgraph)
     runner.register("plan_research", skill_plan_research)

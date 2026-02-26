@@ -26,14 +26,12 @@ class Orchestrator:
                 "infer_query",
                 "collect_interests",
                 "collect_methods",
+                "load_profile",
                 "apply_skill_hints",
                 "systems-engineering",
-                "retrieve_sources",
-                "extract_kg",
-                "extract_profile",
-                "retrieve_subgraph",
-                "detect_contradictions",
                 "web_retrieve",
+                "detect_contradictions",
+                "retrieve_subgraph",
             ],
         )
         self.planner = Agent("planner", ["plan_research", "refine_plan"])

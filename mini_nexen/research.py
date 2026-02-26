@@ -7,16 +7,29 @@ from pathlib import Path
 from . import db
 from .agents import Orchestrator
 from .config import (
-    DEFAULT_THEME_TOP_K,
-    PLANS_DIR,
+    ARTIFACTS_DIR,
+    DEFAULT_KG_HOPS,
+    DEFAULT_PROFILE_TOP_K,
     WEB_ARCHIVE_RUNS_UNUSED,
     WEB_ARCHIVE_SCORE_THRESHOLD,
     WEB_DECAY_PER_RUN,
     ensure_dirs,
 )
-from .llm import build_client, load_llm_config, log_task_event
+from .llm import (
+    LLMClientError,
+    build_client,
+    emit_progress,
+    load_llm_config,
+    log_task_event,
+)
+from .kg import (
+    KGStore,
+    apply_profile_items,
+    extract_and_store,
+    extract_profile_items,
+    update_profile_from_mentions,
+)
 from .planning import outline_word_count
-from .seeds import ingest_seed_pack
 from .skills_runtime import SkillContext, build_default_runner
 
 
@@ -29,6 +42,204 @@ class ResearchResult:
     web_search_artifact_path: Path | None = None
 
 
+@dataclass
+class LocalKGResult:
+    local_docs: int
+    new_docs: int
+    triples_added: int
+    profile_rebuilt: bool
+    profile_items_added: int
+
+
+def _list_local_documents() -> list[db.Document]:
+    sources = ["file", "note", "url"]
+    docs: list[db.Document] = []
+    seen: set[str] = set()
+    for source in sources:
+        for doc in db.list_documents_by_source(source, limit=None, include_archived=True):
+            if doc.doc_id in seen:
+                continue
+            seen.add(doc.doc_id)
+            docs.append(doc)
+    docs.sort(key=lambda doc: doc.added_at or "", reverse=True)
+    return docs
+
+
+def _rebuild_profile_from_local(
+    store: KGStore,
+    llm: object,
+    local_docs: list[db.Document],
+) -> int:
+    store.clear_profile()
+    extracted = 0
+    model_name = getattr(llm, "config", None)
+    model_label = model_name.model if model_name else "unknown"
+    total_docs = len(local_docs)
+    if total_docs:
+        emit_progress(
+            "Profiler",
+            model_label,
+            "profile extraction",
+            0,
+            total_docs,
+            done=False,
+        )
+    for idx, doc in enumerate(local_docs, start=1):
+        text = db.load_document_text(doc)
+        if not text.strip():
+            if total_docs:
+                emit_progress(
+                    "Profiler",
+                    model_label,
+                    "profile extraction",
+                    idx,
+                    total_docs,
+                    done=idx >= total_docs,
+                )
+            continue
+        try:
+            items = extract_profile_items(llm, text)
+        except LLMClientError as exc:
+            log_task_event(f"Profile extraction skipped doc={doc.doc_id} error={exc}")
+            items = []
+        if items:
+            extracted += apply_profile_items(store, doc.doc_id, items)
+        if total_docs:
+            emit_progress(
+                "Profiler",
+                model_label,
+                "profile extraction",
+                idx,
+                total_docs,
+                done=idx >= total_docs,
+            )
+
+    if extracted == 0:
+        log_task_event("Profile extraction (local): no items extracted; leaving profile empty.")
+        return 0
+
+    doc_ids = [doc.doc_id for doc in local_docs]
+    if doc_ids:
+        update_profile_from_mentions(store, doc_ids, limit=10)
+
+    for interest in db.list_interests(limit=50):
+        if not interest.topic:
+            continue
+        entity_id = store.upsert_entity(interest.topic)
+        store.set_profile_edge(entity_id, salience=0.9)
+
+    return extracted
+
+
+def build_local_kg(
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    discover_model: bool | None = None,
+    rebuild_profile: bool = True,
+    force_profile_rebuild: bool = False,
+) -> LocalKGResult:
+    ensure_dirs()
+    db.init_db()
+    llm_config = load_llm_config(
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        discover_model=discover_model,
+    )
+    if not llm_config:
+        raise SystemExit("LLM configuration failed. Check provider/model settings.")
+
+    llm_client = build_client(llm_config)
+    store = KGStore()
+    local_docs = _list_local_documents()
+    if not local_docs:
+        return LocalKGResult(
+            local_docs=0,
+            new_docs=0,
+            triples_added=0,
+            profile_rebuilt=False,
+            profile_items_added=0,
+        )
+
+    triples_added = 0
+    new_doc_ids: list[str] = []
+    total_docs = len(local_docs)
+    model_label = llm_client.config.model
+    if total_docs:
+        emit_progress(
+            "KGExtractor",
+            model_label,
+            "kg triples",
+            0,
+            total_docs,
+            done=False,
+        )
+    for idx, doc in enumerate(local_docs, start=1):
+        if store.is_doc_extracted(doc.doc_id):
+            if total_docs:
+                emit_progress(
+                    "KGExtractor",
+                    model_label,
+                    "kg triples",
+                    idx,
+                    total_docs,
+                    done=idx >= total_docs,
+                )
+            continue
+        text = db.load_document_text(doc)
+        if not text.strip():
+            if total_docs:
+                emit_progress(
+                    "KGExtractor",
+                    model_label,
+                    "kg triples",
+                    idx,
+                    total_docs,
+                    done=idx >= total_docs,
+                )
+            continue
+        try:
+            triples_added += extract_and_store(store, llm_client, doc.doc_id, text)
+            new_doc_ids.append(doc.doc_id)
+        except LLMClientError as exc:
+            log_task_event(f"KG extraction skipped doc={doc.doc_id} error={exc}")
+        if total_docs:
+            emit_progress(
+                "KGExtractor",
+                model_label,
+                "kg triples",
+                idx,
+                total_docs,
+                done=idx >= total_docs,
+            )
+
+    profile_rebuilt = False
+    profile_items_added = 0
+    if force_profile_rebuild or (rebuild_profile and new_doc_ids):
+        profile_rebuilt = True
+        profile_items_added = _rebuild_profile_from_local(store, llm_client, local_docs)
+
+    log_task_event(
+        "Local KG build: "
+        f"docs={len(local_docs)} new_docs={len(new_doc_ids)} triples_added={triples_added}"
+    )
+    if profile_rebuilt:
+        log_task_event(f"Profile rebuilt from local docs: items_added={profile_items_added}")
+
+    return LocalKGResult(
+        local_docs=len(local_docs),
+        new_docs=len(new_doc_ids),
+        triples_added=triples_added,
+        profile_rebuilt=profile_rebuilt,
+        profile_items_added=profile_items_added,
+    )
+
+
 def _plan_filename(now: datetime) -> str:
     return now.strftime("%Y_%m_%d_%H_%M_plan.md")
 
@@ -37,7 +248,7 @@ def run_research(
     topic: str,
     rounds: int,
     top_k: int,
-    min_web_docs: int = 0,
+    output_language: str = "Chinese",
     provider: str | None = None,
     model: str | None = None,
     base_url: str | None = None,
@@ -63,19 +274,16 @@ def run_research(
     web_max_per_query: int = 10,
     web_relevance_threshold: float = 0.25,
     web_max_rounds: int = 3,
-    ingest_seeds: bool = False,
-    auto_interest: bool = False,
     auto_methods: bool = True,
     review_query: bool | None = None,
     interactive: bool = False,
     methodology_taxonomy: list[str] | None = None,
-    theme_top_k: int = DEFAULT_THEME_TOP_K,
+    profile_top_k: int = DEFAULT_PROFILE_TOP_K,
+    kg_hops: int = DEFAULT_KG_HOPS,
 ) -> ResearchResult:
     ensure_dirs()
     db.init_db()
     run_id = db.increment_research_run()
-    if ingest_seeds:
-        ingest_seed_pack()
     decay_result = db.decay_web_documents(
         decay_per_run=WEB_DECAY_PER_RUN,
         archive_threshold=WEB_ARCHIVE_SCORE_THRESHOLD,
@@ -87,9 +295,6 @@ def run_research(
         f"archived={decay_result.archived} "
         f"run_id={run_id}"
     )
-
-    if auto_interest:
-        db.add_interest(topic=topic, notes="")
 
     runner = build_default_runner()
     supervisor = Orchestrator(runner)
@@ -107,9 +312,9 @@ def run_research(
     ctx = SkillContext(
         topic=topic,
         raw_topic=topic,
+        output_language=output_language,
         max_rounds=rounds,
         top_k=top_k,
-        min_web_docs=min_web_docs,
         run_id=run_id,
         llm=llm_client,
         auto_methods=auto_methods,
@@ -135,13 +340,14 @@ def run_research(
         web_max_per_query=web_max_per_query,
         web_relevance_threshold=web_relevance_threshold,
         web_max_rounds=web_max_rounds,
-        theme_top_k=theme_top_k,
+        profile_top_k=profile_top_k,
+        kg_hops=kg_hops,
     )
     ctx = supervisor.run(ctx)
 
     plan_md = ctx.plan_md
     now = datetime.now()
-    plan_path = PLANS_DIR / _plan_filename(now)
+    plan_path = ARTIFACTS_DIR / _plan_filename(now)
     plan_path.write_text(plan_md, encoding="utf-8")
 
     return ResearchResult(

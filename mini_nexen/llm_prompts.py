@@ -5,7 +5,7 @@ from typing import Iterable
 
 from .db import Document, Interest, Method
 
-SYSTEM_PLAN_PROMPT = """You are a research planning agent. All natural-language content MUST be in Chinese. Produce a plan that is concise, actionable, and focused on gaps.
+SYSTEM_PLAN_PROMPT = """You are a research planning agent. Produce a plan that is concise, actionable, and focused on gaps. All natural-language content MUST be in the requested output language.
 Return ONE valid JSON object only. No markdown, no commentary, no extra text.
 
 Requirements:
@@ -17,18 +17,21 @@ Requirements:
 - retrieval_queries is optional; if provided, it must be a short list of search phrases
 - readiness must be one of: "draft", "refined", "ready"
 - Output must be strict JSON (double quotes, no trailing commas)
-- All natural-language content MUST be in Chinese, except retrieval_queries must be in English.
+- All natural-language content MUST be in the requested output language, except retrieval_queries must be in English.
 - Keep JSON keys in English.
 - Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.
 - Use ASCII punctuation for JSON (":" and ","), not full-width punctuation.
 - When evidence includes confidence or recency, prefer higher-confidence and more recent evidence.
-All natural-language content MUST be in Chinese.
+All natural-language content MUST be in the requested output language.
 
-Example:
+Example (Chinese):
+{"scope":["..."],"key_questions":["..."],"keywords":["..."],"gaps":["..."],"notes":["..."],"readiness":"draft","retrieval_queries":["..."]}
+
+Example (English):
 {"scope":["..."],"key_questions":["..."],"keywords":["..."],"gaps":["..."],"notes":["..."],"readiness":"draft","retrieval_queries":["..."]}
 """
 
-SYSTEM_OUTLINE_PROMPT = """You are a research planning agent. All natural-language content MUST be in Chinese. Produce a research plan (not a report outline).
+SYSTEM_OUTLINE_PROMPT = """You are a research planning agent. Produce a research plan (not a report outline). All natural-language content MUST be in the requested output language.
 Return ONE valid JSON object only. No markdown, no commentary, no extra text.
 
 Requirements:
@@ -43,14 +46,17 @@ Requirements:
 - Output must be strict JSON (double quotes, no trailing commas)
 - Treat methods as analysis approaches to apply to the topic, not as the topic itself.
 - If methods are provided, the research plan MUST explicitly structure steps around those methods.
-- All natural-language content MUST be in Chinese.
+- All natural-language content MUST be in the requested output language.
 - Keep JSON keys in English.
 - Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.
 - Use ASCII punctuation for JSON (":" and ","), not full-width punctuation.
 - When evidence includes confidence or recency, prefer higher-confidence and more recent evidence.
-All natural-language content MUST be in Chinese.
+All natural-language content MUST be in the requested output language.
 
-Example:
+Example (Chinese):
+{"outline":[{"title":"查找官方技术报告与发布博客以提取架构与训练细节。","substeps":["列出要检索的官方来源与发布页面。","提取训练规模、数据来源与能力摘要。",{"text":"捕捉部署背景与版本历史。","substeps":["记录发布节奏与更新日志。","整理公开的限制与注意事项。"]}]},{"title":"比较不同模型的上下文长度与长上下文准确性。","substeps":["收集厂商声明与独立基准。","分析长上下文召回与检索性能。",{"text":"识别失效案例。","substeps":["总结常见错误模式。","记录实践中的缓解策略。"]}]}]}
+
+Example (English):
 {"outline":[{"title":"Search for official technical reports and release blogs to extract architecture and training details.","substeps":["List official sources and release pages to target.","Extract training scale, data sources, and capability summaries.",{"text":"Capture deployment context and version history.","substeps":["Note release cadence and changelogs.","Record published caveats or limitations."]}]},{"title":"Compare context window sizes and long-context accuracy across models.","substeps":["Collect vendor claims and independent benchmarks.","Analyze long-context recall and retrieval performance.",{"text":"Identify failure cases.","substeps":["Summarize common error patterns.","Note mitigation strategies reported by practitioners."]}]}]}
 """
 
@@ -100,6 +106,7 @@ def plan_prompt(
     keywords: list[str],
     extracted_interests: list[str] | None = None,
     kg_fact_cards: list[dict] | None = None,
+    output_language: str = "Chinese",
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
@@ -107,6 +114,7 @@ def plan_prompt(
         "interests": _serialize_interests(interests),
         "methods": _serialize_methods(methods),
         "documents": _serialize_documents(documents, keywords),
+        "output_language": output_language,
         "instructions": {
             "output_json_schema": {
                 "scope": ["string"],
@@ -118,7 +126,7 @@ def plan_prompt(
                 "readiness": "draft | refined | ready",
             },
             "language_policy": [
-                "All list items must be in Chinese.",
+                f"All list items must be in {output_language}.",
                 "retrieval_queries must be in English.",
                 "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
             ],
@@ -194,6 +202,7 @@ def refine_prompt(
     keywords: list[str],
     extracted_interests: list[str] | None = None,
     kg_fact_cards: list[dict] | None = None,
+    output_language: str = "Chinese",
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
@@ -202,6 +211,7 @@ def refine_prompt(
         "interests": _serialize_interests(interests),
         "methods": _serialize_methods(methods),
         "documents": _serialize_documents(documents, keywords),
+        "output_language": output_language,
         "instructions": {
             "output_json_schema": {
                 "scope": ["string"],
@@ -213,7 +223,7 @@ def refine_prompt(
                 "readiness": "draft | refined | ready",
             },
             "language_policy": [
-                "All list items must be in Chinese.",
+                f"All list items must be in {output_language}.",
                 "retrieval_queries must be in English.",
                 "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
             ],
@@ -258,6 +268,7 @@ def outline_prompt(
     documents: list[Document],
     keywords: list[str],
     kg_fact_cards: list[dict] | None = None,
+    output_language: str = "Chinese",
     length_hint: str | None = None,
     language_hint: str | None = None,
     structure_guidance: list[str] | None = None,
@@ -269,14 +280,15 @@ def outline_prompt(
         "methods": _serialize_methods(methods),
         "documents": _serialize_documents(documents, keywords),
         "keywords": keywords,
+        "output_language": output_language,
         "instructions": {
             "output_json_schema": {
                 "outline": ["string"]
             },
             "language_policy": [
-                "All natural-language content MUST be in Chinese.",
+                f"All natural-language content MUST be in {output_language}.",
                 "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
-                "All natural-language content MUST be in Chinese.",
+                f"All natural-language content MUST be in {output_language}.",
             ],
             "outline_expectations": [
             "Include major sections and subtopics to expand later.",
@@ -292,7 +304,7 @@ def outline_prompt(
                 "Do not treat methods as the topic itself.",
                 "If methods are provided, align major steps to the methods and weave method names into the step text.",
                 "Do not add bracketed method tags in titles.",
-                "If method names are not Chinese, translate them into Chinese step titles and include the original in parentheses.",
+                f"If method names are not in {output_language}, translate them into {output_language} step titles and include the original in parentheses.",
             ],
             "kg_guidance": [
                 "If kg_fact_cards is provided, use it to ground claims and outline steps.",

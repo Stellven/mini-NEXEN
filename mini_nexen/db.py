@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from .config import DB_PATH, LIBRARY_DIR, ensure_dirs
+
+
+_HASH_BACKFILL_DONE = False
 
 
 @dataclass
@@ -60,9 +66,28 @@ CREATE TABLE IF NOT EXISTS documents (
     source_type TEXT NOT NULL,
     source TEXT NOT NULL,
     content_path TEXT NOT NULL,
+    content_hash TEXT,
     added_at TEXT NOT NULL,
     tags_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS document_sources (
+    doc_id TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_canonical TEXT NOT NULL,
+    added_at TEXT NOT NULL,
+    PRIMARY KEY (doc_id, source)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_document_sources_source
+    ON document_sources(source);
+
+CREATE INDEX IF NOT EXISTS idx_document_sources_doc_id
+    ON document_sources(doc_id);
+
+CREATE INDEX IF NOT EXISTS idx_document_sources_canonical
+    ON document_sources(source_canonical);
 
 CREATE TABLE IF NOT EXISTS interests (
     interest_id TEXT PRIMARY KEY,
@@ -208,7 +233,6 @@ CREATE TABLE IF NOT EXISTS kg_user_profile (
     profile_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     entity_id TEXT NOT NULL,
-    profile_type TEXT NOT NULL,
     salience REAL NOT NULL,
     start_date TEXT,
     end_date TEXT,
@@ -216,9 +240,6 @@ CREATE TABLE IF NOT EXISTS kg_user_profile (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_kg_profile_user_type
-    ON kg_user_profile(user_id, profile_type);
 
 CREATE INDEX IF NOT EXISTS idx_kg_profile_entity
     ON kg_user_profile(entity_id);
@@ -254,6 +275,7 @@ def _connect() -> sqlite3.Connection:
 def init_db() -> None:
     with _connect() as conn:
         conn.executescript(SCHEMA)
+    _ensure_documents_schema()
     _ensure_document_stats_schema()
     _ensure_kg_schema()
 
@@ -262,29 +284,115 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_TRACKING_QUERY_KEYS = {
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "utm_id",
+    "gclid",
+    "fbclid",
+    "yclid",
+    "mc_cid",
+    "mc_eid",
+}
+
+
+def _canonicalize_url(url: str) -> str:
+    text = (url or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = urlparse(text)
+    except ValueError:
+        return text
+    if not parsed.scheme or not parsed.netloc:
+        return text
+    scheme = parsed.scheme.lower()
+    host = parsed.hostname.lower() if parsed.hostname else parsed.netloc.lower()
+    port = parsed.port
+    if port:
+        default = (scheme == "https" and port == 443) or (scheme == "http" and port == 80)
+        if not default:
+            host = f"{host}:{port}"
+    path = parsed.path or "/"
+    if path != "/":
+        path = path.rstrip("/")
+    query_pairs = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=False)
+        if key.lower() not in _TRACKING_QUERY_KEYS
+    ]
+    query = urlencode(sorted(query_pairs))
+    return urlunparse((scheme, host, path, "", query, ""))
+
+
+def _canonicalize_source(source_type: str, source: str) -> str:
+    text = (source or "").strip()
+    if not text:
+        return ""
+    if source_type in {"web", "url"}:
+        canonical = _canonicalize_url(text)
+        return canonical or text
+    return text
+
+
+def _normalize_text_for_hash(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line.strip() for line in cleaned.split("\n")]
+    lines = [line for line in lines if line]
+    normalized = "\n".join(lines)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def compute_content_hash(text: str) -> str:
+    normalized = _normalize_text_for_hash(text)
+    if not normalized:
+        return ""
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def add_document(
     title: str,
     source_type: str,
     source: str,
     content_text: str,
     tags: Optional[Iterable[str]] = None,
+    content_hash: str | None = None,
 ) -> Document:
     init_db()
+    _ensure_documents_schema()
     doc_id = str(uuid.uuid4())
     tags_list = list(tags or [])
     content_path = str(LIBRARY_DIR / f"{doc_id}.txt")
     added_at = _now_iso()
 
     Path(content_path).write_text(content_text, encoding="utf-8")
+    if content_hash is None:
+        content_hash = compute_content_hash(content_text)
+    source_canonical = _canonicalize_source(source_type, source)
 
     with _connect() as conn:
         conn.execute(
             """
             INSERT INTO documents
-                (doc_id, title, source_type, source, content_path, added_at, tags_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (doc_id, title, source_type, source, content_path, content_hash, added_at, tags_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (doc_id, title, source_type, source, content_path, added_at, json.dumps(tags_list)),
+            (
+                doc_id,
+                title,
+                source_type,
+                source,
+                content_path,
+                content_hash,
+                added_at,
+                json.dumps(tags_list),
+            ),
         )
         initial_score = 0.6 if source_type == "web" else 1.0
         run_id = get_current_run_id()
@@ -294,6 +402,14 @@ def add_document(
             VALUES (?, ?, ?, ?, 0)
             """,
             (doc_id, initial_score, added_at, run_id),
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO document_sources
+                (doc_id, source_type, source, source_canonical, added_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (doc_id, source_type, source, source_canonical, added_at),
         )
 
     return Document(
@@ -305,6 +421,122 @@ def add_document(
         added_at=added_at,
         tags=tags_list,
     )
+
+
+def _fetch_document_by_id(conn: sqlite3.Connection, doc_id: str) -> Document | None:
+    row = conn.execute(
+        """
+        SELECT doc_id, title, source_type, source, content_path, added_at, tags_json
+        FROM documents
+        WHERE doc_id = ?
+        """,
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        return None
+    return Document(
+        doc_id=row["doc_id"],
+        title=row["title"],
+        source_type=row["source_type"],
+        source=row["source"],
+        content_path=row["content_path"],
+        added_at=row["added_at"],
+        tags=json.loads(row["tags_json"]),
+    )
+
+
+def _find_doc_id_by_source(conn: sqlite3.Connection, source: str, source_canonical: str) -> str | None:
+    row = conn.execute(
+        "SELECT doc_id FROM documents WHERE source = ? LIMIT 1",
+        (source,),
+    ).fetchone()
+    if row:
+        return row["doc_id"]
+    row = conn.execute(
+        "SELECT doc_id FROM document_sources WHERE source = ? LIMIT 1",
+        (source,),
+    ).fetchone()
+    if row:
+        return row["doc_id"]
+    if source_canonical:
+        row = conn.execute(
+            "SELECT doc_id FROM document_sources WHERE source_canonical = ? LIMIT 1",
+            (source_canonical,),
+        ).fetchone()
+        if row:
+            return row["doc_id"]
+    return None
+
+
+def _find_doc_id_by_hash(conn: sqlite3.Connection, content_hash: str) -> str | None:
+    if not content_hash:
+        return None
+    row = conn.execute(
+        "SELECT doc_id FROM documents WHERE content_hash = ? LIMIT 1",
+        (content_hash,),
+    ).fetchone()
+    if row:
+        return row["doc_id"]
+    return None
+
+
+def _add_document_source(
+    conn: sqlite3.Connection,
+    doc_id: str,
+    source_type: str,
+    source: str,
+    source_canonical: str,
+    added_at: str | None = None,
+) -> None:
+    if not source or not doc_id:
+        return
+    timestamp = added_at or _now_iso()
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO document_sources
+            (doc_id, source_type, source, source_canonical, added_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (doc_id, source_type, source, source_canonical, timestamp),
+    )
+
+
+def add_document_dedup(
+    title: str,
+    source_type: str,
+    source: str,
+    content_text: str,
+    tags: Optional[Iterable[str]] = None,
+) -> tuple[Document, bool, str | None]:
+    init_db()
+    _ensure_documents_schema()
+    _ensure_document_hashes()
+    source_canonical = _canonicalize_source(source_type, source)
+    with _connect() as conn:
+        doc_id = _find_doc_id_by_source(conn, source, source_canonical)
+        if doc_id:
+            _add_document_source(conn, doc_id, source_type, source, source_canonical)
+            existing = _fetch_document_by_id(conn, doc_id)
+            if existing:
+                return existing, False, "source"
+    content_hash = compute_content_hash(content_text)
+    if content_hash:
+        with _connect() as conn:
+            doc_id = _find_doc_id_by_hash(conn, content_hash)
+            if doc_id:
+                _add_document_source(conn, doc_id, source_type, source, source_canonical)
+                existing = _fetch_document_by_id(conn, doc_id)
+                if existing:
+                    return existing, False, "content_hash"
+    doc = add_document(
+        title=title,
+        source_type=source_type,
+        source=source,
+        content_text=content_text,
+        tags=tags,
+        content_hash=content_hash,
+    )
+    return doc, True, None
 
 
 def list_documents(limit: int = 200) -> list[Document]:
@@ -321,6 +553,48 @@ def list_documents(limit: int = 200) -> list[Document]:
             LIMIT ?
             """,
             (limit,),
+        ).fetchall()
+
+    docs = []
+    for row in rows:
+        docs.append(
+            Document(
+                doc_id=row["doc_id"],
+                title=row["title"],
+                source_type=row["source_type"],
+                source=row["source"],
+                content_path=row["content_path"],
+                added_at=row["added_at"],
+                tags=json.loads(row["tags_json"]),
+            )
+        )
+    return docs
+
+
+def list_documents_by_source(
+    source_type: str,
+    limit: int | None = None,
+    include_archived: bool = False,
+) -> list[Document]:
+    init_db()
+    _ensure_document_stats()
+    archived_clause = "" if include_archived else "AND s.archived = 0"
+    limit_clause = "" if limit is None else "LIMIT ?"
+    params: list[object] = [source_type]
+    if limit is not None:
+        params.append(limit)
+    with _connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT d.doc_id, d.title, d.source_type, d.source, d.content_path, d.added_at, d.tags_json
+            FROM documents d
+            JOIN document_stats s ON d.doc_id = s.doc_id
+            WHERE d.source_type = ?
+              {archived_clause}
+            ORDER BY d.added_at DESC
+            {limit_clause}
+            """,
+            tuple(params),
         ).fetchall()
 
     docs = []
@@ -372,6 +646,75 @@ def _ensure_document_stats_schema() -> None:
             conn.execute("ALTER TABLE document_stats ADD COLUMN last_seen_run INTEGER")
 
 
+def _ensure_documents_schema() -> None:
+    with _connect() as conn:
+        rows = conn.execute("PRAGMA table_info(documents)").fetchall()
+        cols = {row["name"] for row in rows}
+        if "content_hash" not in cols:
+            conn.execute("ALTER TABLE documents ADD COLUMN content_hash TEXT")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS document_sources (
+                doc_id TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source TEXT NOT NULL,
+                source_canonical TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (doc_id, source)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_document_sources_source ON document_sources(source)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_document_sources_doc_id ON document_sources(doc_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_document_sources_canonical ON document_sources(source_canonical)"
+        )
+        rows = conn.execute(
+            "SELECT doc_id, source_type, source, added_at FROM documents"
+        ).fetchall()
+        for row in rows:
+            canonical = _canonicalize_source(row["source_type"], row["source"])
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO document_sources
+                    (doc_id, source_type, source, source_canonical, added_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (row["doc_id"], row["source_type"], row["source"], canonical, row["added_at"]),
+            )
+
+
+def _ensure_document_hashes() -> None:
+    global _HASH_BACKFILL_DONE
+    if _HASH_BACKFILL_DONE:
+        return
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT doc_id, content_path FROM documents WHERE content_hash IS NULL OR content_hash = ''"
+        ).fetchall()
+    if not rows:
+        _HASH_BACKFILL_DONE = True
+        return
+    for row in rows:
+        try:
+            text = Path(row["content_path"]).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        digest = compute_content_hash(text)
+        if not digest:
+            continue
+        with _connect() as conn:
+            conn.execute(
+                "UPDATE documents SET content_hash = ? WHERE doc_id = ?",
+                (digest, row["doc_id"]),
+            )
+    _HASH_BACKFILL_DONE = True
+
+
 def _ensure_kg_schema() -> None:
     with _connect() as conn:
         rows = conn.execute("PRAGMA table_info(kg_users)").fetchall()
@@ -391,6 +734,96 @@ def _ensure_kg_schema() -> None:
         cols = {row["name"] for row in rows}
         if rows and "claim_id" not in cols:
             conn.execute("ALTER TABLE kg_evidence ADD COLUMN claim_id TEXT")
+        rows = conn.execute("PRAGMA table_info(kg_user_profile)").fetchall()
+        if rows:
+            cols = {row["name"] for row in rows}
+            needs_rebuild = "profile_type" in cols
+            if not needs_rebuild:
+                dup = conn.execute(
+                    """
+                    SELECT 1
+                    FROM kg_user_profile
+                    GROUP BY user_id, entity_id
+                    HAVING COUNT(*) > 1
+                    LIMIT 1
+                    """
+                ).fetchone()
+                needs_rebuild = bool(dup)
+
+            if needs_rebuild:
+                existing = conn.execute(
+                    """
+                    SELECT profile_id, user_id, entity_id, salience, start_date, end_date,
+                           source_doc_id, created_at, updated_at
+                    FROM kg_user_profile
+                    """
+                ).fetchall()
+                merged: dict[tuple[str, str], sqlite3.Row] = {}
+                for row in existing:
+                    key = (row["user_id"], row["entity_id"])
+                    current = merged.get(key)
+                    if not current:
+                        merged[key] = row
+                        continue
+                    current_salience = float(current["salience"] or 0.0)
+                    candidate_salience = float(row["salience"] or 0.0)
+                    if candidate_salience > current_salience:
+                        merged[key] = row
+                        continue
+                    if candidate_salience == current_salience:
+                        if (row["updated_at"] or "") > (current["updated_at"] or ""):
+                            merged[key] = row
+
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS kg_user_profile_new (
+                        profile_id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        salience REAL NOT NULL,
+                        start_date TEXT,
+                        end_date TEXT,
+                        source_doc_id TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    """
+                )
+                for row in merged.values():
+                    conn.execute(
+                        """
+                        INSERT INTO kg_user_profile_new
+                            (profile_id, user_id, entity_id, salience, start_date, end_date,
+                             source_doc_id, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            row["profile_id"],
+                            row["user_id"],
+                            row["entity_id"],
+                            row["salience"],
+                            row["start_date"],
+                            row["end_date"],
+                            row["source_doc_id"],
+                            row["created_at"],
+                            row["updated_at"],
+                        ),
+                    )
+                conn.execute("DROP TABLE kg_user_profile")
+                conn.execute("ALTER TABLE kg_user_profile_new RENAME TO kg_user_profile")
+
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_profile_user_entity
+                    ON kg_user_profile(user_id, entity_id);
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_kg_profile_entity
+                    ON kg_user_profile(entity_id);
+                """
+            )
 
 
 def mark_documents_seen(doc_ids: Iterable[str]) -> None:
@@ -518,11 +951,32 @@ def decay_web_documents(
 
 def document_exists(source: str) -> bool:
     init_db()
+    _ensure_documents_schema()
+    source_canonical = _canonicalize_source("url", source)
     with _connect() as conn:
         row = conn.execute(
-            "SELECT 1 FROM documents WHERE source = ? LIMIT 1",
+            """
+            SELECT 1 FROM documents WHERE source = ? LIMIT 1
+            """,
             (source,),
         ).fetchone()
+        if row is not None:
+            return True
+        row = conn.execute(
+            """
+            SELECT 1 FROM document_sources WHERE source = ? LIMIT 1
+            """,
+            (source,),
+        ).fetchone()
+        if row is not None:
+            return True
+        if source_canonical:
+            row = conn.execute(
+                """
+                SELECT 1 FROM document_sources WHERE source_canonical = ? LIMIT 1
+                """,
+                (source_canonical,),
+            ).fetchone()
     return row is not None
 
 
@@ -749,4 +1203,3 @@ def increment_research_run() -> int:
     current += 1
     set_meta("research_run_count", str(current))
     return current
-

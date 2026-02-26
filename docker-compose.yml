@@ -26,5 +26,5 @@ services:
       MINI_NEXEN_VERBOSE: ${MINI_NEXEN_VERBOSE:-1}
     volumes:
       - ./data:/app/data
-      - ./plans:/app/plans
+      - ./artifacts:/app/artifacts
     command: ["--help"]

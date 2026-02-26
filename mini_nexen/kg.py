@@ -46,7 +46,7 @@ PREDICATE_CANONICAL = {
 }
 
 PREDICATE_CHOICES = sorted(set(PREDICATE_CANONICAL.values()))
-PROFILE_TYPES = {"interest", "intent", "focus", "attention"}
+PROFILE_TYPE = "profile"
 ORG_TOKENS = {"inc", "corp", "co", "company", "ltd", "llc", "gmbh", "plc", "ag"}
 LAB_TOKENS = {"lab", "labs", "laboratory", "laboratories"}
 UNIVERSITY_TOKENS = {"university", "college", "institute", "school", "polytechnic"}
@@ -238,7 +238,6 @@ def _profile_prompt(text: str) -> str:
                 "output_format": "JSON array only",
                 "schema": [
                     {
-                        "profile_type": "one of: interest, intent, focus, attention",
                         "entity": "string",
                         "salience": "0-1 float",
                         "evidence": "short quote or sentence",
@@ -249,6 +248,7 @@ def _profile_prompt(text: str) -> str:
                 "rules": [
                     "Use short, canonical entity names.",
                     "Prefer concrete topics or goals over vague terms.",
+                    "Assume the user is a domain expert; prioritize advanced or technical interests over basic concepts.",
                     "Return 3-10 items maximum.",
                 ],
             },
@@ -273,9 +273,6 @@ def extract_profile_items(llm: LLMClient | None, text: str) -> list[dict]:
     for item in items:
         if not isinstance(item, dict):
             continue
-        profile_type = str(item.get("profile_type") or "").strip().casefold()
-        if profile_type not in PROFILE_TYPES:
-            continue
         entity = str(item.get("entity") or "").strip()
         if not entity:
             continue
@@ -288,7 +285,6 @@ def extract_profile_items(llm: LLMClient | None, text: str) -> list[dict]:
             salience = 0.6
         normalized.append(
             {
-                "profile_type": profile_type,
                 "entity": entity,
                 "salience": max(0.0, min(1.0, salience)),
                 "evidence": evidence,
@@ -310,6 +306,8 @@ def detect_contradictions(
         return 0
     updates = 0
     total = len(pairs)
+    if progress:
+        progress(0, total)
     for idx, (claim_a, claim_b) in enumerate(pairs, start=1):
         text_a = store.get_claim_text(claim_a) or ""
         text_b = store.get_claim_text(claim_b) or ""
@@ -584,7 +582,6 @@ class KGStore:
     def set_profile_edge(
         self,
         entity_id: str,
-        profile_type: str,
         salience: float,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -596,9 +593,9 @@ class KGStore:
             row = conn.execute(
                 """
                 SELECT profile_id, salience FROM kg_user_profile
-                WHERE user_id = ? AND entity_id = ? AND profile_type = ?
+                WHERE user_id = ? AND entity_id = ?
                 """,
-                (self.user_id, entity_id, profile_type),
+                (self.user_id, entity_id),
             ).fetchone()
             if row:
                 current_salience = float(row["salience"] or 0.0)
@@ -624,15 +621,14 @@ class KGStore:
             conn.execute(
                 """
                 INSERT INTO kg_user_profile
-                    (profile_id, user_id, entity_id, profile_type, salience,
+                    (profile_id, user_id, entity_id, salience,
                      start_date, end_date, source_doc_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     profile_id,
                     self.user_id,
                     entity_id,
-                    profile_type,
                     salience,
                     start_date,
                     end_date,
@@ -647,16 +643,18 @@ class KGStore:
         term = (term or "").strip()
         if not term:
             return []
-        like = f"%{term.casefold()}%"
+        canonical = _canonicalize_name(term)
+        canonical_like = f"%{canonical}%" if canonical else ""
+        raw_like = f"%{term.casefold()}%"
         with db._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT entity_id, name, canonical_name, type
                 FROM kg_entities
-                WHERE user_id = ? AND canonical_name LIKE ?
+                WHERE user_id = ? AND (canonical_name LIKE ? OR name LIKE ?)
                 LIMIT ?
                 """,
-                (self.user_id, like, limit),
+                (self.user_id, canonical_like or raw_like, raw_like, limit),
             ).fetchall()
         return [
             KGEntity(
@@ -683,20 +681,31 @@ class KGStore:
                     return seeds
         return seeds
 
-    def get_profile_terms(self, profile_type: str = "interest", limit: int = 5) -> list[str]:
+    def get_profile_terms(self, limit: int = 5) -> list[str]:
         with db._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT e.name
                 FROM kg_user_profile p
                 JOIN kg_entities e ON p.entity_id = e.entity_id
-                WHERE p.user_id = ? AND p.profile_type = ?
+                WHERE p.user_id = ?
                 ORDER BY p.salience DESC
                 LIMIT ?
                 """,
-                (self.user_id, profile_type, limit),
+                (self.user_id, limit),
             ).fetchall()
         return [row["name"] for row in rows if row["name"]]
+
+    def clear_profile(self) -> int:
+        with db._connect() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM kg_user_profile
+                WHERE user_id = ?
+                """,
+                (self.user_id,),
+            )
+        return int(cur.rowcount or 0)
 
     def get_entities_by_type(self, type_name: str, limit: int = 50) -> list[KGEntity]:
         with db._connect() as conn:
@@ -798,37 +807,24 @@ class KGStore:
 
     def get_profile(
         self,
-        profile_types: Iterable[str] | None = None,
         limit: int = 50,
     ) -> list[dict]:
-        type_filter = ""
-        params: list[object] = [self.user_id]
-        if profile_types:
-            cleaned = [ptype for ptype in profile_types if ptype in PROFILE_TYPES]
-            if cleaned:
-                type_filter = "AND p.profile_type IN ({})".format(
-                    ",".join("?" for _ in cleaned)
-                )
-                params.extend(cleaned)
-        params.append(limit)
         with db._connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT p.profile_id, p.profile_type, p.salience, p.start_date, p.end_date,
+                SELECT p.profile_id, p.salience, p.start_date, p.end_date,
                        p.source_doc_id, e.name, e.entity_id
                 FROM kg_user_profile p
                 JOIN kg_entities e ON p.entity_id = e.entity_id
                 WHERE p.user_id = ?
-                {type_filter}
                 ORDER BY p.salience DESC
                 LIMIT ?
                 """,
-                tuple(params),
+                (self.user_id, limit),
             ).fetchall()
         return [
             {
                 "profile_id": row["profile_id"],
-                "profile_type": row["profile_type"],
                 "salience": float(row["salience"] or 0.0),
                 "start_date": row["start_date"],
                 "end_date": row["end_date"],
@@ -913,7 +909,51 @@ class KGStore:
     def merge_entities(self, entity_id_a: str, entity_id_b: str) -> None:
         if not entity_id_a or not entity_id_b or entity_id_a == entity_id_b:
             return
+        now = _now_iso()
         with db._connect() as conn:
+            row_a = conn.execute(
+                """
+                SELECT profile_id, salience, start_date, end_date, source_doc_id
+                FROM kg_user_profile
+                WHERE user_id = ? AND entity_id = ?
+                """,
+                (self.user_id, entity_id_a),
+            ).fetchone()
+            row_b = conn.execute(
+                """
+                SELECT profile_id, salience, start_date, end_date, source_doc_id
+                FROM kg_user_profile
+                WHERE user_id = ? AND entity_id = ?
+                """,
+                (self.user_id, entity_id_b),
+            ).fetchone()
+            if row_b:
+                if row_a:
+                    salience = max(float(row_a["salience"] or 0.0), float(row_b["salience"] or 0.0))
+                    start_date = row_a["start_date"] or row_b["start_date"]
+                    end_date = row_a["end_date"] or row_b["end_date"]
+                    source_doc_id = row_a["source_doc_id"] or row_b["source_doc_id"]
+                    conn.execute(
+                        """
+                        UPDATE kg_user_profile
+                        SET salience = ?, start_date = ?, end_date = ?, source_doc_id = ?, updated_at = ?
+                        WHERE profile_id = ?
+                        """,
+                        (salience, start_date, end_date, source_doc_id, now, row_a["profile_id"]),
+                    )
+                    conn.execute(
+                        "DELETE FROM kg_user_profile WHERE profile_id = ?",
+                        (row_b["profile_id"],),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE kg_user_profile
+                        SET entity_id = ?, updated_at = ?
+                        WHERE profile_id = ?
+                        """,
+                        (entity_id_a, now, row_b["profile_id"]),
+                    )
             conn.execute(
                 "UPDATE kg_relations SET subject_id = ? WHERE subject_id = ?",
                 (entity_id_a, entity_id_b),
@@ -924,10 +964,6 @@ class KGStore:
             )
             conn.execute(
                 "UPDATE kg_mentions SET entity_id = ? WHERE entity_id = ?",
-                (entity_id_a, entity_id_b),
-            )
-            conn.execute(
-                "UPDATE kg_user_profile SET entity_id = ? WHERE entity_id = ?",
                 (entity_id_a, entity_id_b),
             )
             conn.execute("DELETE FROM kg_entities WHERE entity_id = ?", (entity_id_b,))
@@ -1275,7 +1311,6 @@ def extract_and_store(
 def update_profile_from_mentions(
     store: KGStore,
     doc_ids: Iterable[str],
-    profile_type: str = "interest",
     limit: int = 10,
 ) -> int:
     doc_list = [doc_id for doc_id in doc_ids if doc_id]
@@ -1300,7 +1335,7 @@ def update_profile_from_mentions(
     for row in rows:
         count = int(row["count"] or 0)
         salience = 0.2 + 0.8 * (count / max_count)
-        store.set_profile_edge(row["entity_id"], profile_type, salience)
+        store.set_profile_edge(row["entity_id"], salience)
         updates += 1
     return updates
 
@@ -1312,9 +1347,6 @@ def apply_profile_items(
 ) -> int:
     updates = 0
     for item in items:
-        profile_type = str(item.get("profile_type") or "").strip().casefold()
-        if profile_type not in PROFILE_TYPES:
-            continue
         entity = str(item.get("entity") or "").strip()
         if not entity:
             continue
@@ -1325,7 +1357,6 @@ def apply_profile_items(
         entity_id = store.upsert_entity(entity)
         store.set_profile_edge(
             entity_id,
-            profile_type,
             salience=salience,
             start_date=start_date,
             end_date=end_date,
@@ -1368,6 +1399,80 @@ def build_subgraph_for_terms(
     )
 
 
+def build_full_subgraph(
+    store: KGStore,
+    min_confidence: float = 0.0,
+    limit_edges: int = 200,
+) -> KGSubgraph:
+    with db._connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT relation_id, subject_id, predicate, object_id, claim_id, confidence
+            FROM kg_relations
+            WHERE user_id = ? AND confidence >= ?
+            LIMIT ?
+            """,
+            (store.user_id, min_confidence, limit_edges),
+        ).fetchall()
+    relations = [
+        KGRelation(
+            relation_id=row["relation_id"],
+            subject_id=row["subject_id"],
+            predicate=row["predicate"],
+            object_id=row["object_id"],
+            claim_id=row["claim_id"] if "claim_id" in row.keys() else None,
+            confidence=float(row["confidence"] or 0.0),
+        )
+        for row in rows
+    ]
+    if not relations:
+        return KGSubgraph(entities=[], relations=[], evidence=[])
+
+    entity_ids = {rel.subject_id for rel in relations} | {rel.object_id for rel in relations}
+    with db._connect() as conn:
+        entity_rows = conn.execute(
+            """
+            SELECT entity_id, name, canonical_name, type
+            FROM kg_entities
+            WHERE user_id = ? AND entity_id IN ({})
+            """.format(",".join("?" for _ in entity_ids)),
+            (store.user_id, *entity_ids),
+        ).fetchall()
+    entities = [
+        KGEntity(
+            entity_id=row["entity_id"],
+            name=row["name"],
+            canonical_name=row["canonical_name"],
+            type=row["type"],
+        )
+        for row in entity_rows
+    ]
+
+    relation_ids = [rel.relation_id for rel in relations]
+    with db._connect() as conn:
+        evidence_rows = conn.execute(
+            """
+            SELECT evidence_id, relation_id, doc_id, claim_id, quote, confidence
+            FROM kg_evidence
+            WHERE user_id = ? AND relation_id IN ({})
+            """.format(",".join("?" for _ in relation_ids)),
+            (store.user_id, *relation_ids),
+        ).fetchall()
+    evidence = [
+        KGEvidence(
+            evidence_id=row["evidence_id"],
+            relation_id=row["relation_id"],
+            doc_id=row["doc_id"],
+            claim_id=row["claim_id"] if "claim_id" in row.keys() else None,
+            quote=row["quote"],
+            confidence=float(row["confidence"] or 0.0),
+        )
+        for row in evidence_rows
+    ]
+
+    return KGSubgraph(entities=entities, relations=relations, evidence=evidence)
+
+
 def _escape_dot(text: str) -> str:
     cleaned = (text or "").replace("\\", "\\\\").replace("\"", "\\\"")
     cleaned = cleaned.replace("\n", " ").strip()
@@ -1384,6 +1489,26 @@ def render_dot(
     evidence_map: dict[str, list[str]] = {}
     for ev in subgraph.evidence:
         evidence_map.setdefault(ev.relation_id, []).append(ev.quote)
+    source_counts: dict[str, dict[str, int]] = {}
+    if subgraph.evidence:
+        doc_ids = {ev.doc_id for ev in subgraph.evidence if ev.doc_id}
+        docs = db.get_documents_by_ids(doc_ids)
+        doc_types = {doc.doc_id: doc.source_type for doc in docs}
+        rel_sources: dict[str, dict[str, set[str]]] = {}
+        for ev in subgraph.evidence:
+            doc_id = ev.doc_id
+            if not doc_id:
+                continue
+            source_type = (doc_types.get(doc_id) or "").strip().lower() or "unknown"
+            if source_type in {"file", "note", "url"}:
+                bucket = "local"
+            elif source_type == "web":
+                bucket = "web"
+            else:
+                bucket = source_type
+            rel_sources.setdefault(ev.relation_id, {}).setdefault(bucket, set()).add(doc_id)
+        for rel_id, buckets in rel_sources.items():
+            source_counts[rel_id] = {bucket: len(ids) for bucket, ids in buckets.items()}
 
     entity_labels: dict[str, str] = {}
     for entity in subgraph.entities:
@@ -1404,7 +1529,7 @@ def render_dot(
                 label = _escape_dot(edge.get("entity") or entity_id)
                 entity_labels[entity_id] = label
                 node_lines.append(f"  \"{entity_id}\" [label=\"{label}\"];")
-            ptype = _escape_dot(edge.get("profile_type") or "profile")
+            ptype = _escape_dot(PROFILE_TYPE)
             salience = edge.get("salience")
             if isinstance(salience, (int, float)):
                 edge_label = f"{ptype} ({salience:.2f})"
@@ -1419,6 +1544,11 @@ def render_dot(
         ev_quotes = evidence_map.get(rel.relation_id, [])
         if ev_quotes:
             label = f"{label} ({len(ev_quotes)})"
+        counts = source_counts.get(rel.relation_id)
+        if counts:
+            local_count = counts.get("local", 0)
+            web_count = counts.get("web", 0)
+            label = f"{label} [L{local_count}/W{web_count}]"
         edge_lines.append(
             f"  \"{rel.subject_id}\" -> \"{rel.object_id}\" [label=\"{label}\"];"
         )
@@ -1439,8 +1569,61 @@ def render_html(
     nodes = []
     edges = []
     evidence_map: dict[str, list[str]] = {}
-    for ev in subgraph.evidence:
-        evidence_map.setdefault(ev.relation_id, []).append(ev.quote)
+    evidence_items: dict[str, list[dict[str, object]]] = {}
+    source_counts: dict[str, dict[str, int]] = {}
+    doc_lookup: dict[str, db.Document] = {}
+    if subgraph.evidence:
+        doc_ids = {ev.doc_id for ev in subgraph.evidence if ev.doc_id}
+        docs = db.get_documents_by_ids(doc_ids)
+        doc_lookup = {doc.doc_id: doc for doc in docs}
+        doc_types = {doc.doc_id: doc.source_type for doc in docs}
+        rel_sources: dict[str, dict[str, set[str]]] = {}
+        for ev in subgraph.evidence:
+            doc_id = ev.doc_id
+            if doc_id:
+                source_type = (doc_types.get(doc_id) or "").strip().lower() or "unknown"
+            else:
+                source_type = "unknown"
+            if source_type in {"file", "note", "url"}:
+                bucket = "local"
+            elif source_type == "web":
+                bucket = "web"
+            else:
+                bucket = source_type
+            rel_sources.setdefault(ev.relation_id, {}).setdefault(bucket, set()).add(
+                doc_id or f"unknown:{ev.evidence_id}"
+            )
+            evidence_map.setdefault(ev.relation_id, []).append(ev.quote)
+            doc = doc_lookup.get(doc_id) if doc_id else None
+            evidence_items.setdefault(ev.relation_id, []).append(
+                {
+                    "quote": ev.quote,
+                    "confidence": float(ev.confidence or 0.0),
+                    "doc_id": doc_id,
+                    "doc_title": doc.title if doc else "",
+                    "source_type": doc.source_type if doc else source_type,
+                    "source": doc.source if doc else "",
+                    "added_at": doc.added_at if doc else "",
+                }
+            )
+        for rel_id, buckets in rel_sources.items():
+            source_counts[rel_id] = {bucket: len(ids) for bucket, ids in buckets.items()}
+
+    def _latest_evidence_at(items: list[dict[str, object]]) -> str:
+        latest: datetime | None = None
+        for item in items:
+            raw = str(item.get("added_at") or "")
+            if not raw:
+                continue
+            try:
+                parsed = datetime.fromisoformat(raw)
+            except ValueError:
+                continue
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            if latest is None or parsed > latest:
+                latest = parsed
+        return latest.isoformat() if latest else ""
 
     node_ids: set[str] = set()
     for entity in subgraph.entities:
@@ -1462,6 +1645,7 @@ def render_html(
                 "title": "User",
                 "color": "#E8E8E8",
                 "shape": "ellipse",
+                "is_user": True,
             }
         )
         node_ids.add(user_node_id)
@@ -1478,7 +1662,7 @@ def render_html(
                     }
                 )
                 node_ids.add(entity_id)
-            ptype = edge.get("profile_type") or "profile"
+            ptype = PROFILE_TYPE
             salience = edge.get("salience")
             label = f"{ptype} ({salience:.2f})" if isinstance(salience, (int, float)) else ptype
             edges.append(
@@ -1498,8 +1682,20 @@ def render_html(
             title_lines.append(rel.predicate)
         for quote in ev_quotes[:3]:
             title_lines.append(quote)
+        counts = source_counts.get(rel.relation_id)
+        if counts:
+            local_count = counts.get("local", 0)
+            web_count = counts.get("web", 0)
+            unknown_count = sum(
+                value for key, value in counts.items() if key not in {"local", "web"}
+            )
+            source_line = f"Sources: local={local_count} web={web_count}"
+            if unknown_count:
+                source_line += f" other={unknown_count}"
+            title_lines.append(source_line)
         edges.append(
             {
+                "id": rel.relation_id,
                 "from": rel.subject_id,
                 "to": rel.object_id,
                 "label": rel.predicate,
@@ -1508,10 +1704,43 @@ def render_html(
             }
         )
 
+    for edge in edges:
+        rel_id = edge.get("id")
+        if not rel_id:
+            continue
+        ev_items = evidence_items.get(rel_id, [])
+        counts = source_counts.get(rel_id, {})
+        local_count = counts.get("local", 0)
+        web_count = counts.get("web", 0)
+        other_count = sum(
+            value for key, value in counts.items() if key not in {"local", "web"}
+        )
+        label = edge.get("label") or ""
+        if ev_items:
+            label = f"{label} ({len(ev_items)})"
+        if counts:
+            label = f"{label} [L{local_count}/W{web_count}"
+            if other_count:
+                label = f"{label}/O{other_count}"
+            label = f"{label}]"
+        edge["label"] = label
+        latest_at = _latest_evidence_at(ev_items)
+        if latest_at:
+            edge["title"] = "\n".join(
+                [edge.get("title") or "", f"Latest evidence: {latest_at}"]
+            ).strip()
+        source_summary = f"local={local_count} web={web_count}"
+        if other_count:
+            source_summary += f" other={other_count}"
+        edge["source_summary"] = source_summary
+        edge["latest_evidence_at"] = latest_at
+        edge["evidence_items"] = ev_items
+
     payload = {
         "title": title,
         "nodes": nodes,
         "edges": edges,
+        "user_node_id": f"user:{user_id}" if user_id else "",
     }
     return f"""<!DOCTYPE html>
 <html>
@@ -1519,22 +1748,79 @@ def render_html(
   <meta charset="utf-8">
   <title>{_escape_dot(title)}</title>
   <style>
-    html, body, #network {{
+    html, body {{
       height: 100%;
       margin: 0;
       padding: 0;
       background: #f5f5f2;
       font-family: "IBM Plex Mono", "Space Mono", monospace;
     }}
+    #layout {{
+      height: 100%;
+      display: flex;
+    }}
+    #network {{
+      flex: 1;
+      min-width: 0;
+    }}
+    #details {{
+      width: 360px;
+      border-left: 1px solid #ddd;
+      background: #fafafa;
+      padding: 16px;
+      box-sizing: border-box;
+      overflow: auto;
+    }}
+    #details h2 {{
+      margin: 0 0 8px 0;
+      font-size: 16px;
+    }}
+    .control {{
+      margin-bottom: 12px;
+      font-size: 13px;
+    }}
+    .meta {{
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 8px;
+    }}
+    .evidence {{
+      border-top: 1px solid #e0e0e0;
+      padding-top: 8px;
+      margin-top: 8px;
+      font-size: 12px;
+    }}
+    .evidence-item {{
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px dashed #e0e0e0;
+    }}
+    .evidence-item:last-child {{
+      border-bottom: none;
+    }}
   </style>
   <script src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
 </head>
 <body>
-  <div id="network"></div>
+  <div id="layout">
+    <div id="network"></div>
+    <aside id="details">
+      <div class="control">
+        <label>
+          <input type="checkbox" id="toggleUser" checked>
+          Show user node
+        </label>
+      </div>
+      <h2>Edge Details</h2>
+      <div id="edge-details" class="meta">Select an edge to see evidence.</div>
+    </aside>
+  </div>
   <script>
     const payload = {json.dumps(payload)};
-    const nodes = new vis.DataSet(payload.nodes);
-    const edges = new vis.DataSet(payload.edges);
+    const baseNodes = payload.nodes || [];
+    const baseEdges = payload.edges || [];
+    const nodes = new vis.DataSet([]);
+    const edges = new vis.DataSet([]);
     const container = document.getElementById("network");
     const data = {{ nodes: nodes, edges: edges }};
     const options = {{
@@ -1553,7 +1839,79 @@ def render_html(
         barnesHut: {{ gravitationalConstant: -22000, springLength: 140 }},
       }}
     }};
-    new vis.Network(container, data, options);
+    const network = new vis.Network(container, data, options);
+
+    function escapeHtml(value) {{
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }}
+
+    function applyUserFilter(showUser) {{
+      const filteredNodes = showUser ? baseNodes : baseNodes.filter(n => !n.is_user);
+      const nodeIds = new Set(filteredNodes.map(n => n.id));
+      const filteredEdges = showUser
+        ? baseEdges
+        : baseEdges.filter(e => nodeIds.has(e.from) && nodeIds.has(e.to));
+      nodes.clear();
+      edges.clear();
+      nodes.add(filteredNodes);
+      edges.add(filteredEdges);
+    }}
+
+    function renderEdgeDetails(edge) {{
+      const panel = document.getElementById("edge-details");
+      if (!edge) {{
+        panel.textContent = "Select an edge to see evidence.";
+        return;
+      }}
+      const title = escapeHtml(edge.label || edge.title || "Edge");
+      const latest = edge.latest_evidence_at ? escapeHtml(edge.latest_evidence_at) : "Unknown";
+      const sources = escapeHtml(edge.source_summary || "Unknown");
+      let html = `<div class="meta"><strong>${{title}}</strong></div>`;
+      html += `<div class="meta">Latest evidence: ${{latest}}</div>`;
+      html += `<div class="meta">Sources: ${{sources}}</div>`;
+      const evidence = edge.evidence_items || [];
+      if (!evidence.length) {{
+        html += `<div class="evidence">No evidence attached to this edge.</div>`;
+        panel.innerHTML = html;
+        return;
+      }}
+      html += `<div class="evidence"><strong>Evidence</strong></div>`;
+      for (const item of evidence) {{
+        const quote = escapeHtml(item.quote || "");
+        const addedAt = escapeHtml(item.added_at || "Unknown");
+        const sourceType = escapeHtml(item.source_type || "Unknown");
+        const titleText = escapeHtml(item.doc_title || item.doc_id || "");
+        html += `<div class="evidence-item">`;
+        html += `<div class="meta">${{sourceType}} | ${{addedAt}}</div>`;
+        if (titleText) {{
+          html += `<div class="meta">${{titleText}}</div>`;
+        }}
+        if (quote) {{
+          html += `<div>${{quote}}</div>`;
+        }}
+        html += `</div>`;
+      }}
+      panel.innerHTML = html;
+    }}
+
+    applyUserFilter(true);
+    document.getElementById("toggleUser").addEventListener("change", (event) => {{
+      applyUserFilter(event.target.checked);
+    }});
+
+    network.on("selectEdge", (params) => {{
+      if (!params.edges.length) {{
+        renderEdgeDetails(null);
+        return;
+      }}
+      const edge = edges.get(params.edges[0]);
+      renderEdgeDetails(edge);
+    }});
+    network.on("deselectEdge", () => renderEdgeDetails(null));
   </script>
 </body>
 </html>

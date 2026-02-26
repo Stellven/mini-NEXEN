@@ -1,28 +1,31 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 from datetime import datetime
 from pathlib import Path
+import webbrowser
 
 from . import db
 import os
 import sys
 
 from .config import (
-    DEFAULT_MIN_WEB_DOCS,
+    ARTIFACTS_DIR,
+    DEFAULT_KG_HOPS,
     DEFAULT_ROUNDS,
-    DEFAULT_THEME_TOP_K,
+    DEFAULT_PROFILE_TOP_K,
     DEFAULT_TOP_K,
-    PLANS_DIR,
     WEB_AUTO_MAX_ROUNDS,
     WEB_RELEVANCE_THRESHOLD,
     ensure_dirs,
 )
 from .file_ingest import load_text_from_file
 from .llm import LLMClientError, load_llm_config, log_task_event, set_log_echo
-from .kg import KGStore, build_subgraph_for_terms, render_dot, render_html
+from .kg import KGStore, build_full_subgraph, build_subgraph_for_terms, render_dot, render_html
 from .web_retrieval import RetrievalRateLimitError
-from .research import run_research
+from .research import run_research, build_local_kg
+from .seeds import ingest_seed_pack
 
 
 def _ingest(args: argparse.Namespace) -> None:
@@ -30,51 +33,159 @@ def _ingest(args: argparse.Namespace) -> None:
     db.init_db()
 
     tags = [tag.strip() for tag in (args.tags or "").split(",") if tag.strip()]
+    added_docs = []
+    skipped = 0
+
+    if args.file and args.url:
+        raise SystemExit("Provide either --file or --url (not both).")
+    if args.file and args.text and not args.url:
+        raise SystemExit("Provide either --file or --text (not both).")
+
+    seed_result = ingest_seed_pack()
+
+    def _has_source(sources: list[str]) -> bool:
+        for source in sources:
+            if source and db.document_exists(source):
+                return True
+        return False
 
     if args.file:
-        file_path = Path(args.file)
-        if not file_path.exists():
-            raise SystemExit(f"File not found: {file_path}")
-        content = load_text_from_file(file_path)
-        title = args.title or file_path.name
-        doc = db.add_document(
-            title=title,
-            source_type="file",
-            source=str(file_path),
-            content_text=content,
-            tags=tags,
-        )
-        print(f"Ingested file document: {doc.doc_id}")
-        return
+        for raw_path in args.file:
+            if not raw_path:
+                continue
+            file_path = Path(raw_path)
+            if not file_path.exists():
+                raise SystemExit(f"File not found: {file_path}")
+            resolved = str(file_path.resolve())
+            if _has_source([resolved, str(file_path)]):
+                skipped += 1
+                continue
+            content = load_text_from_file(file_path)
+            title = args.title or file_path.name
+            doc, created, _reason = db.add_document_dedup(
+                title=title,
+                source_type="file",
+                source=resolved,
+                content_text=content,
+                tags=tags,
+            )
+            if created:
+                added_docs.append(doc)
+            else:
+                skipped += 1
 
-    if args.url:
+    elif args.url:
         title = args.title or args.url
         content = args.text or ""
-        doc = db.add_document(
-            title=title,
-            source_type="url",
-            source=args.url,
-            content_text=content,
-            tags=tags,
-        )
-        print(f"Recorded URL document: {doc.doc_id}")
+        if _has_source([args.url]):
+            skipped += 1
+        else:
+            doc, created, _reason = db.add_document_dedup(
+                title=title,
+                source_type="url",
+                source=args.url,
+                content_text=content,
+                tags=tags,
+            )
+            if created:
+                added_docs.append(doc)
+            else:
+                skipped += 1
         if not content:
             print("Note: URL content was not fetched; provide --text to store document content.")
-        return
 
-    if args.text:
+    elif args.text:
         title = args.title or "Personal note"
-        doc = db.add_document(
-            title=title,
-            source_type="note",
-            source="user",
-            content_text=args.text,
-            tags=tags,
-        )
-        print(f"Recorded note: {doc.doc_id}")
-        return
+        content = args.text
+        if not content.strip():
+            raise SystemExit("Provide non-empty --text for a note.")
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+        source = f"note:{digest}"
+        if _has_source([source]):
+            skipped += 1
+        else:
+            doc, created, _reason = db.add_document_dedup(
+                title=title,
+                source_type="note",
+                source=source,
+                content_text=content,
+                tags=tags,
+            )
+            if created:
+                added_docs.append(doc)
+            else:
+                skipped += 1
 
-    raise SystemExit("Provide --file, --url, or --text to ingest.")
+    elif not args.file and not args.url and not args.text:
+        if seed_result.files == 0:
+            print("No local files found in data/local files and no --file/--url/--text provided.")
+        if seed_result.added == 0:
+            print("Local file ingest found no new files to add.")
+    else:
+        raise SystemExit("Provide --file, --url, or --text to ingest.")
+
+    if added_docs:
+        print(f"Ingested documents: {len(added_docs)}")
+    if skipped:
+        print(f"Skipped duplicates: {skipped}")
+    if seed_result.files:
+        print(
+            "Local file ingest summary: "
+            f"files={seed_result.files} added={seed_result.added} skipped={seed_result.skipped}"
+        )
+    def _kg_rebuild_state() -> tuple[int, int, bool]:
+        store = KGStore()
+        local_docs: list[db.Document] = []
+        for source in ("file", "note", "url"):
+            local_docs.extend(db.list_documents_by_source(source, limit=None))
+        if not local_docs:
+            return 0, 0, True
+        missing = sum(1 for doc in local_docs if not store.is_doc_extracted(doc.doc_id))
+        profile_empty = not bool(store.get_profile(limit=1))
+        return len(local_docs), missing, profile_empty
+
+    new_docs_added = bool(added_docs) or seed_result.added > 0
+    local_count, missing_extracts, profile_empty = _kg_rebuild_state()
+    needs_rebuild = new_docs_added or missing_extracts > 0 or profile_empty
+
+    if local_count == 0 and not new_docs_added:
+        print("No local docs available to build a KG. Skipping rebuild.")
+        return
+    if not needs_rebuild:
+        print("No new docs and KG is up-to-date. Skipping rebuild.")
+        return
+    if not new_docs_added:
+        print(
+            "No new docs, but KG needs rebuild: "
+            f"local_docs={local_count} missing_extractions={missing_extracts} profile_empty={profile_empty}"
+        )
+
+    provider, model = _resolve_llm_choice(args)
+    try:
+        result = build_local_kg(
+            provider=provider,
+            model=model,
+            base_url=args.base_url,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            discover_model=not args.no_model_discovery,
+            rebuild_profile=True,
+            force_profile_rebuild=profile_empty and missing_extracts == 0 and not new_docs_added,
+        )
+    except LLMClientError as exc:
+        print(f"LLM error: {exc}")
+        raise SystemExit(1) from exc
+
+    print(
+        "Local KG build complete. "
+        f"local_docs={result.local_docs} "
+        f"new_docs={result.new_docs} "
+        f"triples_added={result.triples_added}"
+    )
+    if result.profile_rebuilt:
+        print(f"Profile rebuilt from local docs. items_added={result.profile_items_added}")
+    else:
+        print("Profile rebuild skipped (no local changes).")
 
 
 def _add_interest(args: argparse.Namespace) -> None:
@@ -120,8 +231,6 @@ def _delete_method(args: argparse.Namespace) -> None:
 def _clear_interests(args: argparse.Namespace) -> None:
     ensure_dirs()
     db.init_db()
-    if not args.yes:
-        raise SystemExit("Refusing to clear interests without --yes")
     deleted = db.clear_interests()
     print(f"Cleared interests: {deleted}")
 
@@ -129,22 +238,30 @@ def _clear_interests(args: argparse.Namespace) -> None:
 def _clear_methods(args: argparse.Namespace) -> None:
     ensure_dirs()
     db.init_db()
-    if not args.yes:
-        raise SystemExit("Refusing to clear methods without --yes")
     deleted = db.clear_methods()
     print(f"Cleared methods: {deleted}")
+
+
+def _clear_profile(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    db.init_db()
+    store = KGStore()
+    deleted = store.clear_profile()
+    print(f"Cleared profile entries: {deleted}")
 
 
 def _clear_library(args: argparse.Namespace) -> None:
     ensure_dirs()
     db.init_db()
-    if not args.yes:
-        raise SystemExit("Refusing to clear library without --yes")
     result = db.clear_library_and_graph(clear_files=True)
     print(
-        "Cleared library + graph: "
+        "Cleared library: "
         f"documents={result['documents']} "
         f"document_stats={result['document_stats']} "
+        f"files_removed={result['files_removed']}"
+    )
+    print(
+        "Cleared KG: "
         f"graph_meta={result['graph_meta']} "
         f"kg_entities={result['kg_entities']} "
         f"kg_relations={result['kg_relations']} "
@@ -153,8 +270,7 @@ def _clear_library(args: argparse.Namespace) -> None:
         f"kg_mentions={result['kg_mentions']} "
         f"kg_profiles={result['kg_profiles']} "
         f"kg_contradictions={result['kg_contradictions']} "
-        f"kg_doc_state={result['kg_doc_state']} "
-        f"files_removed={result['files_removed']}"
+        f"kg_doc_state={result['kg_doc_state']}"
     )
 
 
@@ -220,15 +336,14 @@ def _kg_report(args: argparse.Namespace) -> None:
         )
     )
 
-    profile = store.get_profile(profile_types=["interest", "intent", "focus", "attention"], limit=limit)
+    profile = store.get_profile(limit=limit)
     if profile:
         print("")
         print("Top Profile Signals:")
         for item in profile:
             label = item.get("entity") or ""
-            ptype = item.get("profile_type") or ""
             salience = item.get("salience") or 0.0
-            print(f"{ptype} | {salience:.2f} | {label}")
+            print(f"{salience:.2f} | {label}")
 
     with db._connect() as conn:
         rows = conn.execute(
@@ -253,16 +368,25 @@ def _kg_export_dot(args: argparse.Namespace) -> None:
     ensure_dirs()
     db.init_db()
     store = KGStore()
-    seeds = _parse_seed_terms(args.seed)
-    if not seeds:
-        seeds = _default_seed_terms(store, limit=8)
-    subgraph = build_subgraph_for_terms(
-        store,
-        seeds,
-        hops=max(1, int(args.hops or 1)),
-        min_confidence=float(args.min_conf or 0.3),
-        limit_edges=max(50, int(args.limit_edges or 200)),
-    )
+    min_conf = float(args.min_conf or 0.3)
+    limit_edges = max(50, int(args.limit_edges or 200))
+    if args.all:
+        subgraph = build_full_subgraph(
+            store,
+            min_confidence=min_conf,
+            limit_edges=limit_edges,
+        )
+    else:
+        seeds = _parse_seed_terms(args.seed)
+        if not seeds:
+            seeds = _default_seed_terms(store, limit=8)
+        subgraph = build_subgraph_for_terms(
+            store,
+            seeds,
+            hops=max(1, int(args.hops or 1)),
+            min_confidence=min_conf,
+            limit_edges=limit_edges,
+        )
     profile_edges = store.get_profile(limit=20)
     dot = render_dot(subgraph, user_id=store.user_id, profile_edges=profile_edges)
     out_path = _resolve_export_path(args.out, suffix=".dot")
@@ -274,21 +398,38 @@ def _kg_export_html(args: argparse.Namespace) -> None:
     ensure_dirs()
     db.init_db()
     store = KGStore()
-    seeds = _parse_seed_terms(args.seed)
-    if not seeds:
-        seeds = _default_seed_terms(store, limit=8)
-    subgraph = build_subgraph_for_terms(
-        store,
-        seeds,
-        hops=max(1, int(args.hops or 1)),
-        min_confidence=float(args.min_conf or 0.3),
-        limit_edges=max(50, int(args.limit_edges or 200)),
-    )
+    min_conf = float(args.min_conf or 0.3)
+    limit_edges = max(50, int(args.limit_edges or 200))
+    if args.all:
+        subgraph = build_full_subgraph(
+            store,
+            min_confidence=min_conf,
+            limit_edges=limit_edges,
+        )
+    else:
+        seeds = _parse_seed_terms(args.seed)
+        if not seeds:
+            seeds = _default_seed_terms(store, limit=8)
+        subgraph = build_subgraph_for_terms(
+            store,
+            seeds,
+            hops=max(1, int(args.hops or 1)),
+            min_confidence=min_conf,
+            limit_edges=limit_edges,
+        )
     profile_edges = store.get_profile(limit=20)
     html = render_html(subgraph, title="mini-NEXEN KG", user_id=store.user_id, profile_edges=profile_edges)
     out_path = _resolve_export_path(args.out, suffix=".html")
     out_path.write_text(html, encoding="utf-8")
     print(f"Wrote HTML: {out_path}")
+    if args.open_html:
+        try:
+            opened = webbrowser.open(out_path.as_uri())
+        except Exception as exc:
+            print(f"Unable to open HTML in browser: {exc}")
+        else:
+            if not opened:
+                print("Unable to open HTML in browser (no handler available).")
 
 
 def _parse_seed_terms(items: list[str] | None) -> list[str]:
@@ -312,7 +453,7 @@ def _parse_seed_terms(items: list[str] | None) -> list[str]:
 
 
 def _default_seed_terms(store: KGStore, limit: int = 8) -> list[str]:
-    profile = store.get_profile(profile_types=["interest", "focus"], limit=limit)
+    profile = store.get_profile(limit=limit)
     if profile:
         return [item["entity"] for item in profile if item.get("entity")][:limit]
     with db._connect() as conn:
@@ -336,7 +477,7 @@ def _resolve_export_path(raw: str | None, suffix: str) -> Path:
         path = Path(raw)
         return path if path.suffix else path.with_suffix(suffix)
     stamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    return (PLANS_DIR / f"kg_export_{stamp}{suffix}").resolve()
+    return (ARTIFACTS_DIR / f"kg_export_{stamp}{suffix}").resolve()
 
 def _research(args: argparse.Namespace) -> None:
     ensure_dirs()
@@ -347,7 +488,7 @@ def _research(args: argparse.Namespace) -> None:
         base_url=args.base_url,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
-        discover_model=not args.no_model_discovery,
+        discover_model=True,
     )
     if not llm_config:
         raise SystemExit("LLM configuration failed. Check provider/model settings.")
@@ -399,7 +540,7 @@ def _research(args: argparse.Namespace) -> None:
         print("Embeddings: disabled (web retrieval off)")
 
     interactive = sys.stdin.isatty()
-    auto_methods = args.auto_methods if args.auto_methods is not None else True
+    auto_methods = True
     review_query = True
 
     log_task_event("--------- Task Starts ----------")
@@ -410,13 +551,13 @@ def _research(args: argparse.Namespace) -> None:
             topic=args.topic,
             rounds=args.rounds,
             top_k=args.top_k,
-            min_web_docs=args.min_web_docs,
+            output_language=args.language,
             provider=provider,
             model=model,
             base_url=args.base_url,
             temperature=args.temperature,
             max_tokens=args.max_tokens,
-            discover_model=not args.no_model_discovery,
+            discover_model=True,
             web_enabled=web_enabled,
             web_forced=web_forced,
             web_auto=web_auto,
@@ -436,16 +577,18 @@ def _research(args: argparse.Namespace) -> None:
             web_max_per_query=args.web_max_per_query,
             web_relevance_threshold=args.web_relevance_threshold,
             web_max_rounds=args.web_max_rounds,
-            ingest_seeds=args.ingest_seeds,
-            auto_interest=args.auto_interest,
             auto_methods=auto_methods,
             review_query=review_query,
             interactive=interactive,
-            theme_top_k=args.theme_top_k,
+            profile_top_k=args.profile_top_k,
+            kg_hops=args.kg_hops,
         )
         if result.query_artifact_path:
-            print(f"Query understanding artifact: {result.query_artifact_path}")
-        if result.web_search_artifact_path:
+            if result.web_search_artifact_path == result.query_artifact_path:
+                print(f"Query + web search artifact: {result.query_artifact_path}")
+            else:
+                print(f"Query understanding artifact: {result.query_artifact_path}")
+        if result.web_search_artifact_path and result.web_search_artifact_path != result.query_artifact_path:
             print(f"Web search plan artifact: {result.web_search_artifact_path}")
         print(f"Saved plan: {result.plan_path}")
         # print(result.plan_markdown)
@@ -664,103 +807,115 @@ def build_parser() -> argparse.ArgumentParser:
             "Gemini requires GEMINI_API_KEY. LM Studio uses LMSTUDIO_BASE_URL."
         ),
     )
-    parser.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    parser.add_argument("--quiet", action="store_true", help="Disable log echoing")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    ingest = sub.add_parser("ingest", help="Add a file, URL, or note to the library")
+    ingest = sub.add_parser(
+        "ingest",
+        help="Ingest local content (including data/local files) and rebuild the local KG + profile",
+    )
     ingest.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
     ingest.add_argument("--quiet", action="store_true", help="Disable log echoing")
-    ingest.add_argument("--file", help="Path to a text file")
+    ingest.add_argument("--file", action="append", help="Path to a local file (repeatable)")
     ingest.add_argument("--url", help="URL to record")
     ingest.add_argument("--text", help="Inline text content")
     ingest.add_argument("--title", help="Custom title")
     ingest.add_argument("--tags", help="Comma-separated tags")
+    ingest.add_argument("--provider", choices=["gemini", "lmstudio"], help="LLM provider")
+    ingest.add_argument("--model", help="Model name (provider-specific)")
+    ingest.add_argument("--base-url", help="Override base URL (LM Studio only)")
+    ingest.add_argument("--temperature", type=float, help="Sampling temperature")
+    ingest.add_argument("--max-tokens", type=int, help="Max tokens to generate")
+    ingest.add_argument(
+        "--no-model-discovery",
+        action="store_true",
+        help="Disable LM Studio model discovery (use configured model name as-is)",
+    )
     ingest.set_defaults(func=_ingest)
 
     interest = sub.add_parser("interest", help="Record an interest topic")
-    interest.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    interest.add_argument("--quiet", action="store_true", help="Disable log echoing")
     interest.add_argument("text", nargs="?", help="Interest text (if --topic omitted)")
     interest.add_argument("--topic", help="Interest topic text")
     interest.set_defaults(func=_add_interest)
 
     method = sub.add_parser("method", help="Record an analysis method/approach")
-    method.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    method.add_argument("--quiet", action="store_true", help="Disable log echoing")
     method.add_argument("text", nargs="?", help="Method text (if --method omitted)")
     method.add_argument("--method", help="Method text")
     method.set_defaults(func=_add_method)
 
     del_interest = sub.add_parser("delete-interest", help="Delete a single interest by id")
-    del_interest.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    del_interest.add_argument("--quiet", action="store_true", help="Disable log echoing")
     del_interest.add_argument("--id", required=True, help="Interest id to remove")
     del_interest.set_defaults(func=_delete_interest)
 
     del_method = sub.add_parser("delete-method", help="Delete a single method by id")
-    del_method.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    del_method.add_argument("--quiet", action="store_true", help="Disable log echoing")
     del_method.add_argument("--id", required=True, help="Method id to remove")
     del_method.set_defaults(func=_delete_method)
 
     clear_interests = sub.add_parser("clear-interests", help="Delete all interests")
-    clear_interests.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    clear_interests.add_argument("--quiet", action="store_true", help="Disable log echoing")
-    clear_interests.add_argument("--yes", action="store_true", help="Confirm deletion")
     clear_interests.set_defaults(func=_clear_interests)
 
     clear_methods = sub.add_parser("clear-methods", help="Delete all methods")
-    clear_methods.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    clear_methods.add_argument("--quiet", action="store_true", help="Disable log echoing")
-    clear_methods.add_argument("--yes", action="store_true", help="Confirm deletion")
     clear_methods.set_defaults(func=_clear_methods)
 
+    clear_profile = sub.add_parser("clear-profile", help="Delete all profile signals")
+    clear_profile.set_defaults(func=_clear_profile)
+
     clear_library = sub.add_parser("clear-library", help="Delete all documents + graph data")
-    clear_library.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    clear_library.add_argument("--quiet", action="store_true", help="Disable log echoing")
-    clear_library.add_argument("--yes", action="store_true", help="Confirm deletion")
     clear_library.set_defaults(func=_clear_library)
 
     list_docs = sub.add_parser("list-docs", help="List documents")
-    list_docs.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    list_docs.add_argument("--quiet", action="store_true", help="Disable log echoing")
     list_docs.set_defaults(func=_list_docs)
 
     list_interests = sub.add_parser("list-interests", help="List interests")
-    list_interests.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    list_interests.add_argument("--quiet", action="store_true", help="Disable log echoing")
     list_interests.set_defaults(func=_list_interests)
 
     list_methods = sub.add_parser("list-methods", help="List methods")
-    list_methods.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    list_methods.add_argument("--quiet", action="store_true", help="Disable log echoing")
     list_methods.set_defaults(func=_list_methods)
 
     kg_report = sub.add_parser("kg-report", help="Summarize the local knowledge graph")
-    kg_report.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    kg_report.add_argument("--quiet", action="store_true", help="Disable log echoing")
     kg_report.add_argument("--limit", type=int, default=10, help="Limit for top lists (default: 10)")
     kg_report.set_defaults(func=_kg_report)
 
     kg_export_dot = sub.add_parser("kg-export-dot", help="Export a KG subgraph as DOT")
-    kg_export_dot.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    kg_export_dot.add_argument("--quiet", action="store_true", help="Disable log echoing")
     kg_export_dot.add_argument("--seed", action="append", help="Seed term (repeat or comma-separated)")
-    kg_export_dot.add_argument("--hops", type=int, default=1, help="Subgraph hops (default: 1)")
+    kg_export_dot.add_argument(
+        "--hops",
+        type=int,
+        default=DEFAULT_KG_HOPS,
+        help=f"Subgraph hops (default: {DEFAULT_KG_HOPS})",
+    )
     kg_export_dot.add_argument("--min-conf", type=float, default=0.3, help="Min relation confidence")
     kg_export_dot.add_argument("--limit-edges", type=int, default=200, help="Max edges to export")
+    kg_export_dot.add_argument(
+        "--all",
+        action="store_true",
+        help="Export the full KG (ignores --seed/--hops)",
+    )
     kg_export_dot.add_argument("--out", help="Output path (.dot)")
     kg_export_dot.set_defaults(func=_kg_export_dot)
 
     kg_export_html = sub.add_parser("kg-export-html", help="Export a KG subgraph as HTML")
-    kg_export_html.add_argument("--verbose", action="store_true", help="Echo LLM log events to stdout")
-    kg_export_html.add_argument("--quiet", action="store_true", help="Disable log echoing")
     kg_export_html.add_argument("--seed", action="append", help="Seed term (repeat or comma-separated)")
-    kg_export_html.add_argument("--hops", type=int, default=1, help="Subgraph hops (default: 1)")
+    kg_export_html.add_argument(
+        "--hops",
+        type=int,
+        default=DEFAULT_KG_HOPS,
+        help=f"Subgraph hops (default: {DEFAULT_KG_HOPS})",
+    )
     kg_export_html.add_argument("--min-conf", type=float, default=0.3, help="Min relation confidence")
     kg_export_html.add_argument("--limit-edges", type=int, default=200, help="Max edges to export")
+    kg_export_html.add_argument(
+        "--all",
+        action="store_true",
+        help="Export the full KG (ignores --seed/--hops)",
+    )
     kg_export_html.add_argument("--out", help="Output path (.html)")
+    kg_export_html.add_argument(
+        "--no-open",
+        action="store_false",
+        dest="open_html",
+        help="Do not open the exported HTML after writing",
+    )
+    kg_export_html.set_defaults(open_html=True)
     kg_export_html.set_defaults(func=_kg_export_html)
 
     research = sub.add_parser("research", help="Generate a research plan")
@@ -770,10 +925,15 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument("--rounds", type=int, default=DEFAULT_ROUNDS)
     research.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
     research.add_argument(
-        "--min-web-docs",
+        "--kg-hops",
         type=int,
-        default=DEFAULT_MIN_WEB_DOCS,
-        help="Minimum web documents to include in planning (default: 4)",
+        default=DEFAULT_KG_HOPS,
+        help=f"Subgraph hops for planning (default: {DEFAULT_KG_HOPS})",
+    )
+    research.add_argument(
+        "--language",
+        default="Chinese",
+        help="Output language for plan and outline generation (default: Chinese)",
     )
     research.add_argument("--provider", choices=["gemini", "lmstudio"], help="LLM provider")
     research.add_argument("--model", help="Model name (provider-specific)")
@@ -802,20 +962,18 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument("--web-lit", action="store_true", help="Enable literature retrieval")
     research.add_argument("--no-web", action="store_true", help="Disable web retrieval (default: on)")
     research.add_argument(
-        "--ingest", "--ingest-seeds", dest="ingest_seeds", action="store_true", help="Ingest seed files"
-    )
-    research.add_argument("--auto-interest", action="store_true", help="Add research topic to interests")
-    research.add_argument(
         "--theme-top-k",
+        dest="profile_top_k",
         type=int,
-        default=DEFAULT_THEME_TOP_K,
-        help="Number of top themes to include in the plan output (default: 10)",
+        default=argparse.SUPPRESS,
+        help="Deprecated; use --profile-top-k",
     )
     research.add_argument(
-        "--graph-top-clusters",
-        dest="theme_top_k",
+        "--profile-top-k",
+        dest="profile_top_k",
         type=int,
-        help="Deprecated. Use --theme-top-k instead.",
+        default=DEFAULT_PROFILE_TOP_K,
+        help="Number of top profile signals to include in the plan output (default: 10)",
     )
     research.add_argument("--web-max-results", type=int, default=5, help="Max results per source")
     research.add_argument("--web-timeout", type=int, default=15, help="Web fetch timeout (seconds)")
@@ -848,24 +1006,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=WEB_AUTO_MAX_ROUNDS,
         help="Maximum web retrieval rounds per task (default: 3).",
     )
-    research.add_argument(
-        "--auto-methods",
-        dest="auto_methods",
-        action="store_true",
-        help="Infer analysis methodologies from the query (default: on).",
-    )
-    research.add_argument(
-        "--no-auto-methods",
-        dest="auto_methods",
-        action="store_false",
-        help="Disable analysis methodology inference.",
-    )
-    research.set_defaults(auto_methods=None)
-    research.add_argument(
-        "--no-model-discovery",
-        action="store_true",
-        help="Disable LM Studio model discovery (use configured model name as-is)",
-    )
     research.set_defaults(func=_research)
 
     return parser
@@ -874,14 +1014,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    if getattr(args, "quiet", False):
-        set_log_echo(False)
+    env_verbose = _env_optional_bool("MINI_NEXEN_VERBOSE")
+    if env_verbose is not None:
+        set_log_echo(env_verbose)
     else:
-        env_verbose = _env_optional_bool("MINI_NEXEN_VERBOSE")
-        if env_verbose is not None:
-            set_log_echo(env_verbose or bool(getattr(args, "verbose", False)))
-        else:
-            set_log_echo(True)
+        set_log_echo(True)
     args.func(args)
 
 

@@ -266,6 +266,7 @@ def render_query_artifact(
     skill_catalog: list[dict[str, object]] | None = None,
     predicted_skills: list[str] | None = None,
     skill_hints: list[str] | None = None,
+    web_search_payload: dict[str, object] | None = None,
 ) -> str:
     payload = {
         "raw_query": raw_query,
@@ -281,17 +282,88 @@ def render_query_artifact(
         "skill_hints": skill_hints or [],
         "skill_catalog": skill_catalog or [],
     }
-    return (
-        "# Query Understanding (editable)\n\n"
-        "Edit the JSON below if needed. Keep it valid JSON.\n\n"
-        "Notes:\n"
-        "- `predicted_skills` is display-only and does not activate skills.\n"
-        "- `skill_hints` activates skills. You can use skill_id, display_name, aliases, or index.\n\n"
-        "```json\n"
-        f"{json.dumps(payload, indent=2, ensure_ascii=False)}\n"
-        "```\n"
-    )
+    lines = [
+        "# Query + Web Search (editable)",
+        "",
+        "Edit the JSON blocks below if needed. Keep them valid JSON.",
+        "",
+        "## Query Understanding (affects planning + skill selection)",
+        "",
+        "Notes:",
+        "- `predicted_skills` is display-only and does not activate skills.",
+        "- `skill_hints` activates skills. You can use skill_id, display_name, aliases, or index.",
+        "- `constraints` (like timeframe/region/industry) feed planning and KG filtering.",
+        "",
+        "```json",
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        "```",
+    ]
+    if web_search_payload is not None:
+        lines.extend(
+            [
+                "",
+                "## Web Search Settings (affects retrieval only)",
+                "",
+                "Notes:",
+                "- `platforms_available` and `platforms_enabled` are informational.",
+                "- `preferred_sources` is for future use and is not applied yet.",
+                "- Edits are applied to `search_topics`, `modes`, and `search_modes.semantic_rerank` for this run.",
+                "",
+                "```json",
+                json.dumps(web_search_payload, indent=2, ensure_ascii=False),
+                "```",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _extract_json_blocks(text: str) -> list[dict[str, Any]]:
+    if not text:
+        return []
+    blocks: list[dict[str, Any]] = []
+    for match in re.finditer(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE):
+        candidate = match.group(1)
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            blocks.append(payload)
+    if blocks:
+        return blocks
+    payload = _extract_json_payload(text)
+    if payload:
+        return [payload]
+    return []
+
+
+def _is_query_payload(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if "normalized_query" in payload:
+        return True
+    return "topic" in payload and "methodologies" in payload and "constraints" in payload
+
+
+def _is_web_search_payload(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return "search_topics" in payload or "modes" in payload or "search_modes" in payload
 
 
 def parse_query_artifact(text: str) -> dict[str, Any]:
-    return _extract_json_payload(text)
+    blocks = _extract_json_blocks(text)
+    for payload in blocks:
+        if _is_query_payload(payload):
+            return payload
+    if blocks:
+        return blocks[0]
+    return {}
+
+
+def parse_web_search_artifact(text: str) -> dict[str, Any]:
+    blocks = _extract_json_blocks(text)
+    for payload in blocks:
+        if _is_web_search_payload(payload):
+            return payload
+    return {}

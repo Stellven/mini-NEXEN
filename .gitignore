@@ -5,7 +5,8 @@ __pycache__/
 data/mini_nexen.sqlite3
 data/library/
 data/task_events.log
-# data/seeds/
-plans/*.md
-plans/*.txt
-plans/*.json
+# data/local files/
+artifacts/*.html
+artifacts/*.md
+artifacts/*.txt
+artifacts/*.json

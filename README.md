@@ -43,11 +43,11 @@ python -m mini_nexen.cli --help
 ```bash
 docker build -t mini-nexen .
 ```
-2. Run a research pass (mount `data/` and `plans/` so outputs persist).
+2. Run a research pass (mount `data/` and `artifacts/` so outputs persist).
 ```bash
 docker run --rm -it \
   -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/plans:/app/plans" \
+  -v "$(pwd)/artifacts:/app/artifacts" \
   -e GEMINI_API_KEY="your-key" \
   -e BRAVE_SEARCH_API_KEY="your-key" \
   -e TAVILY_API_KEY="your-key" \
@@ -61,7 +61,7 @@ Example (equivalent to local CLI):
 ```bash
 docker run --rm -it \
   -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/plans:/app/plans" \
+  -v "$(pwd)/artifacts:/app/artifacts" \
   -e GEMINI_API_KEY="your-key" \
   -e BRAVE_SEARCH_API_KEY="your-key" \
   -e TAVILY_API_KEY="your-key" \
@@ -69,7 +69,7 @@ docker run --rm -it \
   -e REDDIT_CLIENT_ID="your-id" \
   -e REDDIT_CLIENT_SECRET="your-secret" \
   -e REDDIT_USER_AGENT="mini-nexen/0.1" \
-  mini-nexen research --topic "AI agent 驱动的 workflow 最近技术分析报告" --web-lit --ingest
+  mini-nexen research --topic "AI agent 驱动的 workflow 最近技术分析报告" --web-lit
 ```
 Notes:
 - For LM Studio running on the host, use `--network=host` (Linux) or set `LMSTUDIO_BASE_URL` to `http://host.docker.internal:1234/v1`.
@@ -91,7 +91,7 @@ docker compose run --rm mini-nexen research --topic "Agentic research systems"
 ```
 Notes:
 - Edit `.env` to set Gemini/LM Studio keys, Brave Search API key, and optional `MINI_NEXEN_QUERY_EDITOR`.
-- Data and plans are persisted to `./data` and `./plans`.
+- Data and artifacts are persisted to `./data` and `./artifacts`.
 
 **Setup**
 - Python 3.11 is required.
@@ -148,43 +148,35 @@ Embedding configuration (used by web reranking and KG extraction support):
 
 Logging configuration:
 - `MINI_NEXEN_VERBOSE=1|0` sets default log echoing.
-- `--verbose` forces log echoing.
-- `--quiet` disables log echoing.
+- Progress updates (lines with `(...)%`) overwrite in-place when stdout is a TTY.
 
 **Data Locations**
 - `data/mini_nexen.sqlite3`: metadata, interests, KG, and stats.
 - `data/library/`: stored text copies of ingested content.
-- `data/seeds/`: optional user-provided seed files (if you use `--ingest`).
+- `data/local files/`: optional batch folder for local documents ingested by the `ingest` command.
 - `data/task_events.log`: structured log of retrieval/LLM/graph events.
-- `plans/`: generated plans (`YYYY_MM_DD_HH_MM_plan.md`) and query understanding artifacts (`YYYY_MM_DD_HH_MM_query.md`). Query artifacts include predicted skills (display-only) and `skill_hints` for forced activation.
+- `artifacts/`: generated plans (`YYYY_MM_DD_HH_MM_plan.md`) and query understanding artifacts (`YYYY_MM_DD_HH_MM_query.md`). Query artifacts include predicted skills (display-only) and `skill_hints` for forced activation.
 
 **Pipeline (Research Command)**
 1. Resolve LLM config from flags/env/interactive prompts.
 2. Ensure data directories and initialize the SQLite DB.
-3. Increment the research run counter and optionally ingest seed files from `data/seeds/` (if you maintain your own).
+3. Increment the research run counter.
 4. Decay and archive existing web documents based on usage and relevance.
-5. Optionally add the current topic to the interests table.
-6. Infer topic + analysis methodologies from the query and save a reviewable query-understanding artifact (includes predicted skills and `skill_hints` overrides).
-7. Start planning rounds (default 2).
-8. Load stored interests and methods.
-9. If the systems-engineering skill triggers on keywords, inject its guidance into the planning context.
-10. If web retrieval is enabled (default), build query seeds from topic + interests + profile signals and run retrieval.
-11. Web retrieval uses API-key open-web providers (Brave Search API, Tavily), forum providers (X/Reddit), and arXiv/Semantic Scholar/Crossref for literature, optionally expands queries with the LLM, fetches pages, and reranks results with embeddings.
-12. Web results are stored as new documents with relevance scores.
-13. Retrieve local docs via lexical scoring for a seed set.
-14. Extract KG triples + claims from selected docs, store entities/relations/evidence.
-15. Extract user profile (interest/intent/focus/attention) from local docs; fall back to keyword frequency if LLM is unavailable.
-16. Retrieve a KG subgraph using query + profile seeds; expand the document set using evidence.
-17. Draft a research plan with the LLM using interests, methods, extracted themes, and selected docs.
-18. If readiness checks fail (gaps or not enough sources), refine the plan and generate new query hints for the next round.
-19. Build a long-form outline (target 1000-2000 words) and render the final plan markdown.
-20. Save `plans/YYYY_MM_DD_HH_MM_plan.md` and log summary stats.
+5. Infer topic + analysis methodologies from the query and save a reviewable query-understanding artifact (includes predicted skills and `skill_hints` overrides).
+6. Start planning rounds (default 2).
+7. Load stored interests, methods, and local profile signals.
+8. If the systems-engineering skill triggers on keywords, inject its guidance into the planning context.
+9. Retrieve a KG subgraph (default 2 hops) using topic + interests + profile signals + query hints, then build KG fact cards and provenance stats.
+10. If web retrieval is enabled (default) and KG signals indicate gaps, run retrieval to expand the KG with new web sources.
+11. Detect contradictions in the KG when LLM is configured.
+12. Draft/refine the plan and build the outline using KG fact cards and the KG source index for provenance.
+13. Save `artifacts/YYYY_MM_DD_HH_MM_plan.md` and log summary stats.
 
 **Retrieval & KG Details**
 - KG entities are deduped by canonical name; claims are deduped by normalized text.
 - Relations store predicates + confidence; evidence links relations/claims back to sources.
 - Contradiction detection flags claim pairs with shared subject/predicate and conflicting objects.
-- KG subgraph retrieval seeds from query + profile and expands 1 hop to fetch evidence docs.
+- KG subgraph retrieval seeds from query + profile and expands 2 hops (default) to fetch evidence docs.
 
 **KG Visualization**
 Export a subgraph as DOT (Graphviz) or HTML (interactive):
@@ -225,8 +217,8 @@ Research flags:
 | --- | --- | --- |
 | `--topic` | Research topic | required |
 | `--rounds` | Planning rounds | `2` |
-| `--top-k` | Max local docs fed into planning | `3` |
-| `--min-web-docs` | Minimum web docs to include from the library | `10` |
+| `--top-k` | Doc limit hint for plan metadata | `3` |
+| `--kg-hops` | KG subgraph hops used for planning | `2` |
 | `--provider` | LLM provider | env or prompt |
 | `--model` | LLM model | env or prompt |
 | `--base-url` | LM Studio base URL | `LMSTUDIO_BASE_URL` or default |
@@ -237,15 +229,8 @@ Research flags:
 | `--web-forum` | Enable forum retrieval (X/Reddit) | off |
 | `--web-lit` | Enable literature retrieval | off |
 | `--no-web` | Disable web retrieval | off |
-| `--ingest` / `--ingest-seeds` | Ingest `data/seeds/` before retrieval (user-provided) | off |
-| `--auto-interest` | Add topic to interests table | off |
-| `--auto-methods` | Infer analysis methodologies from the query | on |
-| `--no-auto-methods` | Disable analysis methodology inference | off |
 | `--review-query` | Pause to review inferred query understanding | auto (TTY) |
 | `--no-review-query` | Skip the query understanding review step | off |
-| `--graph-semantic-labels` | Force LLM-based cluster labels on | on by default |
-| `--no-graph-semantic-labels` | Disable LLM-based cluster labels | off |
-| `--graph-top-clusters` | Clusters used for retrieval | `10` |
 | `--web-max-results` | Max results per source | `5` |
 | `--web-timeout` | Web fetch timeout (seconds) | `15` |
 | `--web-no-fetch` | Skip fetching full pages | off |
@@ -259,18 +244,25 @@ Research flags:
 | `--web-max-new` | Max new sources added per run | `200` |
 | `--web-max-per-query` / `--web-max-per-interest` | Max results per query seed | `10` |
 | `--web-relevance-threshold` | Filter threshold when reranking | `0.25` |
-| `--no-model-discovery` | Disable LM Studio model discovery | off |
-| `--verbose` | Echo log events to stdout | off |
-| `--quiet` | Disable log echoing | off |
 
-`ingest` adds local content to the library.
+`ingest` adds local content to the library, updates the local KG, and rebuilds the user profile when local KG changes.
+Duplicate sources are skipped automatically.
+Because it rebuilds the KG, it requires LLM configuration (provider/model + API key when applicable).
+The command also scans `data/local files/` and ingests any new files found there.
+If you pass no `--file/--url/--text`, it only processes `data/local files/`.
 | Flag | Meaning | Default |
 | --- | --- | --- |
-| `--file` | Path to `.txt`, `.md`, `.markdown`, `.pdf`, `.docx` | required (one of file/url/text) |
+| `--file` | Path to `.txt`, `.md`, `.markdown`, `.pdf`, `.docx` (repeatable) | required (one of file/url/text) |
 | `--url` | Record a URL (no fetch unless `--text` provided) | optional |
 | `--text` | Inline content for URL or personal note | optional |
 | `--title` | Custom title | inferred |
 | `--tags` | Comma-separated tags | none |
+| `--provider` | LLM provider for KG/profile extraction | env or prompt |
+| `--model` | LLM model for KG/profile extraction | env or prompt |
+| `--base-url` | LM Studio base URL | `LMSTUDIO_BASE_URL` or default |
+| `--temperature` | LLM sampling temperature | `0.2` |
+| `--max-tokens` | LLM max tokens | `2048` |
+| `--no-model-discovery` | Disable LM Studio model discovery | off |
 
 `interest` records an interest.
 - Use positional text or `--topic`.
@@ -282,16 +274,16 @@ Other commands:
 - `list-docs`, `list-interests`, `list-methods`
 - `delete-interest --id <ID>`
 - `delete-method --id <ID>`
-- `clear-interests --yes`
-- `clear-methods --yes`
-- `clear-library --yes` (also deletes stored files in `data/library/`)
+- `clear-interests`
+- `clear-methods`
+- `clear-library` (also deletes stored files in `data/library/`)
 
 **Defaults in `mini_nexen/config.py`**
 These are library-level defaults and can be changed in code. CLI defaults may override some of them.
 - `DEFAULT_TOP_K = 3`
-- `DEFAULT_MIN_WEB_DOCS = 10`
 - `DEFAULT_ROUNDS = 2`
-- `DEFAULT_THEME_TOP_K = 10`
+- `DEFAULT_KG_HOPS = 2`
+- `DEFAULT_PROFILE_TOP_K = 10`
 - `WEB_MAX_NEW_SOURCES = 200`
 - `WEB_MAX_PER_QUERY = 10`
 - `WEB_RELEVANCE_THRESHOLD = 0.25`
@@ -308,7 +300,7 @@ To modify these defaults:
 The generated markdown includes:
 - Scope, key questions, keywords, gaps, and notes.
 - Source type summaries for selected docs and the entire library.
-- Manually added interests and locally extracted theme clusters.
+- Manually added interests and KG evidence summaries.
 - A numbered research outline.
 
 **KG & Debugging**
@@ -317,17 +309,4 @@ Check KG summary:
 python -m mini_nexen.cli kg-report
 ```
 
-See unassigned chunk ratio:
-```bash
-sqlite3 data/mini_nexen.sqlite3 "SELECT COUNT(*) AS total, SUM(CASE WHEN cluster_id IS NULL THEN 1 ELSE 0 END) AS unassigned FROM chunks;"
-```
-
-Inspect top chunks for a cluster:
-```bash
-sqlite3 data/mini_nexen.sqlite3 "SELECT text FROM chunks WHERE cluster_id = (SELECT cluster_id FROM clusters ORDER BY size DESC LIMIT 1) LIMIT 5;"
-```
-
-Inspect topic-to-cluster mappings:
-```bash
-sqlite3 data/mini_nexen.sqlite3 "SELECT topic, cluster_id, similarity, run_id, created_at FROM topic_cluster_map ORDER BY created_at DESC LIMIT 10;"
-```
+Use `kg-report` plus the KG export commands (`kg-export-dot`, `kg-export-html`) to inspect evidence density and provenance.

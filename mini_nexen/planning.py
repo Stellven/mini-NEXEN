@@ -8,9 +8,8 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from . import db
-from .config import DEFAULT_THEME_TOP_K, PLANS_DIR, ensure_dirs
+from .config import ARTIFACTS_DIR, DEFAULT_PROFILE_TOP_K, ensure_dirs
 from .db import Document, Interest, Method
-from .embeddings import EmbeddingClient, EmbeddingConfig, cosine_similarity, normalize
 from .kg import KGStore
 from .llm import LLMClient, LLMClientError, log_task_event
 from .llm_prompts import SYSTEM_OUTLINE_PROMPT, SYSTEM_PLAN_PROMPT, outline_prompt, plan_prompt, refine_prompt
@@ -75,7 +74,7 @@ class PlanDraft:
     readiness: str
     notes: list[str]
     retrieval_queries: list[str]
-    theme_top_k: int
+    profile_top_k: int
     top_k_docs: int
 
 
@@ -148,7 +147,7 @@ def _compact_snippet(text: str, limit: int = 220) -> str:
 
 
 
-def _prepare_theme_evidence(
+def _prepare_profile_evidence(
     snippets: list[tuple[float, str, str]],
     max_docs: int,
     max_snippets: int,
@@ -171,178 +170,59 @@ def _prepare_theme_evidence(
     return docs[:max_docs]
 
 
-def _build_theme_embedding_config(llm: LLMClient) -> EmbeddingConfig | None:
-    provider = (llm.config.provider or "").lower()
-    if not provider:
-        return None
-    if provider == "gemini":
-        return EmbeddingConfig(provider="gemini", model="gemini-embedding-001", api_key=llm.config.api_key)
-    if provider == "lmstudio":
-        return EmbeddingConfig(provider="lmstudio", base_url=llm.config.base_url, api_key=llm.config.api_key)
-    return None
-
-
-def _merge_theme_label(llm: LLMClient, labels: list[str]) -> str:
-    prompt = {
-        "instruction": "Create a concise merged label (2-6 words) that captures the shared idea.",
-        "labels": labels,
-    }
-    response = llm.generate(
-        system_prompt="You merge topic labels.",
-        user_prompt=json.dumps(prompt, indent=2),
-        task="merge theme label",
-        agent="Theme",
-    )
-    merged = ""
-    parsed = _extract_json(response or "")
-    if isinstance(parsed, dict):
-        candidate = parsed.get("merged_label") or parsed.get("label") or parsed.get("theme")
-        if isinstance(candidate, str):
-            merged = candidate.strip()
-    if not merged:
-        merged = (response or "").strip().strip("\"'`")
-    merged = merged.replace("\n", " ").strip()
-    if not merged:
-        raise LLMClientError("LLM returned empty merged theme label.")
-    if len(merged) > 80:
-        merged = merged[:80].strip()
-    return merged
-
-
-def _merge_themes_by_label_similarity(
+def _summarize_profile_bullets(
     llm: LLMClient,
-    themes: list[dict],
-    threshold: float,
-) -> list[dict]:
-    if len(themes) < 2:
-        return themes
-    embed_config = _build_theme_embedding_config(llm)
-    if not embed_config:
-        raise LLMClientError("Embedding config required for theme merging.")
-    client = EmbeddingClient(embed_config)
-    labels = [theme["label"] for theme in themes]
-    vectors = client.embed_texts(labels)
-    if len(vectors) != len(labels):
-        raise LLMClientError("Failed to embed theme labels for merging.")
-    vectors = [normalize(vec) for vec in vectors]
-
-    visited = set()
-    merged: list[dict] = []
-    for i, label in enumerate(labels):
-        if i in visited:
-            continue
-        group = [i]
-        visited.add(i)
-        for j in range(i + 1, len(labels)):
-            if j in visited:
-                continue
-            sim = cosine_similarity(vectors[i], vectors[j])
-            if sim >= threshold:
-                group.append(j)
-                visited.add(j)
-        if len(group) == 1:
-            merged.append(themes[i])
-            continue
-
-        group_labels = [labels[idx] for idx in group]
-        merged_label = _merge_theme_label(llm, group_labels)
-
-        combined_docs: dict[str, list[str]] = {}
-        chunk_count = 0
-        similarities: list[float] = []
-        for idx in group:
-            theme = themes[idx]
-            chunk_count += int(theme.get("chunk_count") or 0)
-            similarity = theme.get("similarity")
-            if isinstance(similarity, (int, float)):
-                similarities.append(float(similarity))
-            for doc in theme.get("documents", []):
-                title = doc.get("title") or "Unknown document"
-                evidence = doc.get("evidence") or []
-                combined_docs.setdefault(title, [])
-                for item in evidence:
-                    if item not in combined_docs[title]:
-                        combined_docs[title].append(item)
-
-        merged_similarity = max(similarities) if similarities else None
-        documents = [{"title": title, "evidence": evidence} for title, evidence in combined_docs.items()]
-        merged.append(
-            {
-                "label": merged_label,
-                "similarity": merged_similarity,
-                "bullets": [],
-                "documents": documents,
-                "chunk_count": chunk_count,
-                "doc_count": len(documents),
-            }
-        )
-    return merged
-
-
-def _merge_similar_themes(
-    llm: LLMClient,
-    themes: list[dict],
-    max_themes: int = 6,
-    threshold: float = 0.85,
-) -> list[dict]:
-    merged = _merge_themes_by_label_similarity(llm, themes, threshold=threshold)
-    if len(merged) <= max_themes:
-        return merged
-    return merged[:max_themes]
-
-
-def _summarize_theme_bullets(
-    llm: LLMClient,
-    themes: list[dict],
+    signals: list[dict],
     max_bullets: int,
 ) -> dict[str, list[str]]:
     payload = []
-    for theme in themes:
+    for signal in signals:
         payload.append(
             {
-                "theme": theme["label"],
-                "chunk_count": theme.get("chunk_count", 0),
-                "doc_count": theme.get("doc_count", 0),
-                "documents": theme["documents"],
+                "signal": signal["label"],
+                "chunk_count": signal.get("chunk_count", 0),
+                "doc_count": signal.get("doc_count", 0),
+                "documents": signal["documents"],
             }
         )
     prompt = {
         "instruction": (
-            "You summarize recurring themes based on the evidence provided. "
+            "You summarize profile signals based on the evidence provided. "
             "Use ONLY the evidence provided. Do NOT quote text; paraphrase. "
+            "Assume the reader is a domain expert and prioritize technical nuance over basic definitions. "
             "Avoid words like 'user', 'interest', or 'focus'. "
             "Write all natural-language content in Chinese. "
             "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English. "
             "Return JSON only: "
-            "{\"themes\":[{\"theme\":\"...\",\"bullets\":[{\"bullet\":\"...\",\"sources\":[\"title1\",\"title2\"]}]}]}."
+            "{\"signals\":[{\"signal\":\"...\",\"bullets\":[{\"bullet\":\"...\",\"sources\":[\"title1\",\"title2\"]}]}]}."
         ),
         "requirements": [
-            f"Provide 2-{max_bullets} bullets per theme.",
+            f"Provide 2-{max_bullets} bullets per signal.",
             "Bullets must be full-sentence reasoning, not keyword lists.",
             "Highlight recurring patterns, commonalities, and contradictions when present.",
-            "Explicitly connect the evidence to the theme label.",
+            "Explicitly connect the evidence to the signal label.",
             "Each bullet must be an object with fields: bullet (string) and sources (array of document titles).",
             "Sources may be empty, but include 1-2 titles when they improve traceability.",
         ],
-        "themes": payload,
+        "signals": payload,
     }
     response = llm.generate(
         system_prompt="You summarize evidence into concise, traceable bullets.",
         user_prompt=json.dumps(prompt, indent=2),
-        task="interest themes",
-        agent="Theme",
+        task="profile signals",
+        agent="ProfileSignals",
     )
     parsed = _extract_json(response)
     if not parsed:
-        raise LLMClientError("LLM returned invalid JSON for interest themes.")
-    items = parsed.get("themes")
+        raise LLMClientError("LLM returned invalid JSON for profile signals.")
+    items = parsed.get("signals") or parsed.get("themes")
     if not isinstance(items, list):
-        raise LLMClientError("LLM returned invalid themes payload.")
+        raise LLMClientError("LLM returned invalid profile signal payload.")
     result: dict[str, list[str]] = {}
     for item in items:
         if not isinstance(item, dict):
             continue
-        label = str(item.get("theme", "")).strip()
+        label = str(item.get("signal", "")).strip() or str(item.get("theme", "")).strip()
         bullets = item.get("bullets")
         if not label or not isinstance(bullets, list):
             continue
@@ -373,30 +253,30 @@ def _summarize_theme_bullets(
         if cleaned:
             result[label] = cleaned[:max_bullets]
     if not result:
-        raise LLMClientError("LLM returned empty interest themes.")
+        raise LLMClientError("LLM returned empty profile signals.")
     return result
 
 
-def build_interest_themes(
+def build_profile_signals(
     topic: str,
     interests: list[Interest],
     query_hints: list[str] | None = None,
     llm: LLMClient | None = None,
     top_k_docs: int | None = None,
-    max_themes: int = 6,
+    max_signals: int = 6,
     max_docs: int = 3,
     max_bullets: int = 4,
     max_snippets: int = 3,
 ) -> list[dict]:
     store = KGStore()
-    profile = store.get_profile(profile_types=["interest"], limit=max_themes)
+    profile = store.get_profile(limit=max_signals)
     if not profile:
         return []
 
-    themes: list[dict] = []
+    signals: list[dict] = []
     for item in profile:
         entity_id = item.get("entity_id")
-        label = item.get("entity") or "Unknown Theme"
+        label = item.get("entity") or "Unknown Topic"
         if not entity_id:
             continue
         evidence = store.get_entity_evidence(entity_id, limit=max_docs * max_snippets)
@@ -427,7 +307,7 @@ def build_interest_themes(
         ]
         if not doc_entries:
             continue
-        themes.append(
+        signals.append(
             {
                 "label": label,
                 "similarity": item.get("salience"),
@@ -438,37 +318,36 @@ def build_interest_themes(
             }
         )
 
-    if not themes:
+    if not signals:
         return []
 
     if llm:
         try:
-            summaries = _summarize_theme_bullets(llm, themes, max_bullets=max_bullets)
+            summaries = _summarize_profile_bullets(llm, signals, max_bullets=max_bullets)
         except LLMClientError as exc:
-            log_task_event(f"Interest theme summarization failed: {exc}")
+            log_task_event(f"Profile signal summarization failed: {exc}")
             summaries = {}
-        for theme in themes:
-            label = theme["label"]
+        for signal in signals:
+            label = signal["label"]
             bullets = summaries.get(label)
             if not bullets:
-                log_task_event(f"Theme summary missing for '{label}'; leaving bullets empty.")
-                theme["bullets"] = []
+                log_task_event(f"Profile summary missing for '{label}'; leaving bullets empty.")
+                signal["bullets"] = []
                 continue
-            theme["bullets"] = bullets
-        themes = _merge_similar_themes(llm, themes, max_themes=max_themes)
-        return themes
+            signal["bullets"] = bullets
+        return signals
 
-    for theme in themes:
+    for signal in signals:
         bullets = []
-        for doc in theme["documents"]:
+        for doc in signal["documents"]:
             for quote in doc.get("evidence", [])[:max_bullets]:
                 bullets.append(_compact_snippet(quote, limit=240))
                 if len(bullets) >= max_bullets:
                     break
             if len(bullets) >= max_bullets:
                 break
-        theme["bullets"] = bullets
-    return themes
+        signal["bullets"] = bullets
+    return signals
 
 
 def is_ready(plan: PlanDraft, min_sources: int = 3) -> tuple[bool, list[str]]:
@@ -816,10 +695,10 @@ def _base_plan(
     documents: list[Document],
     round_number: int,
     keywords_seed: list[str],
-    theme_top_k: int | None = None,
+    profile_top_k: int | None = None,
     top_k_docs: int | None = None,
 ) -> PlanDraft:
-    theme_limit = int(theme_top_k or DEFAULT_THEME_TOP_K)
+    profile_limit = int(profile_top_k or DEFAULT_PROFILE_TOP_K)
     doc_limit = int(top_k_docs or 0)
     source_types = []
     seen = set()
@@ -846,7 +725,7 @@ def _base_plan(
         readiness="draft",
         notes=[],
         retrieval_queries=[],
-        theme_top_k=theme_limit,
+        profile_top_k=profile_limit,
         top_k_docs=doc_limit,
     )
 
@@ -871,10 +750,13 @@ def llm_draft_plan(
     extracted_interests: list[str] | None,
     documents: list[Document],
     round_number: int,
-    theme_top_k: int | None = None,
+    profile_top_k: int | None = None,
     top_k_docs: int | None = None,
     kg_fact_cards: list[dict] | None = None,
+    output_language: str = "Chinese",
     skill_guidance: list[str] | None = None,
+    run_id: int | None = None,
+    save_prefix: str | None = None,
 ) -> PlanDraft:
     keywords_seed = build_keywords(topic, interests)
     base_plan = _base_plan(
@@ -883,7 +765,7 @@ def llm_draft_plan(
         documents,
         round_number,
         keywords_seed,
-        theme_top_k,
+        profile_top_k,
         top_k_docs,
     )
     prompt = plan_prompt(
@@ -894,6 +776,7 @@ def llm_draft_plan(
         keywords_seed,
         extracted_interests=extracted_interests,
         kg_fact_cards=kg_fact_cards,
+        output_language=output_language,
         skill_guidance=skill_guidance,
     )
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan draft", agent="Planner")
@@ -918,6 +801,11 @@ def llm_draft_plan(
     except LLMClientError as exc:
         _log_llm_failure("Planner", "plan draft", response)
         raise LLMClientError(str(exc)) from exc
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    prefix = save_prefix or f"{timestamp}_plan"
+    if run_id is not None and save_prefix is None:
+        prefix = f"{timestamp}_plan_run_{run_id}"
+    _save_plan_snapshot(plan, prefix, f"plan_draft_round{round_number}")
     return plan
 
 
@@ -929,10 +817,13 @@ def llm_refine_plan(
     methods: list[Method],
     extracted_interests: list[str] | None,
     round_number: int,
-    theme_top_k: int | None = None,
+    profile_top_k: int | None = None,
     top_k_docs: int | None = None,
     kg_fact_cards: list[dict] | None = None,
+    output_language: str = "Chinese",
     skill_guidance: list[str] | None = None,
+    run_id: int | None = None,
+    save_prefix: str | None = None,
 ) -> PlanDraft:
     keywords_seed = plan.keywords or build_keywords(plan.topic, interests)
     base_plan = _base_plan(
@@ -941,7 +832,7 @@ def llm_refine_plan(
         documents,
         round_number,
         keywords_seed,
-        theme_top_k,
+        profile_top_k,
         top_k_docs,
     )
     base_plan.readiness = "refined"
@@ -962,6 +853,7 @@ def llm_refine_plan(
         keywords_seed,
         extracted_interests=extracted_interests,
         kg_fact_cards=kg_fact_cards,
+        output_language=output_language,
         skill_guidance=skill_guidance,
     )
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan refinement", agent="Planner")
@@ -986,24 +878,49 @@ def llm_refine_plan(
     except LLMClientError as exc:
         _log_llm_failure("Planner", "plan refinement", response)
         raise LLMClientError(str(exc)) from exc
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    prefix = save_prefix or f"{timestamp}_plan"
+    if run_id is not None and save_prefix is None:
+        prefix = f"{timestamp}_plan_run_{run_id}"
+    _save_plan_snapshot(refined, prefix, f"plan_refine_round{round_number}")
     return refined
 
 
 def _save_outline_snapshot(
     outline: list[str] | None,
-    raw: str | None,
     prefix: str,
     label: str,
 ) -> None:
     ensure_dirs()
     safe_label = re.sub(r"[^a-zA-Z0-9_-]+", "_", label).strip("_")
     if outline:
-        path = PLANS_DIR / f"{prefix}_{safe_label}.json"
+        path = ARTIFACTS_DIR / f"{prefix}_{safe_label}.json"
         payload = {"label": label, "outline": outline}
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    if raw:
-        path = PLANS_DIR / f"{prefix}_{safe_label}_raw.txt"
-        path.write_text(raw, encoding="utf-8")
+
+
+def _save_plan_snapshot(plan: PlanDraft, prefix: str, label: str) -> None:
+    ensure_dirs()
+    safe_label = re.sub(r"[^a-zA-Z0-9_-]+", "_", label).strip("_")
+    path = ARTIFACTS_DIR / f"{prefix}_{safe_label}.json"
+    payload = {
+        "label": label,
+        "topic": plan.topic,
+        "created_at": plan.created_at,
+        "round_number": plan.round_number,
+        "readiness": plan.readiness,
+        "scope": plan.scope,
+        "key_questions": plan.key_questions,
+        "keywords": plan.keywords,
+        "gaps": plan.gaps,
+        "notes": plan.notes,
+        "retrieval_queries": plan.retrieval_queries,
+        "source_types": plan.source_types,
+        "source_briefs_count": len(plan.source_briefs),
+        "profile_top_k": plan.profile_top_k,
+        "top_k_docs": plan.top_k_docs,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def llm_build_outline(
@@ -1014,6 +931,7 @@ def llm_build_outline(
     methods: list[Method],
     keywords: list[str],
     kg_fact_cards: list[dict] | None = None,
+    output_language: str = "Chinese",
     skill_guidance: list[str] | None = None,
     active_skills: list[str] | None = None,
     run_id: int | None = None,
@@ -1042,33 +960,9 @@ def llm_build_outline(
             return None
         return cleaned
 
-    def _translate_outline_to_chinese(items: list[str]) -> list[str]:
-        prompt = {
-            "outline": items,
-            "instructions": [
-                "Translate all items to Chinese.",
-                "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
-                "Return JSON only as {\"outline\": [...]} with the same structure depth.",
-            ],
-        }
-        response = llm.generate(
-            system_prompt="You translate research plan outlines to Chinese. Return JSON only.",
-            user_prompt=json.dumps(prompt, indent=2),
-            task="outline translate",
-            agent="Outliner",
-        )
-        payload = _extract_json(response)
-        outline = payload.get("outline")
-        if isinstance(outline, list):
-            cleaned = _normalize_outline(outline, allowed_bracket_tags)
-            if cleaned:
-                return cleaned
-        list_payload = _extract_json_list(response)
-        if list_payload:
-            cleaned = _normalize_outline(list_payload, allowed_bracket_tags)
-            if cleaned:
-                return cleaned
-        return []
+    def _is_chinese_language(value: str) -> bool:
+        lowered = (value or "").casefold()
+        return ("chinese" in lowered) or ("中文" in value) or ("zh" == lowered) or ("zh-" in lowered)
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     prefix = save_prefix or f"{timestamp}_outline"
     if run_id is not None and save_prefix is None:
@@ -1077,18 +971,18 @@ def llm_build_outline(
     def _attempt(prompt_text: str, attempt: int) -> tuple[list[str], int, float] | None:
         response = llm.generate(SYSTEM_OUTLINE_PROMPT, prompt_text, task="outline", agent="Outliner")
         cleaned = _parse_outline_response(response, attempt, "outline")
-        _save_outline_snapshot(cleaned, response, prefix, f"outline_attempt{attempt}")
+        _save_outline_snapshot(cleaned, prefix, f"outline_attempt{attempt}")
         if not cleaned:
             return None
         count = outline_word_count(cleaned)
         ratio = outline_cjk_ratio(cleaned)
-        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and ratio >= OUTLINE_MIN_CJK_RATIO:
+        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or ratio >= OUTLINE_MIN_CJK_RATIO):
             return cleaned, count, ratio
         log_task_event(
             "Outliner: outline length out of range "
             f"(attempt={attempt} words={count} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS})"
         )
-        if ratio < OUTLINE_MIN_CJK_RATIO:
+        if _is_chinese_language(output_language) and ratio < OUTLINE_MIN_CJK_RATIO:
             log_task_event(
                 "Outliner: outline language ratio too low "
                 f"(attempt={attempt} cjk_ratio={ratio:.2f} min={OUTLINE_MIN_CJK_RATIO:.2f})"
@@ -1101,6 +995,7 @@ def llm_build_outline(
     ) -> str:
         payload = {
             "previous_outline": previous_outline,
+            "output_language": output_language,
             "instructions": {
                 "output_json_schema": {
                     "outline": ["string"]
@@ -1112,13 +1007,13 @@ def llm_build_outline(
                     "Each substep should be 2-3 sentences.",
                     "Preserve the original topic coverage and structure; rewrite to fit length.",
                 ],
-            "language_guidance": [
-                "Write natural-language content in Chinese.",
-                "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
-            ],
-        },
-        "length_hint": length_hint,
-    }
+                "language_guidance": [
+                    f"All natural-language content MUST be in {output_language}.",
+                    "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
+                ],
+            },
+            "length_hint": length_hint,
+        }
         if structure_guidance:
             payload["instructions"]["structure_guidance"] = structure_guidance
         if language_hint:
@@ -1132,6 +1027,7 @@ def llm_build_outline(
     ) -> str:
         payload = {
             "previous_outline": previous_outline,
+            "output_language": output_language,
             "instructions": {
                 "output_json_schema": {
                     "outline": ["string"]
@@ -1143,13 +1039,13 @@ def llm_build_outline(
                     "Each substep should be 2-3 sentences.",
                     "Do not remove content; only expand with additional detail and substeps.",
                 ],
-            "language_guidance": [
-                "Write natural-language content in Chinese.",
-                "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
-            ],
-        },
-        "length_hint": length_hint,
-    }
+                "language_guidance": [
+                    f"All natural-language content MUST be in {output_language}.",
+                    "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.",
+                ],
+            },
+            "length_hint": length_hint,
+        }
         if structure_guidance:
             payload["instructions"]["structure_guidance"] = structure_guidance
         if language_hint:
@@ -1168,7 +1064,7 @@ def llm_build_outline(
             "You MUST be within range."
         )
         language_hint = None
-        if previous_ratio < OUTLINE_MIN_CJK_RATIO:
+        if _is_chinese_language(output_language) and previous_ratio < OUTLINE_MIN_CJK_RATIO:
             language_hint = (
                 "Your previous outline was not sufficiently Chinese. "
                 "Translate all step titles and substeps to Chinese; keep English only for paper titles, "
@@ -1176,24 +1072,27 @@ def llm_build_outline(
             )
         prompt_text = _revision_prompt(previous_outline, length_hint, language_hint)
         response = llm.generate(
-            system_prompt="You revise research plan outlines to meet strict length constraints. Return JSON only.",
+            system_prompt=(
+                "You revise research plan outlines to meet strict length constraints. "
+                f"All natural-language content MUST be in {output_language}. Return JSON only."
+            ),
             user_prompt=prompt_text,
             task="outline revision",
             agent="Outliner",
         )
         cleaned = _parse_outline_response(response, attempt, "outline revision")
-        _save_outline_snapshot(cleaned, response, prefix, f"outline_revision{attempt}")
+        _save_outline_snapshot(cleaned, prefix, f"outline_revision{attempt}")
         if not cleaned:
             return None
         count = outline_word_count(cleaned)
         ratio = outline_cjk_ratio(cleaned)
-        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and ratio >= OUTLINE_MIN_CJK_RATIO:
+        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or ratio >= OUTLINE_MIN_CJK_RATIO):
             return cleaned, count, ratio
         log_task_event(
             "Outliner: outline length still out of range after revision "
             f"(attempt={attempt} words={count} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS})"
         )
-        if ratio < OUTLINE_MIN_CJK_RATIO:
+        if _is_chinese_language(output_language) and ratio < OUTLINE_MIN_CJK_RATIO:
             log_task_event(
                 "Outliner: outline language ratio too low after revision "
                 f"(attempt={attempt} cjk_ratio={ratio:.2f} min={OUTLINE_MIN_CJK_RATIO:.2f})"
@@ -1212,7 +1111,7 @@ def llm_build_outline(
             "Add more substeps and elaboration (2-3 sentences per substep)."
         )
         language_hint = None
-        if previous_ratio < OUTLINE_MIN_CJK_RATIO:
+        if _is_chinese_language(output_language) and previous_ratio < OUTLINE_MIN_CJK_RATIO:
             language_hint = (
                 "Your previous outline was not sufficiently Chinese. "
                 "Translate all step titles and substeps to Chinese; keep English only for paper titles, "
@@ -1220,24 +1119,27 @@ def llm_build_outline(
             )
         prompt_text = _expand_prompt(previous_outline, length_hint, language_hint)
         response = llm.generate(
-            system_prompt="You expand research plan outlines to meet strict minimum length. Return JSON only.",
+            system_prompt=(
+                "You expand research plan outlines to meet strict minimum length. "
+                f"All natural-language content MUST be in {output_language}. Return JSON only."
+            ),
             user_prompt=prompt_text,
             task="outline expansion",
             agent="Outliner",
         )
         cleaned = _parse_outline_response(response, attempt, "outline expansion")
-        _save_outline_snapshot(cleaned, response, prefix, f"outline_expand{attempt}")
+        _save_outline_snapshot(cleaned, prefix, f"outline_expand{attempt}")
         if not cleaned:
             return None
         count = outline_word_count(cleaned)
         ratio = outline_cjk_ratio(cleaned)
-        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and ratio >= OUTLINE_MIN_CJK_RATIO:
+        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or ratio >= OUTLINE_MIN_CJK_RATIO):
             return cleaned, count, ratio
         log_task_event(
             "Outliner: outline length still out of range after expansion "
             f"(attempt={attempt} words={count} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS})"
         )
-        if ratio < OUTLINE_MIN_CJK_RATIO:
+        if _is_chinese_language(output_language) and ratio < OUTLINE_MIN_CJK_RATIO:
             log_task_event(
                 "Outliner: outline language ratio too low after expansion "
                 f"(attempt={attempt} cjk_ratio={ratio:.2f} min={OUTLINE_MIN_CJK_RATIO:.2f})"
@@ -1251,8 +1153,8 @@ def llm_build_outline(
             "Structure major steps into contiguous sections grouped by the triggered skills in this order: "
             + ", ".join(labels)
             + ".",
-            "Prefix each major step title with the matching skill label (e.g., 'Systems Engineering: ...' or '[Systems Engineering] ...').",
-            "Use only the triggered skill labels; do not introduce other bracket tags.",
+            "Prefix each major step title with the matching skill label using a colon (e.g., 'Systems Engineering: ...').",
+            "Do not use bracketed method tags.",
             "Ensure each skill has at least one major step; do not introduce new section labels.",
         ]
 
@@ -1263,11 +1165,12 @@ def llm_build_outline(
         documents,
         keywords,
         kg_fact_cards=kg_fact_cards,
+        output_language=output_language,
         structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
     )
     result = _attempt(prompt, 1)
-    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS and result[2] >= OUTLINE_MIN_CJK_RATIO:
+    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or result[2] >= OUTLINE_MIN_CJK_RATIO):
         return result[0]
 
     previous_count = result[1] if result else 0
@@ -1277,11 +1180,13 @@ def llm_build_outline(
         f"Expand or compress to {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words. "
         "Add more detailed substeps (2-3 sentences each) to reach the target."
     )
-    language_hint = (
-        "Your previous outline was not sufficiently Chinese. "
-        "Translate all step titles and substeps to Chinese; keep English only for paper titles, datasets, "
-        "benchmarks, model names, APIs, and acronyms."
-    )
+    language_hint = None
+    if _is_chinese_language(output_language) and previous_ratio < OUTLINE_MIN_CJK_RATIO:
+        language_hint = (
+            "Your previous outline was not sufficiently Chinese. "
+            "Translate all step titles and substeps to Chinese; keep English only for paper titles, datasets, "
+            "benchmarks, model names, APIs, and acronyms."
+        )
     retry_prompt = outline_prompt(
         topic,
         interests,
@@ -1289,13 +1194,14 @@ def llm_build_outline(
         documents,
         keywords,
         kg_fact_cards=kg_fact_cards,
+        output_language=output_language,
         length_hint=length_hint,
-        language_hint=language_hint if previous_ratio < OUTLINE_MIN_CJK_RATIO else None,
+        language_hint=language_hint,
         structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
     )
     result = _attempt(retry_prompt, 2)
-    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS and result[2] >= OUTLINE_MIN_CJK_RATIO:
+    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or result[2] >= OUTLINE_MIN_CJK_RATIO):
         return result[0]
 
     previous_count = result[1] if result else previous_count
@@ -1312,41 +1218,34 @@ def llm_build_outline(
         documents,
         keywords,
         kg_fact_cards=kg_fact_cards,
+        output_language=output_language,
         length_hint=length_hint,
-        language_hint=language_hint if previous_ratio < OUTLINE_MIN_CJK_RATIO else None,
+        language_hint=language_hint,
         structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
     )
     result = _attempt(final_prompt, 3)
-    if result and result[2] >= OUTLINE_MIN_CJK_RATIO:
-        if OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS:
+    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS:
+        if (not _is_chinese_language(output_language)) or result[2] >= OUTLINE_MIN_CJK_RATIO:
             return result[0]
 
     if result and result[1] < OUTLINE_MIN_WORDS:
         expanded = _attempt_expand(result[0], result[1], result[2], 4)
-        if expanded and OUTLINE_MIN_WORDS <= expanded[1] <= OUTLINE_MAX_WORDS and expanded[2] >= OUTLINE_MIN_CJK_RATIO:
+        if expanded and OUTLINE_MIN_WORDS <= expanded[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or expanded[2] >= OUTLINE_MIN_CJK_RATIO):
             return expanded[0]
         if expanded:
             result = expanded
             if result[1] < OUTLINE_MIN_WORDS:
                 expanded = _attempt_expand(result[0], result[1], result[2], 5)
-                if expanded and OUTLINE_MIN_WORDS <= expanded[1] <= OUTLINE_MAX_WORDS and expanded[2] >= OUTLINE_MIN_CJK_RATIO:
+                if expanded and OUTLINE_MIN_WORDS <= expanded[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or expanded[2] >= OUTLINE_MIN_CJK_RATIO):
                     return expanded[0]
                 if expanded:
                     result = expanded
 
     if result:
         enforced = _attempt_revision(result[0], result[1], result[2], 6)
-        if enforced and OUTLINE_MIN_WORDS <= enforced[1] <= OUTLINE_MAX_WORDS and enforced[2] >= OUTLINE_MIN_CJK_RATIO:
+        if enforced and OUTLINE_MIN_WORDS <= enforced[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or enforced[2] >= OUTLINE_MIN_CJK_RATIO):
             return enforced[0]
-
-        translated = _translate_outline_to_chinese(result[0])
-        if translated:
-            _save_outline_snapshot(translated, None, prefix, "outline_translate")
-            translated_count = outline_word_count(translated)
-            translated_ratio = outline_cjk_ratio(translated)
-            if OUTLINE_MIN_WORDS <= translated_count <= OUTLINE_MAX_WORDS and translated_ratio >= OUTLINE_MIN_CJK_RATIO:
-                return translated
 
         log_task_event(
             "Outliner: returning best-effort outline despite length constraint failure. "
@@ -1447,27 +1346,27 @@ def render_plan_md(
         lines.append("- None")
 
     lines.append("")
-    lines.append("## Locally Extracted Interests")
-    themes = build_interest_themes(
+    lines.append("## Profile Signals")
+    signals = build_profile_signals(
         plan.topic,
         interests,
         query_hints=plan.retrieval_queries,
         llm=llm,
-        max_themes=plan.theme_top_k,
+        max_signals=plan.profile_top_k,
         top_k_docs=plan.top_k_docs,
     )
-    if not themes:
+    if not signals:
         lines.append(
-            "No themes available yet. Ingest local files and run research with KG extraction enabled."
+            "No profile signals available yet. Ingest local files and run research with KG extraction enabled."
         )
     else:
-        for theme in themes:
-            similarity = theme.get("similarity")
+        for signal in signals:
+            similarity = signal.get("similarity")
             if isinstance(similarity, (int, float)):
-                lines.append(f"Theme: {theme['label']} (sim={similarity:.2f})")
+                lines.append(f"Profile: {signal['label']} (salience={similarity:.2f})")
             else:
-                lines.append(f"Theme: {theme['label']}")
-            for bullet in theme["bullets"]:
+                lines.append(f"Profile: {signal['label']}")
+            for bullet in signal["bullets"]:
                 lines.append(f"- {bullet}")
             lines.append("")
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
-from .config import DATA_DIR
+from .config import LOCAL_FILES_DIR
 from .file_ingest import load_text_from_file
 from .llm import log_task_event
 
@@ -43,7 +43,7 @@ def _derive_title(content: str, path: Path) -> str:
 
 def ingest_seed_pack(seed_dir: Path | None = None) -> SeedIngestResult:
     db.init_db()
-    seed_root = seed_dir or (DATA_DIR / "seeds")
+    seed_root = seed_dir or LOCAL_FILES_DIR
     if not seed_root.exists() or not seed_root.is_dir():
         return SeedIngestResult(added=0, skipped=0, files=0)
 
@@ -63,17 +63,20 @@ def ingest_seed_pack(seed_dir: Path | None = None) -> SeedIngestResult:
         content = load_text_from_file(path)
         title = _derive_title(content, path)
         tags = _derive_tags(path)
-        db.add_document(
+        _doc, created, _reason = db.add_document_dedup(
             title=title,
             source_type="file",
             source=resolved,
             content_text=content,
             tags=tags,
         )
-        added += 1
+        if created:
+            added += 1
+        else:
+            skipped += 1
 
     if added or skipped:
         log_task_event(
-            f"Seed ingest: files={len(files)} added={added} skipped={skipped} dir={seed_root}"
+            f"Local file ingest: files={len(files)} added={added} skipped={skipped} dir={seed_root}"
         )
     return SeedIngestResult(added=added, skipped=skipped, files=len(files))
