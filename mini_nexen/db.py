@@ -375,6 +375,7 @@ def add_document(
     if content_hash is None:
         content_hash = compute_content_hash(content_text)
     source_canonical = _canonicalize_source(source_type, source)
+    run_id = get_current_run_id()
 
     with _connect() as conn:
         conn.execute(
@@ -395,7 +396,6 @@ def add_document(
             ),
         )
         initial_score = 0.6 if source_type == "web" else 1.0
-        run_id = get_current_run_id()
         conn.execute(
             """
             INSERT INTO document_stats (doc_id, relevance_score, last_seen_at, last_seen_run, archived)
