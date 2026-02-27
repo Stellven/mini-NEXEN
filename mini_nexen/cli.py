@@ -35,6 +35,7 @@ def _ingest(args: argparse.Namespace) -> None:
     db.init_db()
 
     tags = [tag.strip() for tag in (args.tags or "").split(",") if tag.strip()]
+    published_at = (args.published_at or "").strip() or None
     added_docs = []
     skipped = 0
 
@@ -70,6 +71,7 @@ def _ingest(args: argparse.Namespace) -> None:
                 source=resolved,
                 content_text=content,
                 tags=tags,
+                published_at=published_at,
             )
             if created:
                 added_docs.append(doc)
@@ -88,6 +90,7 @@ def _ingest(args: argparse.Namespace) -> None:
                 source=args.url,
                 content_text=content,
                 tags=tags,
+                published_at=published_at,
             )
             if created:
                 added_docs.append(doc)
@@ -112,6 +115,7 @@ def _ingest(args: argparse.Namespace) -> None:
                 source=source,
                 content_text=content,
                 tags=tags,
+                published_at=published_at,
             )
             if created:
                 added_docs.append(doc)
@@ -378,7 +382,7 @@ def _kg_entity_edges(args: argparse.Namespace) -> None:
         with db._connect() as conn:
             row = conn.execute(
                 """
-                SELECT entity_id, name, type
+                SELECT entity_id, name, type, subtype
                 FROM kg_entities
                 WHERE user_id = ? AND entity_id = ?
                 """,
@@ -389,6 +393,7 @@ def _kg_entity_edges(args: argparse.Namespace) -> None:
             return
         entity_name = row["name"]
         entity_type = row["type"]
+        entity_subtype = row["subtype"] or "Other"
     else:
         term = (args.entity or "").strip()
         if not term:
@@ -405,11 +410,13 @@ def _kg_entity_edges(args: argparse.Namespace) -> None:
         else:
             print("Multiple matches found. Re-run with --id to pick one:")
             for m in matches:
-                print(f"{m.entity_id} | {m.name} | {m.type}")
+                subtype = m.subtype or "Other"
+                print(f"{m.entity_id} | {m.name} | {m.type}/{subtype}")
             return
         entity_id = chosen.entity_id
         entity_name = chosen.name
         entity_type = chosen.type
+        entity_subtype = chosen.subtype or "Other"
 
     with db._connect() as conn:
         row = conn.execute(
@@ -442,7 +449,7 @@ def _kg_entity_edges(args: argparse.Namespace) -> None:
     incoming = int(row["incoming"] or 0)
     neighbors = len(neighbor_rows)
 
-    print(f"Entity: {entity_name} ({entity_type})")
+    print(f"Entity: {entity_name} ({entity_type}/{entity_subtype})")
     print(f"Entity ID: {entity_id}")
     print(f"Edges: {total} (outgoing={outgoing}, incoming={incoming}, neighbors={neighbors})")
     if args.show_neighbors and total:
@@ -951,6 +958,10 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--text", help="Inline text content")
     ingest.add_argument("--title", help="Custom title")
     ingest.add_argument("--tags", help="Comma-separated tags")
+    ingest.add_argument(
+        "--published-at",
+        help="Publication date/time (ISO 8601). If omitted, only ingestion time is stored.",
+    )
     ingest.add_argument("--provider", choices=["gemini", "lmstudio"], help="LLM provider")
     ingest.add_argument("--model", help="Model name (provider-specific)")
     ingest.add_argument("--base-url", help="Override base URL (LM Studio only)")

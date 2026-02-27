@@ -41,6 +41,7 @@ class Orchestrator:
         max_rounds = max(1, ctx.max_rounds)
         for idx in range(max_rounds):
             ctx.round_number = idx + 1
+            ctx.kg_updated = False
             log_task_event(f"=== Round {ctx.round_number}/{max_rounds} ===")
             ctx = self.retriever.run(ctx, self.runner)
             ctx = self.planner.run(ctx, self.runner)

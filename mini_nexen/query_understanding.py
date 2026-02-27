@@ -234,11 +234,12 @@ def infer_query_understanding(
     llm: LLMClient | None,
     raw_query: str,
     taxonomy: list[str] | None = None,
+    profile_summary: list[dict] | None = None,
 ) -> QueryUnderstanding:
     taxonomy = taxonomy or DEFAULT_METHOD_TAXONOMY
     if not llm:
         return normalize_query_understanding({}, raw_query, taxonomy)
-    prompt = query_understanding_prompt(raw_query, taxonomy)
+    prompt = query_understanding_prompt(raw_query, taxonomy, profile_summary=profile_summary)
     response = llm.generate(
         system_prompt=SYSTEM_QUERY_UNDERSTANDING_PROMPT,
         user_prompt=prompt,

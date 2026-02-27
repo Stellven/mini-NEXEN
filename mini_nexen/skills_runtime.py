@@ -105,6 +105,7 @@ class SkillContext:
     interests: list[db.Interest] = field(default_factory=list)
     methods: list[db.Method] = field(default_factory=list)
     extracted_interests: list[str] = field(default_factory=list)
+    profile_summary: list[dict] = field(default_factory=list)
     documents: list[db.Document] = field(default_factory=list)
     kg_fact_cards: list[dict] = field(default_factory=list)
     plan: Optional[PlanDraft] = None
@@ -141,6 +142,7 @@ class SkillContext:
     profile_top_k: int = DEFAULT_PROFILE_TOP_K
     kg_hops: int = DEFAULT_KG_HOPS
     kg_subgraph_stats: dict[str, float | int | str] = field(default_factory=dict)
+    kg_updated: bool = False
     llm: Optional[LLMClient] = None
 
 
@@ -762,7 +764,17 @@ def skill_infer_query(ctx: SkillContext) -> SkillContext:
     registry.load()
     raw_query = ctx.raw_topic or ctx.topic
     taxonomy = ctx.methodology_taxonomy or DEFAULT_METHOD_TAXONOMY
-    understanding = infer_query_understanding(ctx.llm, raw_query, taxonomy)
+    if not ctx.profile_summary:
+        store = KGStore()
+        summary = store.get_profile_summary(max_signals=ctx.profile_top_k, scope="local")
+        if summary:
+            ctx.profile_summary = summary
+    understanding = infer_query_understanding(
+        ctx.llm,
+        raw_query,
+        taxonomy,
+        profile_summary=ctx.profile_summary or None,
+    )
     _apply_query_understanding(ctx, understanding)
 
     ensure_dirs()
@@ -886,6 +898,10 @@ def skill_collect_methods(ctx: SkillContext) -> SkillContext:
 def skill_load_profile(ctx: SkillContext) -> SkillContext:
     store = KGStore()
     ctx.extracted_interests = store.get_profile_terms(limit=3)
+    if not ctx.profile_summary:
+        summary = store.get_profile_summary(max_signals=ctx.profile_top_k, scope="local")
+        if summary:
+            ctx.profile_summary = summary
     return ctx
 
 
@@ -975,6 +991,7 @@ def skill_extract_kg(ctx: SkillContext) -> SkillContext:
 
     if extracted:
         log_task_event(f"Local KG extraction: added_triples={extracted}")
+        ctx.kg_updated = True
     if profiled:
         log_task_event(f"Profile extraction (local): items_added={profiled}")
 
@@ -1035,7 +1052,8 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
     def _doc_in_window(doc: db.Document) -> bool:
         if not doc:
             return False
-        added = _parse_iso_datetime(doc.added_at)
+        window_value = doc.published_at or doc.added_at
+        added = _parse_iso_datetime(window_value)
         if not added:
             return False
         if window_start and added < window_start:
@@ -1112,7 +1130,7 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
                         claim_sources.setdefault(rel.claim_id, [])
                         if title not in claim_sources[rel.claim_id]:
                             claim_sources[rel.claim_id].append(title)
-                parsed = _parse_iso_datetime(doc.added_at)
+                parsed = _parse_iso_datetime(doc.published_at or doc.added_at)
                 if parsed:
                     dates.append(parsed)
 
@@ -1181,7 +1199,7 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
 
     if evidence_doc_ids_in_window:
         docs = [doc_lookup[doc_id] for doc_id in evidence_doc_ids_in_window if doc_id in doc_lookup]
-        docs.sort(key=lambda doc: doc.added_at or "", reverse=True)
+        docs.sort(key=lambda doc: (doc.published_at or doc.added_at or ""), reverse=True)
         ctx.documents = docs
     else:
         ctx.documents = []
@@ -1197,6 +1215,9 @@ def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
 
 
 def skill_detect_contradictions(ctx: SkillContext) -> SkillContext:
+    if not ctx.kg_updated:
+        log_task_event("KG contradiction check skipped: no new KG updates this round.")
+        return ctx
     store = KGStore()
     def _progress(current: int, total: int) -> None:
         model_name = ctx.llm.config.model if ctx.llm else "unknown"
@@ -1531,6 +1552,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             extracted += extract_and_store(store, ctx.llm, doc.doc_id, text, topic=ctx.topic)
         if extracted:
             log_task_event(f"KG extraction (web): added_triples={extracted}")
+            ctx.kg_updated = True
     return ctx
 
 
@@ -1549,6 +1571,7 @@ def skill_plan_research(ctx: SkillContext) -> SkillContext:
         top_k_docs=ctx.top_k,
         kg_fact_cards=ctx.kg_fact_cards,
         output_language=ctx.output_language,
+        profile_summary=ctx.profile_summary,
         skill_guidance=ctx.skill_guidance,
         run_id=ctx.run_id,
     )
@@ -1580,6 +1603,7 @@ def skill_refine_plan(ctx: SkillContext) -> SkillContext:
         top_k_docs=ctx.top_k,
         kg_fact_cards=ctx.kg_fact_cards,
         output_language=ctx.output_language,
+        profile_summary=ctx.profile_summary,
         skill_guidance=ctx.skill_guidance,
         run_id=ctx.run_id,
     )
@@ -1607,6 +1631,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         keywords=ctx.plan.keywords,
         kg_fact_cards=ctx.kg_fact_cards,
         output_language=ctx.output_language,
+        profile_summary=ctx.profile_summary,
         skill_guidance=ctx.skill_guidance,
         active_skills=ctx.active_skills,
         run_id=ctx.run_id,

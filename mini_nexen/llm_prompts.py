@@ -36,16 +36,16 @@ Return ONE valid JSON object only. No markdown, no commentary, no extra text.
 
 Requirements:
 - Must include key: outline
-- outline MUST be a non-empty array (8-12 major steps).
-- Each major step must include 3-5 substeps.
-- Each substep should be 2-3 sentences.
+- outline MUST be a non-empty array of major steps (8-12 by default; may vary when methods or structure guidance require).
+- Each major step should include 3-5 substeps by default; vary when it improves clarity, depth, or method alignment.
+- Each substep should be 2-3 sentences by default; expand or shorten when needed for important elaboration.
 - Optional sub-substeps are allowed when helpful.
 - Use imperative phrasing (e.g., "Search...", "Compare...", "Investigate...").
 - Do not write report section headings.
 - Total outline length MUST be 1000-2000 words across titles and substeps in the output language.
 - Output must be strict JSON (double quotes, no trailing commas)
 - Treat methods as analysis approaches to apply to the topic, not as the topic itself.
-- If methods are provided, the research plan MUST explicitly structure steps around those methods.
+- If methods are provided, the research plan MUST explicitly structure steps around those methods, even if the step count changes.
 - All natural-language content MUST be in the requested output language.
 - Keep JSON keys in English.
 - Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.
@@ -107,6 +107,7 @@ def plan_prompt(
     extracted_interests: list[str] | None = None,
     kg_fact_cards: list[dict] | None = None,
     output_language: str = "Chinese",
+    profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
@@ -153,18 +154,29 @@ def plan_prompt(
                 "Do not copy evidence snippets verbatim; paraphrase.",
                 "Do not fabricate sources that are not in kg_fact_cards or documents.",
             ],
+            "profile_guidance": [
+                "If profile_summary is provided, use it to personalize the plan without overriding the query.",
+                "Add 1-3 Notes bullets that explicitly connect the plan to relevant profile signals.",
+                "Treat profile_summary as context, not evidence; do not fabricate claims.",
+            ],
         },
     }
     if extracted_interests:
         payload["extracted_interests"] = extracted_interests
     if kg_fact_cards:
         payload["kg_fact_cards"] = kg_fact_cards[:30]
+    if profile_summary:
+        payload["profile_summary"] = profile_summary[:10]
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
     return json.dumps(payload, indent=2)
 
 
-def query_understanding_prompt(raw_query: str, methodology_taxonomy: list[str]) -> str:
+def query_understanding_prompt(
+    raw_query: str,
+    methodology_taxonomy: list[str],
+    profile_summary: list[dict] | None = None,
+) -> str:
     payload = {
         "query": raw_query,
         "methodology_taxonomy": methodology_taxonomy,
@@ -188,8 +200,14 @@ def query_understanding_prompt(raw_query: str, methodology_taxonomy: list[str]) 
                 "normalized_query should be a concise version of the query.",
                 "normalized_query should avoid analysis methodology terms.",
             ],
+            "profile_guidance": [
+                "If profile_summary is provided, use it to personalize topic framing and methodology choices.",
+                "Profile signals are context, not evidence; do not override explicit query intent.",
+            ],
         },
     }
+    if profile_summary:
+        payload["profile_summary"] = profile_summary[:10]
     return json.dumps(payload, indent=2)
 
 
@@ -203,6 +221,7 @@ def refine_prompt(
     extracted_interests: list[str] | None = None,
     kg_fact_cards: list[dict] | None = None,
     output_language: str = "Chinese",
+    profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
@@ -250,12 +269,19 @@ def refine_prompt(
                 "Do not copy evidence snippets verbatim; paraphrase.",
                 "Do not fabricate sources that are not in kg_fact_cards or documents.",
             ],
+            "profile_guidance": [
+                "If profile_summary is provided, use it to personalize the plan without overriding the query.",
+                "Add 1-3 Notes bullets that explicitly connect the plan to relevant profile signals.",
+                "Treat profile_summary as context, not evidence; do not fabricate claims.",
+            ],
         },
     }
     if extracted_interests:
         payload["extracted_interests"] = extracted_interests
     if kg_fact_cards:
         payload["kg_fact_cards"] = kg_fact_cards[:30]
+    if profile_summary:
+        payload["profile_summary"] = profile_summary[:10]
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
     return json.dumps(payload, indent=2)
@@ -272,6 +298,7 @@ def outline_prompt(
     length_hint: str | None = None,
     language_hint: str | None = None,
     structure_guidance: list[str] | None = None,
+    profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
 ) -> str:
     payload = {
@@ -292,9 +319,9 @@ def outline_prompt(
             ],
             "outline_expectations": [
             "Include major sections and subtopics to expand later.",
-            "Provide 8-12 major steps.",
-            "Each major step must include 3-5 substeps.",
-            "Each substep should be 2-3 sentences.",
+            "Provide 8-12 major steps by default; if methods or structure_guidance are provided, follow them even if the step count changes.",
+            "Each major step should include 3-5 substeps by default; expand or vary when it improves clarity, depth, or method alignment.",
+            "Each substep should be 2-3 sentences by default; add or reduce sentences when needed for important elaboration.",
             "List source-backed bullets when available.",
             "Emphasize gaps and future research directions.",
             "Length must be 1000-2000 words in the output language.",
@@ -302,9 +329,16 @@ def outline_prompt(
             "method_guidance": [
                 "Use methods as analytical lenses applied to the topic and evidence.",
                 "Do not treat methods as the topic itself.",
-                "If methods are provided, align major steps to the methods and weave method names into the step text.",
+                "If methods are provided, align major steps to the methods and weave method names into the step text, even if the step count differs from the default.",
                 "Do not add bracketed method tags in titles.",
                 f"If method names are not in {output_language}, translate them into {output_language} step titles and include the original in parentheses.",
+            ],
+            "profile_guidance": [
+                "If profile_summary is provided, use it to personalize the outline without overriding the query.",
+                "For each top-layer step/section, include at least one explicit inline mention explaining how it ties to relevant profile signals when applicable.",
+                "Keep profile ties selective and relevant; do not force ties that are misleading.",
+                "Use brief natural-language explanations (no special labels required). Up to 10 profile ties per top-layer step.",
+                "Treat profile_summary as context, not evidence; do not fabricate claims.",
             ],
             "kg_guidance": [
                 "If kg_fact_cards is provided, use it to ground claims and outline steps.",
@@ -313,8 +347,11 @@ def outline_prompt(
                 "Do not copy evidence snippets verbatim; paraphrase.",
                 "When you use kg_fact_cards, add a short citation in-line like 'Sources: title1; title2'.",
                 "Do not fabricate sources that are not in kg_fact_cards or documents.",
-                "Use trend stats and contradictions in kg_fact_cards to highlight agreements, shifts, and disagreements.",
-                "Dates in kg_fact_cards come from document added_at timestamps (ingestion time), not publication dates.",
+                "Contradictions may reflect genuine disagreements, errors, evolving consensus, or shifts in paradigm/direction over time; treat them as signals to analyze, not just errors to eliminate.",
+                "Use trend stats and contradictions in kg_fact_cards to highlight agreements, shifts, and disagreements when evidence supports it.",
+                "Call out stable areas (broad agreement) versus fast-moving areas (trend shifts or emerging contradictions).",
+                "When trends differ across sub-communities or domains, describe them as segmented trends rather than forcing a single direction.",
+                "Dates in kg_fact_cards come from document published_at timestamps when available; otherwise added_at (ingestion time).",
             ],
         },
     }
@@ -322,6 +359,8 @@ def outline_prompt(
         payload["kg_fact_cards"] = kg_fact_cards[:40]
     if structure_guidance:
         payload["instructions"]["structure_guidance"] = structure_guidance
+    if profile_summary:
+        payload["profile_summary"] = profile_summary[:10]
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
     if length_hint:

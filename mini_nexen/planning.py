@@ -197,9 +197,11 @@ def _summarize_profile_bullets(
             "{\"signals\":[{\"signal\":\"...\",\"bullets\":[{\"bullet\":\"...\",\"sources\":[\"title1\",\"title2\"]}]}]}."
         ),
         "requirements": [
-            f"Provide 2-{max_bullets} bullets per signal.",
+            f"Provide 2-3 bullets per signal by default; expand up to {max_bullets} when evidence is abundant.",
             "Bullets must be full-sentence reasoning, not keyword lists.",
             "Highlight recurring patterns, commonalities, and contradictions when present.",
+            "Prioritize insightful, controversial, paradigm-shifting, noteworthy, or important findings grounded in the evidence.",
+            "Call out shifts in perspective or direction when supported; distinguish stable consensus from active debates.",
             "Explicitly connect the evidence to the signal label.",
             "Each bullet must be an object with fields: bullet (string) and sources (array of document titles).",
             "Sources may be empty, but include 1-2 titles when they improve traceability.",
@@ -265,23 +267,39 @@ def build_profile_signals(
     top_k_docs: int | None = None,
     max_signals: int = 6,
     max_docs: int = 3,
-    max_bullets: int = 4,
+    max_bullets: int = 7,
     max_snippets: int = 3,
+    *,
+    use_cache: bool = True,
+    cache_result: bool = False,
 ) -> list[dict]:
     store = KGStore()
+    if use_cache:
+        cached = store.get_profile_summary(max_signals=max_signals, scope="local")
+        if cached is not None:
+            return cached
     profile = store.get_profile(limit=max_signals)
     if not profile:
         return []
 
     signals: list[dict] = []
+    local_sources = {"file", "note", "url"}
     for item in profile:
         entity_id = item.get("entity_id")
         label = item.get("entity") or "Unknown Topic"
         if not entity_id:
             continue
-        evidence = store.get_entity_evidence(entity_id, limit=max_docs * max_snippets)
+        evidence = store.get_entity_evidence(
+            entity_id,
+            limit=max_docs * max_snippets * 4,
+            source_types=local_sources,
+        )
         if not evidence:
-            mentions = store.get_entity_mentions(entity_id, limit=max_docs * max_snippets)
+            mentions = store.get_entity_mentions(
+                entity_id,
+                limit=max_docs * max_snippets * 4,
+                source_types=local_sources,
+            )
             evidence = [
                 {
                     "quote": m.get("sentence") or "",
@@ -335,6 +353,8 @@ def build_profile_signals(
                 signal["bullets"] = []
                 continue
             signal["bullets"] = bullets
+        if cache_result:
+            store.set_profile_summary(signals, scope="local")
         return signals
 
     for signal in signals:
@@ -347,6 +367,8 @@ def build_profile_signals(
             if len(bullets) >= max_bullets:
                 break
         signal["bullets"] = bullets
+    if cache_result:
+        store.set_profile_summary(signals, scope="local")
     return signals
 
 
@@ -754,6 +776,7 @@ def llm_draft_plan(
     top_k_docs: int | None = None,
     kg_fact_cards: list[dict] | None = None,
     output_language: str = "Chinese",
+    profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
     run_id: int | None = None,
     save_prefix: str | None = None,
@@ -777,6 +800,7 @@ def llm_draft_plan(
         extracted_interests=extracted_interests,
         kg_fact_cards=kg_fact_cards,
         output_language=output_language,
+        profile_summary=profile_summary,
         skill_guidance=skill_guidance,
     )
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan draft", agent="Planner")
@@ -821,6 +845,7 @@ def llm_refine_plan(
     top_k_docs: int | None = None,
     kg_fact_cards: list[dict] | None = None,
     output_language: str = "Chinese",
+    profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
     run_id: int | None = None,
     save_prefix: str | None = None,
@@ -854,6 +879,7 @@ def llm_refine_plan(
         extracted_interests=extracted_interests,
         kg_fact_cards=kg_fact_cards,
         output_language=output_language,
+        profile_summary=profile_summary,
         skill_guidance=skill_guidance,
     )
     response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan refinement", agent="Planner")
@@ -932,6 +958,7 @@ def llm_build_outline(
     keywords: list[str],
     kg_fact_cards: list[dict] | None = None,
     output_language: str = "Chinese",
+    profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
     active_skills: list[str] | None = None,
     run_id: int | None = None,
@@ -1002,10 +1029,11 @@ def llm_build_outline(
                 },
                 "requirements": [
                     f"Length must be {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words in the output language.",
-                    "Keep 8-12 major steps.",
-                    "Each major step must include 3-5 substeps.",
-                    "Each substep should be 2-3 sentences.",
                     "Preserve the original topic coverage and structure; rewrite to fit length.",
+                    "Keep the top-layer structure intact; if structure_guidance is provided, follow it even if step count changes.",
+                    "Aim for 8-12 major steps only when no structure/method guidance applies.",
+                    "Use 3-5 substeps and 2-3 sentences as defaults; vary when needed for clarity, depth, or method alignment.",
+                    "Preserve explicit profile ties; keep at least one relevant tie per top-layer step when profile_summary is provided.",
                 ],
                 "language_guidance": [
                     f"All natural-language content MUST be in {output_language}.",
@@ -1016,6 +1044,8 @@ def llm_build_outline(
         }
         if structure_guidance:
             payload["instructions"]["structure_guidance"] = structure_guidance
+        if profile_summary:
+            payload["profile_summary"] = profile_summary[:10]
         if language_hint:
             payload["language_hint"] = language_hint
         return json.dumps(payload, indent=2)
@@ -1034,10 +1064,11 @@ def llm_build_outline(
                 },
                 "requirements": [
                     f"Length must be at least {OUTLINE_MIN_WORDS} words in the output language.",
-                    "Keep 8-12 major steps.",
-                    "Each major step must include 3-5 substeps.",
-                    "Each substep should be 2-3 sentences.",
                     "Do not remove content; only expand with additional detail and substeps.",
+                    "Keep the top-layer structure intact; if structure_guidance is provided, follow it even if step count changes.",
+                    "Aim for 8-12 major steps only when no structure/method guidance applies.",
+                    "Use 3-5 substeps and 2-3 sentences as defaults; vary when needed for clarity, depth, or method alignment.",
+                    "Preserve explicit profile ties; keep at least one relevant tie per top-layer step when profile_summary is provided.",
                 ],
                 "language_guidance": [
                     f"All natural-language content MUST be in {output_language}.",
@@ -1048,6 +1079,8 @@ def llm_build_outline(
         }
         if structure_guidance:
             payload["instructions"]["structure_guidance"] = structure_guidance
+        if profile_summary:
+            payload["profile_summary"] = profile_summary[:10]
         if language_hint:
             payload["language_hint"] = language_hint
         return json.dumps(payload, indent=2)
@@ -1166,6 +1199,7 @@ def llm_build_outline(
         keywords,
         kg_fact_cards=kg_fact_cards,
         output_language=output_language,
+        profile_summary=profile_summary,
         structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
     )
@@ -1195,6 +1229,7 @@ def llm_build_outline(
         keywords,
         kg_fact_cards=kg_fact_cards,
         output_language=output_language,
+        profile_summary=profile_summary,
         length_hint=length_hint,
         language_hint=language_hint,
         structure_guidance=structure_guidance,
@@ -1219,6 +1254,7 @@ def llm_build_outline(
         keywords,
         kg_fact_cards=kg_fact_cards,
         output_language=output_language,
+        profile_summary=profile_summary,
         length_hint=length_hint,
         language_hint=language_hint,
         structure_guidance=structure_guidance,

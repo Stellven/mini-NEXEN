@@ -195,12 +195,16 @@ class LLMClient:
             return False
         if agent == "Profiler" and task == "profile extraction":
             return False
+        if agent == "KGContradiction" and task == "contradiction check":
+            return False
         return True
 
     def _should_log_start(self, agent: str, task: str) -> bool:
         if agent == "KGExtractor" and task == "kg triples":
             return False
         if agent == "Profiler" and task == "profile extraction":
+            return False
+        if agent == "KGContradiction" and task == "contradiction check":
             return False
         return True
 

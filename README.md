@@ -19,6 +19,10 @@ conda activate mini-nexen
 ```bash
 python -m mini_nexen.cli research --topic "Agentic research systems"
 ```
+Set the output language for both the plan and outline:
+```bash
+python -m mini_nexen.cli research --topic "Agentic research systems" --language "English"
+```
 Web retrieval is **on by default**. Disable it with `--no-web` or narrow it with `--web-open`, `--web-forum`, or `--web-lit`.
 
 **Environment Setup (Detailed)**
@@ -185,11 +189,22 @@ python -m mini_nexen.cli kg-export-dot --seed "agentic science" --hops 2 --out .
 python -m mini_nexen.cli kg-export-html --seed "agentic science" --hops 2 --out ./kg.html
 ```
 If you omit `--seed`, it uses top profile terms or top subject entities as seeds.
+By default, the exported file is opened automatically. Disable that with `--no-open`.
+Use `--all` to export the full KG and ignore `--seed/--hops`.
+Use `--min-conf` to filter low-confidence relations and `--limit-edges` to cap output size.
 To render DOT:
 ```bash
 dot -Tpng kg.dot -o kg.png
 ```
 Open `kg.html` in a browser to explore the interactive graph.
+
+**KG Inspection**
+Quick health and structure checks:
+```bash
+python -m mini_nexen.cli kg-report --limit 10
+python -m mini_nexen.cli kg-entity-edges --entity "agentic science" --show-neighbors
+```
+`kg-entity-edges` supports `--min-conf` and `--limit` to filter results, plus `--id` for exact entity lookup.
 
 **CLI Reference**
 
@@ -219,6 +234,7 @@ Research flags:
 | `--rounds` | Planning rounds | `2` |
 | `--top-k` | Doc limit hint for plan metadata | `3` |
 | `--kg-hops` | KG subgraph hops used for planning | `2` |
+| `--language` | Output language for plan and outline | `Chinese` |
 | `--provider` | LLM provider | env or prompt |
 | `--model` | LLM model | env or prompt |
 | `--base-url` | LM Studio base URL | `LMSTUDIO_BASE_URL` or default |

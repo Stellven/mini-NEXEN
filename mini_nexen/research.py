@@ -29,7 +29,7 @@ from .kg import (
     extract_profile_items,
     update_profile_from_mentions,
 )
-from .planning import outline_word_count
+from .planning import build_profile_signals, outline_word_count
 from .skills_runtime import SkillContext, build_default_runner
 
 
@@ -61,7 +61,7 @@ def _list_local_documents() -> list[db.Document]:
                 continue
             seen.add(doc.doc_id)
             docs.append(doc)
-    docs.sort(key=lambda doc: doc.added_at or "", reverse=True)
+    docs.sort(key=lambda doc: (doc.published_at or doc.added_at or ""), reverse=True)
     return docs
 
 
@@ -223,6 +223,19 @@ def build_local_kg(
     if force_profile_rebuild or (rebuild_profile and new_doc_ids):
         profile_rebuilt = True
         profile_items_added = _rebuild_profile_from_local(store, llm_client, local_docs)
+        try:
+            signals = build_profile_signals(
+                topic="",
+                interests=[],
+                llm=llm_client,
+                max_signals=DEFAULT_PROFILE_TOP_K,
+                use_cache=False,
+                cache_result=True,
+            )
+            if signals:
+                log_task_event(f"Profile signals cached: count={len(signals)}")
+        except LLMClientError as exc:
+            log_task_event(f"Profile signal caching failed: {exc}")
 
     log_task_event(
         "Local KG build: "

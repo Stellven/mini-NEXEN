@@ -25,6 +25,7 @@ class Document:
     source: str
     content_path: str
     added_at: str
+    published_at: str | None
     tags: list[str]
 
 
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS documents (
     content_path TEXT NOT NULL,
     content_hash TEXT,
     added_at TEXT NOT NULL,
+    published_at TEXT,
     tags_json TEXT NOT NULL
 );
 
@@ -124,6 +126,7 @@ CREATE TABLE IF NOT EXISTS kg_entities (
     name TEXT NOT NULL,
     canonical_name TEXT NOT NULL,
     type TEXT NOT NULL,
+    subtype TEXT,
     aliases_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -244,6 +247,14 @@ CREATE TABLE IF NOT EXISTS kg_user_profile (
 CREATE INDEX IF NOT EXISTS idx_kg_profile_entity
     ON kg_user_profile(entity_id);
 
+CREATE TABLE IF NOT EXISTS kg_profile_summary (
+    user_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    profile_updated_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kg_contradictions (
     contradiction_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -363,6 +374,7 @@ def add_document(
     content_text: str,
     tags: Optional[Iterable[str]] = None,
     content_hash: str | None = None,
+    published_at: str | None = None,
 ) -> Document:
     init_db()
     _ensure_documents_schema()
@@ -381,8 +393,8 @@ def add_document(
         conn.execute(
             """
             INSERT INTO documents
-                (doc_id, title, source_type, source, content_path, content_hash, added_at, tags_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (doc_id, title, source_type, source, content_path, content_hash, added_at, published_at, tags_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 doc_id,
@@ -392,6 +404,7 @@ def add_document(
                 content_path,
                 content_hash,
                 added_at,
+                published_at,
                 json.dumps(tags_list),
             ),
         )
@@ -419,6 +432,7 @@ def add_document(
         source=source,
         content_path=content_path,
         added_at=added_at,
+        published_at=published_at,
         tags=tags_list,
     )
 
@@ -426,7 +440,7 @@ def add_document(
 def _fetch_document_by_id(conn: sqlite3.Connection, doc_id: str) -> Document | None:
     row = conn.execute(
         """
-        SELECT doc_id, title, source_type, source, content_path, added_at, tags_json
+        SELECT doc_id, title, source_type, source, content_path, added_at, published_at, tags_json
         FROM documents
         WHERE doc_id = ?
         """,
@@ -441,6 +455,7 @@ def _fetch_document_by_id(conn: sqlite3.Connection, doc_id: str) -> Document | N
         source=row["source"],
         content_path=row["content_path"],
         added_at=row["added_at"],
+        published_at=row["published_at"],
         tags=json.loads(row["tags_json"]),
     )
 
@@ -507,6 +522,7 @@ def add_document_dedup(
     source: str,
     content_text: str,
     tags: Optional[Iterable[str]] = None,
+    published_at: str | None = None,
 ) -> tuple[Document, bool, str | None]:
     init_db()
     _ensure_documents_schema()
@@ -535,6 +551,7 @@ def add_document_dedup(
         content_text=content_text,
         tags=tags,
         content_hash=content_hash,
+        published_at=published_at,
     )
     return doc, True, None
 
@@ -545,7 +562,7 @@ def list_documents(limit: int = 200) -> list[Document]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT d.doc_id, d.title, d.source_type, d.source, d.content_path, d.added_at, d.tags_json
+            SELECT d.doc_id, d.title, d.source_type, d.source, d.content_path, d.added_at, d.published_at, d.tags_json
             FROM documents d
             JOIN document_stats s ON d.doc_id = s.doc_id
             WHERE s.archived = 0
@@ -565,6 +582,7 @@ def list_documents(limit: int = 200) -> list[Document]:
                 source=row["source"],
                 content_path=row["content_path"],
                 added_at=row["added_at"],
+                published_at=row["published_at"],
                 tags=json.loads(row["tags_json"]),
             )
         )
@@ -586,7 +604,7 @@ def list_documents_by_source(
     with _connect() as conn:
         rows = conn.execute(
             f"""
-            SELECT d.doc_id, d.title, d.source_type, d.source, d.content_path, d.added_at, d.tags_json
+            SELECT d.doc_id, d.title, d.source_type, d.source, d.content_path, d.added_at, d.published_at, d.tags_json
             FROM documents d
             JOIN document_stats s ON d.doc_id = s.doc_id
             WHERE d.source_type = ?
@@ -607,6 +625,7 @@ def list_documents_by_source(
                 source=row["source"],
                 content_path=row["content_path"],
                 added_at=row["added_at"],
+                published_at=row["published_at"],
                 tags=json.loads(row["tags_json"]),
             )
         )
@@ -652,6 +671,8 @@ def _ensure_documents_schema() -> None:
         cols = {row["name"] for row in rows}
         if "content_hash" not in cols:
             conn.execute("ALTER TABLE documents ADD COLUMN content_hash TEXT")
+        if "published_at" not in cols:
+            conn.execute("ALTER TABLE documents ADD COLUMN published_at TEXT")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS document_sources (
@@ -722,6 +743,10 @@ def _ensure_kg_schema() -> None:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS kg_users (user_id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL)"
             )
+        rows = conn.execute("PRAGMA table_info(kg_entities)").fetchall()
+        cols = {row["name"] for row in rows}
+        if rows and "subtype" not in cols:
+            conn.execute("ALTER TABLE kg_entities ADD COLUMN subtype TEXT")
         rows = conn.execute("PRAGMA table_info(kg_relations)").fetchall()
         cols = {row["name"] for row in rows}
         if rows and "claim_id" not in cols:
@@ -824,6 +849,18 @@ def _ensure_kg_schema() -> None:
                     ON kg_user_profile(entity_id);
                 """
             )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS kg_profile_summary (
+                user_id TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                profile_updated_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
 
 
 def mark_documents_seen(doc_ids: Iterable[str]) -> None:
@@ -990,7 +1027,7 @@ def get_documents_by_ids(doc_ids: Iterable[str]) -> list[Document]:
     with _connect() as conn:
         rows = conn.execute(
             f"""
-            SELECT d.doc_id, d.title, d.source_type, d.source, d.content_path, d.added_at, d.tags_json
+            SELECT d.doc_id, d.title, d.source_type, d.source, d.content_path, d.added_at, d.published_at, d.tags_json
             FROM documents d
             JOIN document_stats s ON d.doc_id = s.doc_id
             WHERE s.archived = 0 AND d.doc_id IN ({placeholders})
@@ -1008,6 +1045,7 @@ def get_documents_by_ids(doc_ids: Iterable[str]) -> list[Document]:
                 source=row["source"],
                 content_path=row["content_path"],
                 added_at=row["added_at"],
+                published_at=row["published_at"],
                 tags=json.loads(row["tags_json"]),
             )
         )

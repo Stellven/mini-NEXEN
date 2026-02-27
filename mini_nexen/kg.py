@@ -27,6 +27,13 @@ PREDICATE_CANONICAL = {
     "use": "uses",
     "utilizes": "uses",
     "employs": "uses",
+    "implements": "implements",
+    "trained on": "trained_on",
+    "trained with": "trained_on",
+    "benchmarked on": "benchmarked_on",
+    "evaluated on": "evaluated_on",
+    "depends on": "depends_on",
+    "requires": "requires",
     "affects": "affects",
     "impact": "affects",
     "impacts": "affects",
@@ -34,15 +41,50 @@ PREDICATE_CANONICAL = {
     "causes": "causes",
     "leads to": "causes",
     "enables": "enables",
-    "supports": "enables",
-    "requires": "requires",
-    "depends on": "requires",
+    "supports": "supports",
     "improves": "improves",
     "reduces": "reduces",
     "limits": "reduces",
     "compares to": "compares_to",
     "similar to": "related_to",
     "related to": "related_to",
+    "authored by": "authored_by",
+    "written by": "authored_by",
+    "published by": "published_by",
+    "affiliated with": "affiliated_with",
+    "works at": "affiliated_with",
+    "employed by": "affiliated_with",
+    "member of": "affiliated_with",
+    "cites": "cites",
+    "cited by": "cited_by",
+    "influenced by": "influenced_by",
+    "follows from": "follows_from",
+    "based on": "follows_from",
+    "builds on": "follows_from",
+    "criticizes": "criticizes",
+    "critiques": "criticizes",
+    "rejects": "criticizes",
+    "contradicts": "contradicts",
+    "competes with": "competes_with",
+    "partners with": "partners_with",
+    "acquires": "acquires",
+    "acquired by": "acquired_by",
+    "invests in": "invests_in",
+    "funded by": "funded_by",
+    "sells to": "sells_to",
+    "buys from": "buys_from",
+    "targets": "targets",
+    "serves": "serves",
+    "operates in": "operates_in",
+    "regulated by": "regulated_by",
+    "complies with": "complies_with",
+    "positioned as": "positioned_as",
+    "priced as": "priced_as",
+    "announced": "announced",
+    "launched": "launched",
+    "deprecated": "deprecated",
+    "supersedes": "supersedes",
+    "replaces": "replaces",
 }
 
 PREDICATE_CHOICES = sorted(set(PREDICATE_CANONICAL.values()))
@@ -51,21 +93,185 @@ ORG_TOKENS = {"inc", "corp", "co", "company", "ltd", "llc", "gmbh", "plc", "ag"}
 LAB_TOKENS = {"lab", "labs", "laboratory", "laboratories"}
 UNIVERSITY_TOKENS = {"university", "college", "institute", "school", "polytechnic"}
 
+ENTITY_TYPES = ["Person", "Institution", "Work", "Concept"]
+ENTITY_SUBTYPES: dict[str, list[str]] = {
+    "Person": ["Researcher", "Engineer", "Executive", "Investor", "Founder", "Author", "Analyst", "Other"],
+    "Institution": [
+        "Company",
+        "University",
+        "Lab",
+        "Government",
+        "Nonprofit",
+        "Publisher",
+        "Consortium",
+        "ResearchCenter",
+        "Other",
+    ],
+    "Work": [
+        "Model",
+        "Dataset",
+        "Benchmark",
+        "Framework",
+        "Library",
+        "System",
+        "Tool",
+        "Method",
+        "Algorithm",
+        "Architecture",
+        "Hardware",
+        "Protocol",
+        "Standard",
+        "Platform",
+        "Product",
+        "Service",
+        "Project",
+        "Publication",
+        "Other",
+    ],
+    "Concept": [
+        "Domain",
+        "Task",
+        "Metric",
+        "Phenomenon",
+        "Problem",
+        "Property",
+        "Process",
+        "Role",
+        "Market",
+        "Segment",
+        "Industry",
+        "Strategy",
+        "BusinessModel",
+        "Pricing",
+        "Risk",
+        "Opportunity",
+        "Regulation",
+        "Geography",
+        "KPI",
+        "Other",
+    ],
+}
 
-def _infer_entity_type(name: str) -> str:
+
+def _match_choice(value: str, choices: Iterable[str]) -> str | None:
+    for choice in choices:
+        if value.casefold() == choice.casefold():
+            return choice
+    return None
+
+
+def _infer_entity_type_and_subtype(name: str) -> tuple[str, str]:
     text = (name or "").strip()
     lowered = text.casefold()
     if not lowered:
-        return "Thing"
+        return "Concept", "Other"
     if any(token in lowered for token in UNIVERSITY_TOKENS):
-        return "University"
+        return "Institution", "University"
     if any(token in lowered for token in LAB_TOKENS):
-        return "Lab"
+        return "Institution", "Lab"
     if any(token in lowered.split() for token in ORG_TOKENS):
-        return "Company"
+        return "Institution", "Company"
     if re.match(r"^[A-Z][a-z]+\\s+[A-Z][a-z]+", text):
-        return "Person"
-    return "Thing"
+        return "Person", "Other"
+    work_keywords = [
+        ("dataset", "Dataset"),
+        ("corpus", "Dataset"),
+        ("benchmark", "Benchmark"),
+        ("framework", "Framework"),
+        ("library", "Library"),
+        ("system", "System"),
+        ("tool", "Tool"),
+        ("method", "Method"),
+        ("algorithm", "Algorithm"),
+        ("architecture", "Architecture"),
+        ("hardware", "Hardware"),
+        ("chip", "Hardware"),
+        ("protocol", "Protocol"),
+        ("standard", "Standard"),
+        ("platform", "Platform"),
+        ("product", "Product"),
+        ("service", "Service"),
+        ("project", "Project"),
+        ("publication", "Publication"),
+        ("paper", "Publication"),
+        ("model", "Model"),
+        ("llm", "Model"),
+    ]
+    for token, subtype in work_keywords:
+        if token in lowered:
+            return "Work", subtype
+    concept_keywords = [
+        ("market", "Market"),
+        ("segment", "Segment"),
+        ("industry", "Industry"),
+        ("strategy", "Strategy"),
+        ("pricing", "Pricing"),
+        ("risk", "Risk"),
+        ("opportunity", "Opportunity"),
+        ("regulation", "Regulation"),
+        ("geography", "Geography"),
+        ("metric", "Metric"),
+        ("kpi", "KPI"),
+    ]
+    for token, subtype in concept_keywords:
+        if token in lowered:
+            return "Concept", subtype
+    return "Concept", "Other"
+
+
+def _normalize_entity_type(
+    type_name: str | None,
+    subtype: str | None,
+    name: str,
+) -> tuple[str, str]:
+    raw_type = (type_name or "").strip()
+    raw_subtype = (subtype or "").strip()
+    old_type_map = {
+        "company": ("Institution", "Company"),
+        "university": ("Institution", "University"),
+        "lab": ("Institution", "Lab"),
+        "person": ("Person", "Other"),
+        "thing": ("Concept", "Other"),
+    }
+    if raw_type:
+        mapped = old_type_map.get(raw_type.casefold())
+        if mapped:
+            base_type, default_subtype = mapped
+        else:
+            base_type = _match_choice(raw_type, ENTITY_TYPES) or ""
+            default_subtype = ""
+    else:
+        base_type = ""
+        default_subtype = ""
+
+    if not base_type:
+        subtype_match = ""
+        for t_name, choices in ENTITY_SUBTYPES.items():
+            matched = _match_choice(raw_type, choices)
+            if matched:
+                base_type = t_name
+                subtype_match = matched
+                break
+        if subtype_match:
+            return base_type, subtype_match
+
+    if not base_type:
+        inferred_type, inferred_subtype = _infer_entity_type_and_subtype(name)
+        base_type = inferred_type
+        default_subtype = inferred_subtype
+
+    subtype_choice = _match_choice(raw_subtype, ENTITY_SUBTYPES.get(base_type, []))
+    if subtype_choice:
+        return base_type, subtype_choice
+
+    if default_subtype and _match_choice(default_subtype, ENTITY_SUBTYPES.get(base_type, [])):
+        return base_type, default_subtype
+
+    inferred_type, inferred_subtype = _infer_entity_type_and_subtype(name)
+    if inferred_type == base_type and _match_choice(inferred_subtype, ENTITY_SUBTYPES.get(base_type, [])):
+        return base_type, inferred_subtype
+
+    return base_type, "Other"
 
 
 @dataclass
@@ -74,6 +280,7 @@ class KGEntity:
     name: str
     canonical_name: str
     type: str
+    subtype: str
 
 
 @dataclass
@@ -112,6 +319,75 @@ def _canonicalize_name(name: str) -> str:
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"[^a-z0-9\s\-_/]", "", text)
     return text.strip()
+
+
+def _looks_like_acronym(text: str) -> bool:
+    cleaned = re.sub(r"[^A-Za-z]", "", text or "")
+    return cleaned.isupper() and 2 <= len(cleaned) <= 10
+
+
+def _singularize_token(token: str) -> str:
+    if not token:
+        return token
+    if token.endswith("s") and token[:-1].isupper() and len(token) <= 6:
+        return token[:-1]
+    if token.isupper():
+        return token
+    lower = token.casefold()
+    if len(lower) <= 3:
+        return token
+    if lower.endswith(("ss", "us", "is")):
+        return token
+    if lower.endswith("ies") and len(lower) > 4:
+        return token[:-3] + "y"
+    if lower.endswith(("ches", "shes", "xes", "ses", "zes")):
+        return token[:-2]
+    if lower.endswith("s") and len(lower) > 3:
+        return token[:-1]
+    return token
+
+
+def _singularize_phrase(text: str) -> str:
+    tokens = [t for t in re.split(r"\s+", (text or "").strip()) if t]
+    if not tokens:
+        return (text or "").strip()
+    return " ".join(_singularize_token(tok) for tok in tokens)
+
+
+def _split_parenthetical(name: str) -> tuple[str, list[str]]:
+    raw = (name or "").strip()
+    if not raw:
+        return raw, []
+    match = re.match(r"^(.*?)\s*[\(\[]\s*([^\)\]]+)\s*[\)\]]\s*$", raw)
+    if not match:
+        return raw, []
+    left = (match.group(1) or "").strip()
+    right = (match.group(2) or "").strip()
+    if not left or not right:
+        return raw, []
+    left_acro = _looks_like_acronym(left)
+    right_acro = _looks_like_acronym(right)
+    if left_acro and not right_acro:
+        base = right
+        aliases = [left, raw]
+    else:
+        base = left
+        aliases = [right, raw]
+    return base, [alias for alias in aliases if alias]
+
+
+def _prepare_entity_name(name: str) -> tuple[str, str, list[str]]:
+    raw = (name or "").strip()
+    base, aliases = _split_parenthetical(raw)
+    display = _singularize_phrase(base or raw)
+    canonical = _canonicalize_name(display) or display.casefold()
+    alias_keys: list[str] = []
+    for alias in aliases:
+        alias_norm = _singularize_phrase(alias)
+        alias_key = _canonicalize_name(alias_norm) or alias_norm.casefold()
+        if alias_key and alias_key != canonical:
+            alias_keys.append(alias_key)
+    return canonical, display or raw, sorted(set(alias_keys))
 
 
 def _normalize_claim_text(text: str) -> str:
@@ -165,6 +441,7 @@ def _extract_json_object(text: str) -> dict:
 
 
 def _triple_prompt(text: str) -> str:
+    type_schema = {key: ENTITY_SUBTYPES.get(key, []) for key in ENTITY_TYPES}
     return json.dumps(
         {
             "instructions": {
@@ -172,15 +449,23 @@ def _triple_prompt(text: str) -> str:
                 "schema": [
                     {
                         "subject": "string",
+                        "subject_type": "one of: " + ", ".join(ENTITY_TYPES),
+                        "subject_subtype": "one of the subtypes for subject_type",
                         "predicate": "one of: " + ", ".join(PREDICATE_CHOICES),
                         "object": "string",
+                        "object_type": "one of: " + ", ".join(ENTITY_TYPES),
+                        "object_subtype": "one of the subtypes for object_type",
                         "claim": "natural language statement",
                         "evidence": "short quote or sentence",
                         "confidence": "0-1 float",
                     }
                 ],
+                "entity_types": type_schema,
                 "rules": [
                     "Use short, canonical entity names.",
+                    "Choose a subject_type and subject_subtype from the controlled list.",
+                    "Choose an object_type and object_subtype from the controlled list.",
+                    "If unsure, use Concept / Other.",
                     "Prefer predicates from the list; if unsure use related_to.",
                     "Provide evidence for each triple. If you cannot quote evidence, omit the triple.",
                     "Return 3-12 triples maximum.",
@@ -210,6 +495,10 @@ def extract_triples(llm: LLMClient | None, text: str) -> list[dict]:
         subject = str(item.get("subject") or "").strip()
         predicate = str(item.get("predicate") or "").strip()
         obj = str(item.get("object") or "").strip()
+        subject_type = str(item.get("subject_type") or item.get("subjectType") or "").strip()
+        subject_subtype = str(item.get("subject_subtype") or item.get("subjectSubtype") or "").strip()
+        object_type = str(item.get("object_type") or item.get("objectType") or "").strip()
+        object_subtype = str(item.get("object_subtype") or item.get("objectSubtype") or "").strip()
         claim_text = str(item.get("claim") or "").strip()
         evidence = str(item.get("evidence") or "").strip()
         if not subject or not obj:
@@ -221,8 +510,12 @@ def extract_triples(llm: LLMClient | None, text: str) -> list[dict]:
         normalized.append(
             {
                 "subject": subject,
+                "subject_type": subject_type,
+                "subject_subtype": subject_subtype,
                 "predicate": _normalize_predicate(predicate),
                 "object": obj,
+                "object_type": object_type,
+                "object_subtype": object_subtype,
                 "claim": claim_text,
                 "evidence": evidence,
                 "confidence": max(0.0, min(1.0, confidence)),
@@ -357,6 +650,7 @@ class KGStore:
         self.user_id = user_id
         db.init_db()
         self._ensure_user()
+        self._ensure_entity_types()
 
     def _ensure_user(self) -> None:
         now = _now_iso()
@@ -372,51 +666,190 @@ class KGStore:
                 (self.user_id, self.user_id, now),
             )
 
-    def upsert_entity(self, name: str, type_name: str = "Thing", aliases: Iterable[str] | None = None) -> str:
-        name = (name or "").strip()
-        if not name:
+    def _ensure_entity_types(self) -> None:
+        with db._connect() as conn:
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(kg_entities)").fetchall()}
+            if "subtype" not in cols:
+                return
+            placeholders = ",".join("?" for _ in ENTITY_TYPES)
+            row = conn.execute(
+                f"""
+                SELECT 1
+                FROM kg_entities
+                WHERE user_id = ?
+                  AND (subtype IS NULL OR subtype = '' OR type NOT IN ({placeholders}))
+                LIMIT 1
+                """,
+                (self.user_id, *ENTITY_TYPES),
+            ).fetchone()
+            if not row:
+                return
+            rows = conn.execute(
+                """
+                SELECT entity_id, name, type, subtype
+                FROM kg_entities
+                WHERE user_id = ?
+                """,
+                (self.user_id,),
+            ).fetchall()
+            now = _now_iso()
+            for row in rows:
+                new_type, new_subtype = _normalize_entity_type(
+                    row["type"], row["subtype"], row["name"]
+                )
+                if new_type != row["type"] or (row["subtype"] or "") != new_subtype:
+                    conn.execute(
+                        """
+                        UPDATE kg_entities
+                        SET type = ?, subtype = ?, updated_at = ?
+                        WHERE entity_id = ?
+                        """,
+                        (new_type, new_subtype, now, row["entity_id"]),
+                    )
+
+    def upsert_entity(
+        self,
+        name: str,
+        type_name: str | None = None,
+        subtype: str | None = None,
+        aliases: Iterable[str] | None = None,
+    ) -> str:
+        raw_name = (name or "").strip()
+        if not raw_name:
             raise ValueError("Entity name is required.")
-        canonical = _canonicalize_name(name)
+        canonical, display_name, alias_keys = _prepare_entity_name(raw_name)
         if not canonical:
-            canonical = name.casefold()
-        inferred_type = type_name or "Thing"
-        if inferred_type == "Thing":
-            inferred_type = _infer_entity_type(name)
+            canonical = raw_name.casefold()
+        normalized_type, normalized_subtype = _normalize_entity_type(
+            type_name, subtype, display_name or raw_name
+        )
         aliases_list = sorted({alias.strip() for alias in (aliases or []) if alias and alias.strip()})
+        for alias in aliases_list:
+            alias_key = _canonicalize_name(alias) or alias.casefold()
+            if alias_key and alias_key != canonical:
+                alias_keys.append(alias_key)
+        alias_keys = sorted(set(alias_keys))
+        alias_lookup = sorted(set(alias_keys + [canonical]))
         now = _now_iso()
         with db._connect() as conn:
             row = conn.execute(
                 """
-                SELECT entity_id FROM kg_entities
+                SELECT entity_id, name, type, subtype, aliases_json FROM kg_entities
                 WHERE user_id = ? AND canonical_name = ?
                 """,
                 (self.user_id, canonical),
             ).fetchone()
             if row:
-                conn.execute(
-                    """
-                    UPDATE kg_entities
-                    SET updated_at = ?, last_seen_at = ?
-                    WHERE entity_id = ?
-                    """,
-                    (now, now, row["entity_id"]),
-                )
+                existing_aliases = json.loads(row["aliases_json"] or "[]")
+                merged_aliases = sorted(set(existing_aliases) | set(alias_keys))
+                updates = {
+                    "aliases_json": json.dumps(merged_aliases) if merged_aliases != existing_aliases else None,
+                }
+                current_type = row["type"] or ""
+                current_subtype = row["subtype"] or ""
+                if current_type != normalized_type or current_subtype != normalized_subtype:
+                    updates["type"] = normalized_type
+                    updates["subtype"] = normalized_subtype
+                if merged_aliases != existing_aliases:
+                    pass
+                if updates.get("aliases_json") or updates.get("type") or updates.get("subtype"):
+                    conn.execute(
+                        """
+                        UPDATE kg_entities
+                        SET aliases_json = COALESCE(?, aliases_json),
+                            type = COALESCE(?, type),
+                            subtype = COALESCE(?, subtype),
+                            updated_at = ?,
+                            last_seen_at = ?
+                        WHERE entity_id = ?
+                        """,
+                        (
+                            updates.get("aliases_json"),
+                            updates.get("type"),
+                            updates.get("subtype"),
+                            now,
+                            now,
+                            row["entity_id"],
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE kg_entities
+                        SET updated_at = ?, last_seen_at = ?
+                        WHERE entity_id = ?
+                        """,
+                        (now, now, row["entity_id"]),
+                    )
                 return str(row["entity_id"])
+            if alias_lookup:
+                alias_like = [f"%\"{alias}\"%" for alias in alias_lookup]
+                where = " OR ".join("aliases_json LIKE ?" for _ in alias_like)
+                row = conn.execute(
+                    f"""
+                    SELECT entity_id, name, type, subtype, aliases_json
+                    FROM kg_entities
+                    WHERE user_id = ? AND ({where})
+                    """,
+                    (self.user_id, *alias_like),
+                ).fetchone()
+                if row:
+                    existing_aliases = json.loads(row["aliases_json"] or "[]")
+                    merged_aliases = sorted(set(existing_aliases) | set(alias_keys))
+                    current_type = row["type"] or ""
+                    current_subtype = row["subtype"] or ""
+                    if merged_aliases != existing_aliases:
+                        pass
+                    if (
+                        merged_aliases != existing_aliases
+                        or current_type != normalized_type
+                        or current_subtype != normalized_subtype
+                    ):
+                        conn.execute(
+                            """
+                            UPDATE kg_entities
+                            SET aliases_json = COALESCE(?, aliases_json),
+                                type = COALESCE(?, type),
+                                subtype = COALESCE(?, subtype),
+                                updated_at = ?,
+                                last_seen_at = ?
+                            WHERE entity_id = ?
+                            """,
+                            (
+                                json.dumps(merged_aliases) if merged_aliases != existing_aliases else None,
+                                normalized_type if current_type != normalized_type else None,
+                                normalized_subtype if current_subtype != normalized_subtype else None,
+                                now,
+                                now,
+                                row["entity_id"],
+                            ),
+                        )
+                    else:
+                        conn.execute(
+                            """
+                            UPDATE kg_entities
+                            SET updated_at = ?, last_seen_at = ?
+                            WHERE entity_id = ?
+                            """,
+                            (now, now, row["entity_id"]),
+                        )
+                    return str(row["entity_id"])
             entity_id = str(uuid.uuid4())
             conn.execute(
                 """
                 INSERT INTO kg_entities
-                    (entity_id, user_id, name, canonical_name, type, aliases_json,
+                    (entity_id, user_id, name, canonical_name, type, subtype, aliases_json,
                      created_at, updated_at, first_seen_at, last_seen_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entity_id,
                     self.user_id,
-                    name,
+                    display_name or raw_name,
                     canonical,
-                    inferred_type,
-                    json.dumps(aliases_list),
+                    normalized_type,
+                    normalized_subtype,
+                    json.dumps(sorted(set(alias_keys))),
                     now,
                     now,
                     now,
@@ -643,18 +1076,23 @@ class KGStore:
         term = (term or "").strip()
         if not term:
             return []
-        canonical = _canonicalize_name(term)
+        canonical, _display, alias_keys = _prepare_entity_name(term)
         canonical_like = f"%{canonical}%" if canonical else ""
         raw_like = f"%{term.casefold()}%"
+        alias_lookup = sorted(set(alias_keys + ([canonical] if canonical else [])))
+        alias_like = [f"%\"{alias}\"%" for alias in alias_lookup]
+        alias_clause = ""
+        if alias_like:
+            alias_clause = "OR " + " OR ".join("aliases_json LIKE ?" for _ in alias_like)
         with db._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT entity_id, name, canonical_name, type
+                SELECT entity_id, name, canonical_name, type, subtype
                 FROM kg_entities
-                WHERE user_id = ? AND (canonical_name LIKE ? OR name LIKE ?)
+                WHERE user_id = ? AND (canonical_name LIKE ? OR name LIKE ? {alias_clause})
                 LIMIT ?
-                """,
-                (self.user_id, canonical_like or raw_like, raw_like, limit),
+                """.format(alias_clause=alias_clause),
+                (self.user_id, canonical_like or raw_like, raw_like, *alias_like, limit),
             ).fetchall()
         return [
             KGEntity(
@@ -662,6 +1100,7 @@ class KGStore:
                 name=row["name"],
                 canonical_name=row["canonical_name"],
                 type=row["type"],
+                subtype=row["subtype"] or "Other",
             )
             for row in rows
         ]
@@ -705,13 +1144,102 @@ class KGStore:
                 """,
                 (self.user_id,),
             )
+            conn.execute(
+                """
+                DELETE FROM kg_profile_summary
+                WHERE user_id = ?
+                """,
+                (self.user_id,),
+            )
         return int(cur.rowcount or 0)
+
+    def get_profile_updated_at(self) -> str | None:
+        with db._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT MAX(updated_at) AS updated_at
+                FROM kg_user_profile
+                WHERE user_id = ?
+                """,
+                (self.user_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return row["updated_at"] or None
+
+    def get_profile_summary(
+        self,
+        max_signals: int | None = None,
+        scope: str = "local",
+    ) -> list[dict] | None:
+        current_updated_at = self.get_profile_updated_at()
+        if not current_updated_at:
+            return None
+        with db._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload, profile_updated_at
+                FROM kg_profile_summary
+                WHERE user_id = ?
+                """,
+                (self.user_id,),
+            ).fetchone()
+        if not row:
+            return None
+        if row["profile_updated_at"] != current_updated_at:
+            return None
+        payload = row["payload"]
+        if not payload:
+            return None
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(data, dict):
+            if data.get("scope") != scope:
+                return None
+            data = data.get("signals")
+        else:
+            # Legacy cache format (list); ignore to avoid mixing scopes.
+            return None
+        if not isinstance(data, list):
+            return None
+        if isinstance(max_signals, int) and max_signals > 0:
+            return data[:max_signals]
+        return data
+
+    def set_profile_summary(
+        self,
+        signals: list[dict],
+        profile_updated_at: str | None = None,
+        scope: str = "local",
+    ) -> bool:
+        if not signals:
+            return False
+        updated_at = profile_updated_at or self.get_profile_updated_at()
+        if not updated_at:
+            return False
+        now = _now_iso()
+        payload = json.dumps({"scope": scope, "signals": signals}, ensure_ascii=False)
+        with db._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO kg_profile_summary (user_id, payload, profile_updated_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    payload = excluded.payload,
+                    profile_updated_at = excluded.profile_updated_at,
+                    updated_at = excluded.updated_at
+                """,
+                (self.user_id, payload, updated_at, now, now),
+            )
+        return True
 
     def get_entities_by_type(self, type_name: str, limit: int = 50) -> list[KGEntity]:
         with db._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT entity_id, name, canonical_name, type
+                SELECT entity_id, name, canonical_name, type, subtype
                 FROM kg_entities
                 WHERE user_id = ? AND type = ?
                 LIMIT ?
@@ -724,6 +1252,7 @@ class KGStore:
                 name=row["name"],
                 canonical_name=row["canonical_name"],
                 type=row["type"],
+                subtype=row["subtype"] or "Other",
             )
             for row in rows
         ]
@@ -968,9 +1497,21 @@ class KGStore:
             )
             conn.execute("DELETE FROM kg_entities WHERE entity_id = ?", (entity_id_b,))
 
-    def get_entity_evidence(self, entity_id: str, limit: int = 5) -> list[dict]:
+    def get_entity_evidence(
+        self,
+        entity_id: str,
+        limit: int = 5,
+        source_types: Iterable[str] | None = None,
+    ) -> list[dict]:
         if not entity_id:
             return []
+        source_types = [t for t in (source_types or []) if t]
+        source_clause = ""
+        params: list[object] = [self.user_id, entity_id, entity_id]
+        if source_types:
+            source_clause = "AND d.source_type IN ({})".format(",".join("?" for _ in source_types))
+            params.extend(source_types)
+        params.append(limit)
         with db._connect() as conn:
             rows = conn.execute(
                 """
@@ -979,10 +1520,11 @@ class KGStore:
                 JOIN kg_evidence ev ON ev.relation_id = r.relation_id
                 LEFT JOIN documents d ON d.doc_id = ev.doc_id
                 WHERE r.user_id = ? AND (r.subject_id = ? OR r.object_id = ?)
+                {source_clause}
                 ORDER BY ev.confidence DESC
                 LIMIT ?
-                """,
-                (self.user_id, entity_id, entity_id, limit),
+                """.format(source_clause=source_clause),
+                params,
             ).fetchall()
         return [
             {
@@ -994,9 +1536,21 @@ class KGStore:
             for row in rows
         ]
 
-    def get_entity_mentions(self, entity_id: str, limit: int = 5) -> list[dict]:
+    def get_entity_mentions(
+        self,
+        entity_id: str,
+        limit: int = 5,
+        source_types: Iterable[str] | None = None,
+    ) -> list[dict]:
         if not entity_id:
             return []
+        source_types = [t for t in (source_types or []) if t]
+        source_clause = ""
+        params: list[object] = [self.user_id, entity_id]
+        if source_types:
+            source_clause = "AND d.source_type IN ({})".format(",".join("?" for _ in source_types))
+            params.extend(source_types)
+        params.append(limit)
         with db._connect() as conn:
             rows = conn.execute(
                 """
@@ -1004,10 +1558,11 @@ class KGStore:
                 FROM kg_mentions m
                 LEFT JOIN documents d ON d.doc_id = m.doc_id
                 WHERE m.user_id = ? AND m.entity_id = ?
+                {source_clause}
                 ORDER BY m.created_at DESC
                 LIMIT ?
-                """,
-                (self.user_id, entity_id, limit),
+                """.format(source_clause=source_clause),
+                params,
             ).fetchall()
         return [
             {
@@ -1122,7 +1677,7 @@ class KGStore:
             with db._connect() as conn:
                 rows = conn.execute(
                     """
-                    SELECT entity_id, name, canonical_name, type
+                    SELECT entity_id, name, canonical_name, type, subtype
                     FROM kg_entities
                     WHERE user_id = ? AND entity_id IN ({})
                     """.format(",".join("?" for _ in visited)),
@@ -1134,6 +1689,7 @@ class KGStore:
                     name=row["name"],
                     canonical_name=row["canonical_name"],
                     type=row["type"],
+                    subtype=row["subtype"] or "Other",
                 )
                 for row in rows
             ]
@@ -1277,8 +1833,14 @@ def extract_and_store(
         evidence = (triple.get("evidence") or "").strip()
         if not evidence:
             continue
-        subject_id = store.upsert_entity(triple["subject"])
-        object_id = store.upsert_entity(triple["object"])
+        subj_type, subj_subtype = _normalize_entity_type(
+            triple.get("subject_type"), triple.get("subject_subtype"), triple["subject"]
+        )
+        obj_type, obj_subtype = _normalize_entity_type(
+            triple.get("object_type"), triple.get("object_subtype"), triple["object"]
+        )
+        subject_id = store.upsert_entity(triple["subject"], type_name=subj_type, subtype=subj_subtype)
+        object_id = store.upsert_entity(triple["object"], type_name=obj_type, subtype=obj_subtype)
         claim_text = (triple.get("claim") or "").strip()
         if not claim_text and evidence:
             claim_text = evidence
@@ -1437,7 +1999,7 @@ def build_full_subgraph(
     with db._connect() as conn:
         entity_rows = conn.execute(
             """
-            SELECT entity_id, name, canonical_name, type
+            SELECT entity_id, name, canonical_name, type, subtype
             FROM kg_entities
             WHERE user_id = ? AND entity_id IN ({})
             """.format(",".join("?" for _ in entity_ids)),
@@ -1449,6 +2011,7 @@ def build_full_subgraph(
             name=row["name"],
             canonical_name=row["canonical_name"],
             type=row["type"],
+            subtype=row["subtype"] or "Other",
         )
         for row in entity_rows
     ]
@@ -1613,15 +2176,16 @@ def render_html(
                     "source_type": doc.source_type if doc else source_type,
                     "source": doc.source if doc else "",
                     "added_at": doc.added_at if doc else "",
+                    "published_at": doc.published_at if doc else "",
                 }
             )
         for rel_id, buckets in rel_sources.items():
             source_counts[rel_id] = {bucket: len(ids) for bucket, ids in buckets.items()}
 
-    def _latest_evidence_at(items: list[dict[str, object]]) -> str:
+    def _latest_date(items: list[dict[str, object]], key: str) -> str:
         latest: datetime | None = None
         for item in items:
-            raw = str(item.get("added_at") or "")
+            raw = str(item.get(key) or "")
             if not raw:
                 continue
             try:
@@ -1636,11 +2200,14 @@ def render_html(
 
     node_ids: set[str] = set()
     for entity in subgraph.entities:
+        title = entity.type or "Entity"
+        if entity.subtype:
+            title = f"{title} / {entity.subtype}"
         nodes.append(
             {
                 "id": entity.entity_id,
                 "label": entity.name or entity.canonical_name or entity.entity_id[:8],
-                "title": entity.type or "Entity",
+                "title": title,
             }
         )
         node_ids.add(entity.entity_id)
@@ -1740,16 +2307,22 @@ def render_html(
                 label = f"{label}/O{other_count}"
             label = f"{label}]"
         edge["label"] = label
-        latest_at = _latest_evidence_at(ev_items)
-        if latest_at:
-            edge["title"] = "\n".join(
-                [edge.get("title") or "", f"Latest evidence: {latest_at}"]
-            ).strip()
+        latest_published_at = _latest_date(ev_items, "published_at")
+        latest_added_at = _latest_date(ev_items, "added_at")
+        edge["latest_published_at"] = latest_published_at
+        edge["latest_added_at"] = latest_added_at
+        if latest_published_at or latest_added_at:
+            lines = [edge.get("title") or ""]
+            if latest_published_at:
+                lines.append(f"Latest published: {latest_published_at}")
+            if latest_added_at:
+                lines.append(f"Latest ingested: {latest_added_at}")
+            edge["title"] = "\n".join([line for line in lines if line]).strip()
+        edge["latest_evidence_at"] = latest_published_at or latest_added_at
         source_summary = f"local={local_count} web={web_count}"
         if other_count:
             source_summary += f" other={other_count}"
         edge["source_summary"] = source_summary
-        edge["latest_evidence_at"] = latest_at
         edge["evidence_items"] = ev_items
 
     payload = {
@@ -1924,10 +2497,12 @@ def render_html(
         return;
       }}
       const title = escapeHtml(edge.label || edge.title || "Edge");
-      const latest = edge.latest_evidence_at ? escapeHtml(edge.latest_evidence_at) : "Unknown";
+      const latestPublished = edge.latest_published_at ? escapeHtml(edge.latest_published_at) : "Unknown";
+      const latestAdded = edge.latest_added_at ? escapeHtml(edge.latest_added_at) : "Unknown";
       const sources = escapeHtml(edge.source_summary || "Unknown");
       let html = `<div class="meta"><strong>${{title}}</strong></div>`;
-      html += `<div class="meta">Latest evidence: ${{latest}}</div>`;
+      html += `<div class="meta">Latest published: ${{latestPublished}}</div>`;
+      html += `<div class="meta">Latest ingested: ${{latestAdded}}</div>`;
       html += `<div class="meta">Sources: ${{sources}}</div>`;
       const evidence = edge.evidence_items || [];
       if (!evidence.length) {{
@@ -1938,11 +2513,19 @@ def render_html(
       html += `<div class="evidence"><strong>Evidence</strong></div>`;
       for (const item of evidence) {{
         const quote = escapeHtml(item.quote || "");
-        const addedAt = escapeHtml(item.added_at || "Unknown");
+        const publishedAt = escapeHtml(item.published_at || "");
+        const addedAt = escapeHtml(item.added_at || "");
         const sourceType = escapeHtml(item.source_type || "Unknown");
         const titleText = escapeHtml(item.doc_title || item.doc_id || "");
         html += `<div class="evidence-item">`;
-        html += `<div class="meta">${{sourceType}} | ${{addedAt}}</div>`;
+        if (publishedAt) {{
+          html += `<div class="meta">${{sourceType}} | Published: ${{publishedAt}}</div>`;
+          if (addedAt) {{
+            html += `<div class="meta">Ingested: ${{addedAt}}</div>`;
+          }}
+        }} else {{
+          html += `<div class="meta">${{sourceType}} | Ingested: ${{addedAt || "Unknown"}}</div>`;
+        }}
         if (titleText) {{
           html += `<div class="meta">${{titleText}}</div>`;
         }}
