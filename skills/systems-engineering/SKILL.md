@@ -2,6 +2,42 @@
 name: systems-engineering
 display_name: Systems Engineering
 aliases: systems engineering, system engineering, 系统工程, 系統工程, 五看三定, 三一工程, 四化设计, 系统融合, 作战地图, 产业投资
+skill_type: methodology
+methods:
+  - name: 五看三定
+    steps:
+      - 看行业/趋势
+      - 看市场/客户
+      - 看竞争
+      - 看自己
+      - 看机会
+      - 定战略控制点
+      - 定目标
+      - 定策略
+  - name: 三一工程
+    steps:
+      - 需求精准
+      - 举一反三
+      - 四化设计
+      - 认知精准
+  - name: 作战地图
+    steps:
+      - 目标与资源对齐
+      - 关键战役与任务分解
+      - 资源配置与优先级
+      - 风险与对策
+  - name: DSMM
+    steps:
+      - 领域知识捕获
+      - 关键概念建模
+      - 关系图谱构建
+      - 知识验证与迭代
+  - name: SBIIEM
+    steps:
+      - 投资目标与约束定义
+      - 产业链与系统分解
+      - 价值评估与风险
+      - 结论与决策建议
 description: >
   Use this skill for any systems engineering task: requirements analysis,
   architecture design, MBSE modeling, V-model workflows, interface control

@@ -1194,10 +1194,12 @@ def clear_library_and_graph(clear_files: bool = True) -> dict[str, int]:
         kg_profiles = conn.execute("DELETE FROM kg_user_profile").rowcount
         kg_contra = conn.execute("DELETE FROM kg_contradictions").rowcount
         kg_doc_state = conn.execute("DELETE FROM kg_doc_state").rowcount
+        sources = conn.execute("DELETE FROM document_sources").rowcount
         stats = conn.execute("DELETE FROM document_stats").rowcount
         docs = conn.execute("DELETE FROM documents").rowcount
     return {
         "documents": int(docs or 0),
+        "document_sources": int(sources or 0),
         "document_stats": int(stats or 0),
         "graph_meta": int(graph_meta or 0),
         "kg_entities": int(kg_entities or 0),

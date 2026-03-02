@@ -8,15 +8,23 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from . import db
-from .config import ARTIFACTS_DIR, DEFAULT_PROFILE_TOP_K, ensure_dirs
+from .config import ARTIFACTS_DIR, DEFAULT_OUTLINE_REVIEW_ROUNDS, DEFAULT_PROFILE_TOP_K, ensure_dirs
 from .db import Document, Interest, Method
 from .kg import KGStore
-from .llm import LLMClient, LLMClientError, log_task_event
-from .llm_prompts import SYSTEM_OUTLINE_PROMPT, SYSTEM_PLAN_PROMPT, outline_prompt, plan_prompt, refine_prompt
+from .llm import LLMClient, LLMClientError, emit_progress, log_task_event
+from .llm_prompts import (
+    SYSTEM_OUTLINE_PROMPT,
+    SYSTEM_PLAN_PROMPT,
+    SYSTEM_REVIEW_PROMPT,
+    outline_profile_review_prompt,
+    outline_prompt,
+    plan_prompt,
+    plan_readiness_review_prompt,
+    refine_prompt,
+)
 from .text_utils import tokenize
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
-_CJK_WORD_RE = re.compile(r"[\u4e00-\u9fff]+")
 
 
 _JSON_KEY_MAP = {
@@ -208,12 +216,17 @@ def _summarize_profile_bullets(
         ],
         "signals": payload,
     }
-    response = llm.generate(
-        system_prompt="You summarize evidence into concise, traceable bullets.",
-        user_prompt=json.dumps(prompt, indent=2),
-        task="profile signals",
-        agent="ProfileSignals",
-    )
+    model_label = llm.config.model
+    emit_progress("ProfileSignals", model_label, "profile signals", 0, 1, done=False)
+    try:
+        response = llm.generate(
+            system_prompt="You summarize evidence into concise, traceable bullets.",
+            user_prompt=json.dumps(prompt, indent=2),
+            task="profile signals",
+            agent="ProfileSignals",
+        )
+    finally:
+        emit_progress("ProfileSignals", model_label, "profile signals", 1, 1, done=True)
     parsed = _extract_json(response)
     if not parsed:
         raise LLMClientError("LLM returned invalid JSON for profile signals.")
@@ -378,6 +391,51 @@ def is_ready(plan: PlanDraft, min_sources: int = 3) -> tuple[bool, list[str]]:
         gaps.append("Insufficient sources to finalize the plan.")
     ready = len(gaps) == 0
     return ready, gaps
+
+
+def review_plan_readiness(
+    llm: LLMClient,
+    plan: PlanDraft,
+    output_language: str,
+) -> tuple[bool, list[str]]:
+    prompt = plan_readiness_review_prompt(
+        topic=plan.topic,
+        plan={
+            "scope": plan.scope,
+            "key_questions": plan.key_questions,
+            "keywords": plan.keywords,
+            "gaps": plan.gaps,
+            "notes": plan.notes,
+            "readiness": plan.readiness,
+        },
+        source_briefs_count=len(plan.source_briefs),
+        source_types=plan.source_types,
+        output_language=output_language,
+    )
+    try:
+        response = llm.generate(
+            SYSTEM_REVIEW_PROMPT,
+            prompt,
+            task="plan readiness review",
+            agent="Reviewer",
+        )
+    except Exception as exc:
+        log_task_event(f"Reviewer failed: plan readiness review error={exc}")
+        return is_ready(plan)
+    payload = _extract_json(response)
+    if not payload:
+        log_task_event("Reviewer: invalid JSON for plan readiness review.")
+        return is_ready(plan)
+    ready_flag = payload.get("ready")
+    readiness = payload.get("readiness")
+    if isinstance(ready_flag, str):
+        ready_flag = ready_flag.strip().lower() == "true"
+    gaps = _clean_list(payload.get("gaps"))
+    if isinstance(readiness, str) and readiness.strip().lower() == "ready":
+        return True, gaps
+    if isinstance(ready_flag, bool):
+        return ready_flag, gaps
+    return is_ready(plan)
 
 
 def _extract_json(text: str) -> dict:
@@ -680,10 +738,9 @@ def _normalize_outline(
 
 def _count_words(text: str) -> int:
     tokens = tokenize(text)
-    english_tokens = len([token for token in tokens if token])
-    # Approximate CJK word count by contiguous CJK sequences.
-    cjk_words = len(_CJK_WORD_RE.findall(text or ""))
-    return english_tokens + cjk_words
+    english_words = len([token for token in tokens if token])
+    cjk_chars = len(_CJK_RE.findall(text or ""))
+    return english_words + cjk_chars
 
 
 def outline_word_count(outline: list[str]) -> int:
@@ -692,10 +749,14 @@ def outline_word_count(outline: list[str]) -> int:
 
 def outline_cjk_ratio(outline: list[str]) -> float:
     text = " ".join(outline)
-    cjk_tokens = len(_CJK_RE.findall(text))
-    english_tokens = len([token for token in tokenize(text) if token])
-    total = cjk_tokens + english_tokens
-    return cjk_tokens / total if total else 0.0
+    cjk_chars = len(_CJK_RE.findall(text))
+    english_words = len([token for token in tokenize(text) if token])
+    total = cjk_chars + english_words
+    return cjk_chars / total if total else 0.0
+
+
+def outline_length_ok(count: int) -> bool:
+    return count >= OUTLINE_MIN_WORDS
 
 
 def _apply_llm_fields(plan: PlanDraft, payload: dict) -> PlanDraft:
@@ -709,6 +770,88 @@ def _apply_llm_fields(plan: PlanDraft, payload: dict) -> PlanDraft:
     if isinstance(readiness, str) and readiness.strip():
         plan.readiness = readiness.strip().lower()
     return plan
+
+
+def _is_chinese_language(value: str) -> bool:
+    lowered = (value or "").casefold()
+    return ("chinese" in lowered) or ("中文" in value) or ("zh" == lowered) or ("zh-" in lowered)
+
+
+def _outline_has_profile_tags(outline: list[str]) -> bool:
+    tag_markers = ("[關切", "[关切", "[profile", "[profile evidence")
+    text = " ".join(outline or [])
+    lowered = text.casefold()
+    return any(marker.casefold() in lowered for marker in tag_markers)
+
+
+def _review_outline_profile_tags(
+    llm: LLMClient,
+    outline: list[str],
+    topic: str,
+    keywords: list[str],
+    profile_summary: list[dict],
+    kg_fact_cards: list[dict] | None,
+    output_language: str,
+) -> dict | None:
+    prompt = outline_profile_review_prompt(
+        topic=topic,
+        outline=outline,
+        keywords=keywords,
+        profile_summary=profile_summary,
+        kg_fact_cards=kg_fact_cards,
+        output_language=output_language,
+    )
+    try:
+        response = llm.generate(
+            SYSTEM_REVIEW_PROMPT,
+            prompt,
+            task="outline profile review",
+            agent="Reviewer",
+        )
+    except Exception as exc:
+        log_task_event(f"Reviewer failed: outline profile review error={exc}")
+        return None
+    payload = _extract_json(response)
+    if not payload:
+        log_task_event("Reviewer: invalid JSON for outline profile review.")
+        return None
+    relevant_labels = _clean_list(payload.get("relevant_labels"))
+    missing_labels = _clean_list(payload.get("missing_labels"))
+    untagged_mentions: list[dict] = []
+    raw_untagged = payload.get("untagged_mentions")
+    if isinstance(raw_untagged, list):
+        for item in raw_untagged:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label") or "").strip()
+            line = str(item.get("line") or "").strip()
+            if label and line:
+                untagged_mentions.append({"label": label, "line": line})
+    suggested_additions: list[dict] = []
+    raw_suggestions = payload.get("suggested_additions")
+    if isinstance(raw_suggestions, list):
+        for item in raw_suggestions:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label") or "").strip()
+            why = str(item.get("why") or "").strip()
+            placement = str(item.get("placement_hint") or "").strip()
+            if label and (why or placement):
+                suggested_additions.append(
+                    {"label": label, "why": why, "placement_hint": placement}
+                )
+    needs_revision = payload.get("needs_revision")
+    if isinstance(needs_revision, str):
+        needs_revision = needs_revision.strip().lower() == "true"
+    if not isinstance(needs_revision, bool):
+        needs_revision = bool(missing_labels or untagged_mentions or suggested_additions)
+    return {
+        "relevant_labels": relevant_labels,
+        "missing_labels": missing_labels,
+        "untagged_mentions": untagged_mentions,
+        "suggested_additions": suggested_additions,
+        "needs_revision": needs_revision,
+    }
 
 
 def _base_plan(
@@ -803,7 +946,12 @@ def llm_draft_plan(
         profile_summary=profile_summary,
         skill_guidance=skill_guidance,
     )
-    response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan draft", agent="Planner")
+    model_label = llm.config.model
+    emit_progress("Planner", model_label, "plan draft", 0, 1, done=False)
+    try:
+        response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan draft", agent="Planner")
+    finally:
+        emit_progress("Planner", model_label, "plan draft", 1, 1, done=True)
     payload = _extract_json(response)
     if not payload:
         parsed = _parse_plan_from_text(response)
@@ -882,7 +1030,12 @@ def llm_refine_plan(
         profile_summary=profile_summary,
         skill_guidance=skill_guidance,
     )
-    response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan refinement", agent="Planner")
+    model_label = llm.config.model
+    emit_progress("Planner", model_label, "plan refinement", 0, 1, done=False)
+    try:
+        response = llm.generate(SYSTEM_PLAN_PROMPT, prompt, task="plan refinement", agent="Planner")
+    finally:
+        emit_progress("Planner", model_label, "plan refinement", 1, 1, done=True)
     payload = _extract_json(response)
     if not payload:
         parsed = _parse_plan_from_text(response)
@@ -961,9 +1114,11 @@ def llm_build_outline(
     profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
     active_skills: list[str] | None = None,
+    skill_method_steps: dict[str, dict[str, object]] | None = None,
     run_id: int | None = None,
     save_prefix: str | None = None,
     allowed_bracket_tags: set[str] | None = None,
+    profile_review_rounds: int = DEFAULT_OUTLINE_REVIEW_ROUNDS,
 ) -> list[str]:
     def _parse_outline_response(response: str, attempt: int, task: str) -> list[str] | None:
         payload = _extract_json(response)
@@ -996,18 +1151,23 @@ def llm_build_outline(
         prefix = f"{prefix}_run_{run_id}"
 
     def _attempt(prompt_text: str, attempt: int) -> tuple[list[str], int, float] | None:
-        response = llm.generate(SYSTEM_OUTLINE_PROMPT, prompt_text, task="outline", agent="Outliner")
+        model_label = llm.config.model
+        emit_progress("Outliner", model_label, "outline", 0, 1, done=False)
+        try:
+            response = llm.generate(SYSTEM_OUTLINE_PROMPT, prompt_text, task="outline", agent="Outliner")
+        finally:
+            emit_progress("Outliner", model_label, "outline", 1, 1, done=True)
         cleaned = _parse_outline_response(response, attempt, "outline")
         _save_outline_snapshot(cleaned, prefix, f"outline_attempt{attempt}")
         if not cleaned:
             return None
         count = outline_word_count(cleaned)
         ratio = outline_cjk_ratio(cleaned)
-        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or ratio >= OUTLINE_MIN_CJK_RATIO):
+        if outline_length_ok(count) and (not _is_chinese_language(output_language) or ratio >= OUTLINE_MIN_CJK_RATIO):
             return cleaned, count, ratio
         log_task_event(
-            "Outliner: outline length out of range "
-            f"(attempt={attempt} words={count} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS})"
+            "Outliner: outline length below minimum "
+            f"(attempt={attempt} words={count} min={OUTLINE_MIN_WORDS})"
         )
         if _is_chinese_language(output_language) and ratio < OUTLINE_MIN_CJK_RATIO:
             log_task_event(
@@ -1019,6 +1179,7 @@ def llm_build_outline(
         previous_outline: list[str],
         length_hint: str,
         language_hint: str | None,
+        tag_requirements: list[str] | None = None,
     ) -> str:
         payload = {
             "previous_outline": previous_outline,
@@ -1028,7 +1189,7 @@ def llm_build_outline(
                     "outline": ["string"]
                 },
                 "requirements": [
-                    f"Length must be {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words in the output language.",
+                    f"Length must be at least {OUTLINE_MIN_WORDS} words in the output language.",
                     "Preserve the original topic coverage and structure; rewrite to fit length.",
                     "Keep the top-layer structure intact; if structure_guidance is provided, follow it even if step count changes.",
                     "Aim for 8-12 major steps only when no structure/method guidance applies.",
@@ -1042,6 +1203,8 @@ def llm_build_outline(
             },
             "length_hint": length_hint,
         }
+        if tag_requirements:
+            payload["instructions"]["requirements"].extend(tag_requirements)
         if structure_guidance:
             payload["instructions"]["structure_guidance"] = structure_guidance
         if profile_summary:
@@ -1054,6 +1217,7 @@ def llm_build_outline(
         previous_outline: list[str],
         length_hint: str,
         language_hint: str | None,
+        tag_requirements: list[str] | None = None,
     ) -> str:
         payload = {
             "previous_outline": previous_outline,
@@ -1077,6 +1241,8 @@ def llm_build_outline(
             },
             "length_hint": length_hint,
         }
+        if tag_requirements:
+            payload["instructions"]["requirements"].extend(tag_requirements)
         if structure_guidance:
             payload["instructions"]["structure_guidance"] = structure_guidance
         if profile_summary:
@@ -1090,11 +1256,12 @@ def llm_build_outline(
         previous_count: int,
         previous_ratio: float,
         attempt: int,
+        tag_requirements: list[str] | None = None,
     ) -> tuple[list[str], int, float] | None:
         length_hint = (
             f"Your previous outline length was {previous_count} words. "
-            f"Adjust to {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words. "
-            "You MUST be within range."
+            f"Ensure the outline is at least {OUTLINE_MIN_WORDS} words. "
+            "You MUST meet the minimum length."
         )
         language_hint = None
         if _is_chinese_language(output_language) and previous_ratio < OUTLINE_MIN_CJK_RATIO:
@@ -1103,27 +1270,32 @@ def llm_build_outline(
                 "Translate all step titles and substeps to Chinese; keep English only for paper titles, "
                 "datasets, benchmarks, model names, APIs, and acronyms."
             )
-        prompt_text = _revision_prompt(previous_outline, length_hint, language_hint)
-        response = llm.generate(
-            system_prompt=(
-                "You revise research plan outlines to meet strict length constraints. "
-                f"All natural-language content MUST be in {output_language}. Return JSON only."
-            ),
-            user_prompt=prompt_text,
-            task="outline revision",
-            agent="Outliner",
-        )
+        prompt_text = _revision_prompt(previous_outline, length_hint, language_hint, tag_requirements)
+        model_label = llm.config.model
+        emit_progress("Outliner", model_label, "outline revision", 0, 1, done=False)
+        try:
+            response = llm.generate(
+                system_prompt=(
+                    "You revise research plan outlines to meet strict length constraints. "
+                    f"All natural-language content MUST be in {output_language}. Return JSON only."
+                ),
+                user_prompt=prompt_text,
+                task="outline revision",
+                agent="Outliner",
+            )
+        finally:
+            emit_progress("Outliner", model_label, "outline revision", 1, 1, done=True)
         cleaned = _parse_outline_response(response, attempt, "outline revision")
         _save_outline_snapshot(cleaned, prefix, f"outline_revision{attempt}")
         if not cleaned:
             return None
         count = outline_word_count(cleaned)
         ratio = outline_cjk_ratio(cleaned)
-        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or ratio >= OUTLINE_MIN_CJK_RATIO):
+        if outline_length_ok(count) and (not _is_chinese_language(output_language) or ratio >= OUTLINE_MIN_CJK_RATIO):
             return cleaned, count, ratio
         log_task_event(
-            "Outliner: outline length still out of range after revision "
-            f"(attempt={attempt} words={count} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS})"
+            "Outliner: outline length still below minimum after revision "
+            f"(attempt={attempt} words={count} min={OUTLINE_MIN_WORDS})"
         )
         if _is_chinese_language(output_language) and ratio < OUTLINE_MIN_CJK_RATIO:
             log_task_event(
@@ -1132,11 +1304,142 @@ def llm_build_outline(
             )
         return cleaned, count, ratio
 
+    def _maybe_revise_for_profile_tags(
+        outline: list[str],
+        count: int,
+        ratio: float,
+        attempt: int,
+    ) -> tuple[list[str], int, float]:
+        if not profile_summary or not llm:
+            return outline, count, ratio
+        review = _review_outline_profile_tags(
+            llm=llm,
+            outline=outline,
+            topic=topic,
+            keywords=keywords,
+            profile_summary=profile_summary,
+            kg_fact_cards=kg_fact_cards,
+            output_language=output_language,
+        )
+        if not review:
+            return outline, count, ratio
+        relevant_labels = review.get("relevant_labels") or []
+        missing_labels = review.get("missing_labels") or []
+        untagged_mentions = review.get("untagged_mentions") or []
+        suggested_additions = review.get("suggested_additions") or []
+        if not relevant_labels or (not missing_labels and not untagged_mentions and not suggested_additions):
+            return outline, count, ratio
+        tag_requirements = [
+            "Whenever a profile theme is relevant to the topic or report and you mention it, add a brief relevance explanation ending with ' [關切]'.",
+            "When a profile theme mention is supported by aligned kg_fact_cards evidence, end with ' [關切證據]' instead of ' [關切]'.",
+        ]
+        if missing_labels:
+            tag_requirements.append(
+                "Add at least one mention for each missing relevant profile label and tag it appropriately: "
+                + ", ".join(missing_labels)
+                + "."
+            )
+        if untagged_mentions:
+            examples = []
+            for item in untagged_mentions[:6]:
+                label = item.get("label") or ""
+                line = item.get("line") or ""
+                if label and line:
+                    examples.append(f"{label}: {line}")
+            if examples:
+                tag_requirements.append(
+                    "The following lines mention relevant profile themes but are missing tags; fix them: "
+                    + " | ".join(examples)
+                )
+        if suggested_additions:
+            additions = []
+            for item in suggested_additions[:6]:
+                label = item.get("label") or ""
+                why = item.get("why") or ""
+                placement = item.get("placement_hint") or ""
+                parts = [label]
+                if placement:
+                    parts.append(f"place: {placement}")
+                if why:
+                    parts.append(f"why: {why}")
+                additions.append(" / ".join(parts))
+            if additions:
+                tag_requirements.append(
+                    "Add the following beneficial profile-related additions and tag them appropriately: "
+                    + " | ".join(additions)
+                )
+        revised = _attempt_revision(outline, count, ratio, attempt, tag_requirements=tag_requirements)
+        if revised:
+            revised_count = revised[1]
+            revised_ratio = revised[2]
+            if revised_count < OUTLINE_MIN_WORDS:
+                expanded = _attempt_expand(
+                    revised[0],
+                    revised_count,
+                    revised_ratio,
+                    attempt + 1,
+                    tag_requirements=tag_requirements,
+                )
+                if expanded:
+                    revised = expanded
+                    revised_count = revised[1]
+                    revised_ratio = revised[2]
+                    if revised_count < OUTLINE_MIN_WORDS:
+                        return outline, count, ratio
+            if _is_chinese_language(output_language) and revised_ratio < OUTLINE_MIN_CJK_RATIO:
+                return outline, count, ratio
+            revised_review = _review_outline_profile_tags(
+                llm=llm,
+                outline=revised[0],
+                topic=topic,
+                keywords=keywords,
+                profile_summary=profile_summary,
+                kg_fact_cards=kg_fact_cards,
+                output_language=output_language,
+            )
+            if revised_review:
+                if (
+                    not revised_review.get("missing_labels")
+                    and not revised_review.get("untagged_mentions")
+                    and not revised_review.get("suggested_additions")
+                ):
+                    return revised[0], revised_count, revised_ratio
+            if _outline_has_profile_tags(revised[0]) and not _outline_has_profile_tags(outline):
+                log_task_event("Outline profile tags improved after revision; keeping revised outline.")
+                return revised[0], revised_count, revised_ratio
+        return outline, count, ratio
+
+    def _apply_profile_review_loop(
+        outline: list[str],
+        count: int,
+        ratio: float,
+    ) -> list[str]:
+        rounds = max(0, int(profile_review_rounds or 0))
+        if rounds == 0:
+            return outline
+        current_outline = outline
+        current_count = count
+        current_ratio = ratio
+        for idx in range(rounds):
+            revised_outline, revised_count, revised_ratio = _maybe_revise_for_profile_tags(
+                current_outline,
+                current_count,
+                current_ratio,
+                attempt=7 + idx,
+            )
+            if revised_outline == current_outline:
+                break
+            current_outline = revised_outline
+            current_count = revised_count
+            current_ratio = revised_ratio
+        return current_outline
+
     def _attempt_expand(
         previous_outline: list[str],
         previous_count: int,
         previous_ratio: float,
         attempt: int,
+        tag_requirements: list[str] | None = None,
     ) -> tuple[list[str], int, float] | None:
         length_hint = (
             f"Your previous outline length was {previous_count} words. "
@@ -1150,27 +1453,32 @@ def llm_build_outline(
                 "Translate all step titles and substeps to Chinese; keep English only for paper titles, "
                 "datasets, benchmarks, model names, APIs, and acronyms."
             )
-        prompt_text = _expand_prompt(previous_outline, length_hint, language_hint)
-        response = llm.generate(
-            system_prompt=(
-                "You expand research plan outlines to meet strict minimum length. "
-                f"All natural-language content MUST be in {output_language}. Return JSON only."
-            ),
-            user_prompt=prompt_text,
-            task="outline expansion",
-            agent="Outliner",
-        )
+        prompt_text = _expand_prompt(previous_outline, length_hint, language_hint, tag_requirements)
+        model_label = llm.config.model
+        emit_progress("Outliner", model_label, "outline expansion", 0, 1, done=False)
+        try:
+            response = llm.generate(
+                system_prompt=(
+                    "You expand research plan outlines to meet strict minimum length. "
+                    f"All natural-language content MUST be in {output_language}. Return JSON only."
+                ),
+                user_prompt=prompt_text,
+                task="outline expansion",
+                agent="Outliner",
+            )
+        finally:
+            emit_progress("Outliner", model_label, "outline expansion", 1, 1, done=True)
         cleaned = _parse_outline_response(response, attempt, "outline expansion")
         _save_outline_snapshot(cleaned, prefix, f"outline_expand{attempt}")
         if not cleaned:
             return None
         count = outline_word_count(cleaned)
         ratio = outline_cjk_ratio(cleaned)
-        if OUTLINE_MIN_WORDS <= count <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or ratio >= OUTLINE_MIN_CJK_RATIO):
+        if outline_length_ok(count) and (not _is_chinese_language(output_language) or ratio >= OUTLINE_MIN_CJK_RATIO):
             return cleaned, count, ratio
         log_task_event(
-            "Outliner: outline length still out of range after expansion "
-            f"(attempt={attempt} words={count} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS})"
+            "Outliner: outline length still below minimum after expansion "
+            f"(attempt={attempt} words={count} min={OUTLINE_MIN_WORDS})"
         )
         if _is_chinese_language(output_language) and ratio < OUTLINE_MIN_CJK_RATIO:
             log_task_event(
@@ -1186,10 +1494,27 @@ def llm_build_outline(
             "Structure major steps into contiguous sections grouped by the triggered skills in this order: "
             + ", ".join(labels)
             + ".",
-            "Prefix each major step title with the matching skill label using a colon (e.g., 'Systems Engineering: ...').",
-            "Do not use bracketed method tags.",
+            "Prefix each major step title with the matching skill label using this bracketed format: "
+            "'[Methodology Skill: {label}] ...' (e.g., '[Methodology Skill: Systems Engineering] ...').",
+            "Do not use bracketed method tags other than the required [Methodology Skill: ...] label.",
             "Ensure each skill has at least one major step; do not introduce new section labels.",
         ]
+        if skill_method_steps:
+            for skill_name in active_skills:
+                selection = skill_method_steps.get(skill_name) or {}
+                method_name = str(selection.get("method") or "").strip()
+                steps = selection.get("steps") or []
+                if not method_name or not isinstance(steps, list) or not steps:
+                    continue
+                label = skill_name.replace("-", " ").title()
+                step_list = "; ".join(str(step).strip() for step in steps if str(step).strip())
+                if not step_list:
+                    continue
+                structure_guidance.append(
+                    "For the "
+                    f"{label} section, use the '{method_name}' method steps as the ONLY major steps "
+                    f"in that section, in this exact order: {step_list}."
+                )
 
     prompt = outline_prompt(
         topic,
@@ -1204,14 +1529,14 @@ def llm_build_outline(
         skill_guidance=skill_guidance,
     )
     result = _attempt(prompt, 1)
-    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or result[2] >= OUTLINE_MIN_CJK_RATIO):
-        return result[0]
+    if result and outline_length_ok(result[1]) and (not _is_chinese_language(output_language) or result[2] >= OUTLINE_MIN_CJK_RATIO):
+        return _apply_profile_review_loop(result[0], result[1], result[2])
 
     previous_count = result[1] if result else 0
     previous_ratio = result[2] if result else 0.0
     length_hint = (
         f"Your previous outline length was {previous_count} words. "
-        f"Expand or compress to {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words. "
+        f"Expand to at least {OUTLINE_MIN_WORDS} words. "
         "Add more detailed substeps (2-3 sentences each) to reach the target."
     )
     language_hint = None
@@ -1236,14 +1561,14 @@ def llm_build_outline(
         skill_guidance=skill_guidance,
     )
     result = _attempt(retry_prompt, 2)
-    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or result[2] >= OUTLINE_MIN_CJK_RATIO):
-        return result[0]
+    if result and outline_length_ok(result[1]) and (not _is_chinese_language(output_language) or result[2] >= OUTLINE_MIN_CJK_RATIO):
+        return _apply_profile_review_loop(result[0], result[1], result[2])
 
     previous_count = result[1] if result else previous_count
     previous_ratio = result[2] if result else previous_ratio
     length_hint = (
-        f"Length still out of range ({previous_count} words). "
-        f"Target {OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS} words. "
+        f"Length still below minimum ({previous_count} words). "
+        f"Target at least {OUTLINE_MIN_WORDS} words. "
         "Increase detail by expanding each major step with additional substeps."
     )
     final_prompt = outline_prompt(
@@ -1261,33 +1586,33 @@ def llm_build_outline(
         skill_guidance=skill_guidance,
     )
     result = _attempt(final_prompt, 3)
-    if result and OUTLINE_MIN_WORDS <= result[1] <= OUTLINE_MAX_WORDS:
+    if result and outline_length_ok(result[1]):
         if (not _is_chinese_language(output_language)) or result[2] >= OUTLINE_MIN_CJK_RATIO:
-            return result[0]
+            return _apply_profile_review_loop(result[0], result[1], result[2])
 
     if result and result[1] < OUTLINE_MIN_WORDS:
         expanded = _attempt_expand(result[0], result[1], result[2], 4)
-        if expanded and OUTLINE_MIN_WORDS <= expanded[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or expanded[2] >= OUTLINE_MIN_CJK_RATIO):
-            return expanded[0]
+        if expanded and outline_length_ok(expanded[1]) and (not _is_chinese_language(output_language) or expanded[2] >= OUTLINE_MIN_CJK_RATIO):
+            return _apply_profile_review_loop(expanded[0], expanded[1], expanded[2])
         if expanded:
             result = expanded
             if result[1] < OUTLINE_MIN_WORDS:
                 expanded = _attempt_expand(result[0], result[1], result[2], 5)
-                if expanded and OUTLINE_MIN_WORDS <= expanded[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or expanded[2] >= OUTLINE_MIN_CJK_RATIO):
-                    return expanded[0]
+                if expanded and outline_length_ok(expanded[1]) and (not _is_chinese_language(output_language) or expanded[2] >= OUTLINE_MIN_CJK_RATIO):
+                    return _apply_profile_review_loop(expanded[0], expanded[1], expanded[2])
                 if expanded:
                     result = expanded
 
     if result:
         enforced = _attempt_revision(result[0], result[1], result[2], 6)
-        if enforced and OUTLINE_MIN_WORDS <= enforced[1] <= OUTLINE_MAX_WORDS and (not _is_chinese_language(output_language) or enforced[2] >= OUTLINE_MIN_CJK_RATIO):
-            return enforced[0]
+        if enforced and outline_length_ok(enforced[1]) and (not _is_chinese_language(output_language) or enforced[2] >= OUTLINE_MIN_CJK_RATIO):
+            return _apply_profile_review_loop(enforced[0], enforced[1], enforced[2])
 
         log_task_event(
             "Outliner: returning best-effort outline despite length constraint failure. "
-            f"Last count={result[1]} target={OUTLINE_MIN_WORDS}-{OUTLINE_MAX_WORDS}."
+            f"Last count={result[1]} min={OUTLINE_MIN_WORDS}."
         )
-        return result[0]
+        return _apply_profile_review_loop(result[0], result[1], result[2])
 
     raise LLMClientError("LLM returned invalid JSON for outline.")
 

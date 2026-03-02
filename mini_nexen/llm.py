@@ -190,23 +190,30 @@ class LLMClient:
         message = f"{stamp} | {agent} | {message}"
         _write_log_line(message)
 
+    def _is_inline_task(self, agent: str, task: str) -> bool:
+        agent_key = (agent or "").casefold()
+        task_key = (task or "").casefold()
+        if agent_key == "kgextractor" and task_key == "kg triples":
+            return True
+        if agent_key == "profiler" and task_key == "profile extraction":
+            return True
+        if agent_key == "kgcontradiction" and task_key == "contradiction check":
+            return True
+        if agent_key == "profilesignals" and task_key == "profile signals":
+            return True
+        if agent_key == "retriever" and task_key in {"query expansion", "gap query rewrite"}:
+            return True
+        if agent_key == "planner" and task_key in {"query understanding", "plan draft", "plan refinement"}:
+            return True
+        if agent_key == "outliner" and task_key in {"outline", "outline revision", "outline expansion"}:
+            return True
+        return False
+
     def _should_log_completion(self, agent: str, task: str) -> bool:
-        if agent == "KGExtractor" and task == "kg triples":
-            return False
-        if agent == "Profiler" and task == "profile extraction":
-            return False
-        if agent == "KGContradiction" and task == "contradiction check":
-            return False
-        return True
+        return not self._is_inline_task(agent, task)
 
     def _should_log_start(self, agent: str, task: str) -> bool:
-        if agent == "KGExtractor" and task == "kg triples":
-            return False
-        if agent == "Profiler" and task == "profile extraction":
-            return False
-        if agent == "KGContradiction" and task == "contradiction check":
-            return False
-        return True
+        return not self._is_inline_task(agent, task)
 
     def generate(
         self,

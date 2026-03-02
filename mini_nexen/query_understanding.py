@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .llm import LLMClient
+from .llm import LLMClient, emit_progress
 from .llm_prompts import SYSTEM_QUERY_UNDERSTANDING_PROMPT, query_understanding_prompt
 
 
@@ -240,12 +240,17 @@ def infer_query_understanding(
     if not llm:
         return normalize_query_understanding({}, raw_query, taxonomy)
     prompt = query_understanding_prompt(raw_query, taxonomy, profile_summary=profile_summary)
-    response = llm.generate(
-        system_prompt=SYSTEM_QUERY_UNDERSTANDING_PROMPT,
-        user_prompt=prompt,
-        task="query understanding",
-        agent="Planner",
-    )
+    model_label = llm.config.model
+    emit_progress("Planner", model_label, "query understanding", 0, 1, done=False)
+    try:
+        response = llm.generate(
+            system_prompt=SYSTEM_QUERY_UNDERSTANDING_PROMPT,
+            user_prompt=prompt,
+            task="query understanding",
+            agent="Planner",
+        )
+    finally:
+        emit_progress("Planner", model_label, "query understanding", 1, 1, done=True)
     payload = _extract_json_payload(response)
     return normalize_query_understanding(payload, raw_query, taxonomy)
 

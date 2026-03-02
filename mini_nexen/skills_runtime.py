@@ -18,6 +18,7 @@ from .config import (
     DEFAULT_KG_HOPS,
     DEFAULT_PROFILE_TOP_K,
     DEFAULT_TOP_K,
+    DEFAULT_OUTLINE_REVIEW_ROUNDS,
     SKILLS_DIR,
     WEB_AUTO_MAX_ROUNDS,
     WEB_EVIDENCE_DEFAULT_DAYS,
@@ -52,11 +53,13 @@ from .llm import (
 )
 from .planning import (
     PlanDraft,
+    build_profile_signals,
     is_ready,
     llm_build_outline,
     llm_draft_plan,
     llm_refine_plan,
     normalize_bracket_tag,
+    review_plan_readiness,
     render_plan_md,
 )
 from .text_utils import score_documents, tokenize
@@ -82,6 +85,23 @@ class SkillSpec:
     display_name: str
     aliases: list[str]
     path: Path
+
+
+@dataclass
+class MethodCandidate:
+    name: str
+    description: str = ""
+    steps: list[str] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
+
+
+@dataclass
+class MethodSelection:
+    skill_name: str
+    method: str
+    source: str
+    confidence: float | None = None
+    steps: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -117,6 +137,8 @@ class SkillContext:
     active_skills: list[str] = field(default_factory=list)
     skill_guidance: list[str] = field(default_factory=list)
     skill_hints: list[str] = field(default_factory=list)
+    skill_method_index: dict[str, list[MethodCandidate]] = field(default_factory=dict)
+    skill_method_selections: dict[str, MethodSelection] = field(default_factory=dict)
     web_enabled: bool = False
     web_forced: bool = False
     web_auto: bool = False
@@ -140,6 +162,7 @@ class SkillContext:
     web_max_per_query: int = WEB_MAX_PER_QUERY
     web_relevance_threshold: float = WEB_RELEVANCE_THRESHOLD
     profile_top_k: int = DEFAULT_PROFILE_TOP_K
+    outline_review_rounds: int = DEFAULT_OUTLINE_REVIEW_ROUNDS
     kg_hops: int = DEFAULT_KG_HOPS
     kg_subgraph_stats: dict[str, float | int | str] = field(default_factory=dict)
     kg_updated: bool = False
@@ -243,6 +266,420 @@ def _matches_triggers(texts: list[str], triggers: list[str]) -> bool:
         if trigger.casefold() in haystack:
             return True
     return False
+
+def _ensure_method(ctx: SkillContext, name: str, notes: str) -> None:
+    if not name:
+        return
+    existing = {method.method.casefold() for method in ctx.methods if method.method}
+    if name.casefold() in existing:
+        return
+    ctx.methods.append(
+        db.Method(
+            method_id=f"skill:{uuid.uuid4()}",
+            method=name,
+            notes=notes,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+    )
+
+
+def _split_front_matter(content: str) -> tuple[list[str], str]:
+    if not content.startswith("---"):
+        return ([], content)
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        return ([], content)
+    meta_raw = parts[1]
+    body = parts[2]
+    return (meta_raw.splitlines(), body)
+
+
+def _parse_list_value(value: str) -> list[str]:
+    cleaned = value.strip()
+    if not cleaned:
+        return []
+    if cleaned.startswith("[") and cleaned.endswith("]"):
+        cleaned = cleaned[1:-1]
+    items = [item.strip().strip("'\"") for item in cleaned.split(",") if item.strip()]
+    return items
+
+
+def _split_name_aliases(name: str) -> tuple[str, list[str]]:
+    if not name:
+        return ("", [])
+    pattern = r"^(.*?)\s*[\(（](.*?)[\)）]\s*$"
+    match = re.match(pattern, name.strip())
+    if match:
+        base = match.group(1).strip()
+        alias = match.group(2).strip()
+        split = _split_outside_parens(alias, " — ") or _split_outside_parens(alias, " - ")
+        if split:
+            alias = split[0].strip()
+        aliases = [alias] if alias else []
+        return (base, aliases)
+    return (name.strip(), [])
+
+
+def _split_outside_parens(text: str, sep: str) -> tuple[str, str] | None:
+    if not text or not sep:
+        return None
+    depth = 0
+    idx = 0
+    while idx <= len(text) - len(sep):
+        ch = text[idx]
+        if ch in {"(", "（"}:
+            depth += 1
+        elif ch in {")", "）"} and depth > 0:
+            depth -= 1
+        if depth == 0 and text.startswith(sep, idx):
+            return (text[:idx], text[idx + len(sep) :])
+        idx += 1
+    return None
+
+
+def _parse_methods_block(lines: list[str], start_index: int) -> list[MethodCandidate]:
+    candidates: list[MethodCandidate] = []
+    current: MethodCandidate | None = None
+    in_steps = False
+    steps_indent: int | None = None
+    for line in lines[start_index + 1 :]:
+        if not line.strip():
+            continue
+        if line.lstrip() == line:
+            break
+        indent = len(line) - len(line.lstrip())
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            item = stripped[2:].strip()
+            if in_steps and current and steps_indent is not None and indent > steps_indent:
+                current.steps.append(item)
+                continue
+            if current:
+                candidates.append(current)
+            current = MethodCandidate(name="", description="", steps=[], aliases=[])
+            in_steps = False
+            steps_indent = None
+            if item.startswith("name:"):
+                current.name = item.split(":", 1)[1].strip()
+            else:
+                current.name = item
+            continue
+        if current is None:
+            continue
+        if stripped.startswith("name:"):
+            current.name = stripped.split(":", 1)[1].strip()
+            in_steps = False
+            steps_indent = None
+            continue
+        if stripped.startswith("description:"):
+            current.description = stripped.split(":", 1)[1].strip()
+            in_steps = False
+            steps_indent = None
+            continue
+        if stripped.startswith("aliases:"):
+            alias_value = stripped.split(":", 1)[1].strip()
+            current.aliases = _parse_list_value(alias_value)
+            in_steps = False
+            steps_indent = None
+            continue
+        if stripped.startswith("steps:"):
+            step_value = stripped.split(":", 1)[1].strip()
+            if step_value:
+                current.steps = _parse_list_value(step_value)
+                in_steps = False
+                steps_indent = None
+            else:
+                in_steps = True
+                steps_indent = indent
+            continue
+    if current:
+        candidates.append(current)
+    return candidates
+
+
+def _parse_method_table(lines: list[str], start_index: int) -> tuple[list[MethodCandidate], int]:
+    if start_index + 1 >= len(lines):
+        return ([], start_index)
+    header = lines[start_index].strip()
+    divider = lines[start_index + 1].strip()
+    if "|" not in header or "|" not in divider:
+        return ([], start_index)
+    divider_clean = divider.replace("|", "").strip()
+    if not divider_clean or not set(divider_clean) <= {"-", ":", " "}:
+        return ([], start_index)
+    header_cells = [cell.strip() for cell in header.strip("|").split("|")]
+    method_idx = None
+    desc_idx = None
+    for idx, cell in enumerate(header_cells):
+        cell_fold = cell.casefold()
+        if "method" in cell_fold or "方法" in cell:
+            method_idx = idx
+        if "description" in cell_fold or "desc" in cell_fold or "说明" in cell or "描述" in cell:
+            desc_idx = idx
+    if method_idx is None:
+        return ([], start_index)
+    candidates: list[MethodCandidate] = []
+    idx = start_index + 2
+    while idx < len(lines):
+        row = lines[idx].strip()
+        if "|" not in row:
+            break
+        cells = [cell.strip() for cell in row.strip("|").split("|")]
+        if method_idx >= len(cells):
+            idx += 1
+            continue
+        name = cells[method_idx]
+        desc = ""
+        if desc_idx is not None and desc_idx < len(cells):
+            desc = cells[desc_idx]
+        if name:
+            candidates.append(MethodCandidate(name=name, description=desc))
+        idx += 1
+    return (candidates, idx - 1)
+
+
+def _extract_skill_method_candidates(content: str) -> list[MethodCandidate]:
+    if not content:
+        return []
+    meta_lines, body = _split_front_matter(content)
+    meta: dict[str, str] = {}
+    for line in meta_lines:
+        if ":" not in line or line.lstrip() != line:
+            continue
+        key, value = line.split(":", 1)
+        meta[key.strip().casefold().replace("-", "_")] = value.strip()
+    tags = _parse_list_value(meta.get("tags", ""))
+    is_methodology = meta.get("skill_type", "").casefold() == "methodology" or any(
+        tag.casefold() == "methodology" for tag in tags
+    )
+    candidates_map: dict[str, MethodCandidate] = {}
+
+    def _add_candidate(candidate: MethodCandidate) -> None:
+        name = candidate.name.strip()
+        if not name:
+            return
+        split = _split_outside_parens(name, " — ")
+        if not split:
+            split = _split_outside_parens(name, " - ")
+        if split:
+            base, extra_desc = split
+            if extra_desc and not candidate.description:
+                candidate.description = extra_desc.strip()
+            name = base.strip()
+        name, aliases = _split_name_aliases(name)
+        if not name:
+            return
+        key = name.casefold()
+        existing = candidates_map.get(key)
+        if existing:
+            if candidate.description and not existing.description:
+                existing.description = candidate.description
+            if candidate.steps and not existing.steps:
+                existing.steps = candidate.steps
+            existing.aliases = sorted({*existing.aliases, *aliases, *candidate.aliases})
+            return
+        candidate.name = name
+        candidate.aliases = sorted({*aliases, *candidate.aliases})
+        candidates_map[key] = candidate
+
+    for idx, line in enumerate(meta_lines):
+        if line.strip().startswith("methods:"):
+            _, value = line.split(":", 1)
+            if value.strip():
+                for item in _parse_list_value(value):
+                    _add_candidate(MethodCandidate(name=item))
+            else:
+                for candidate in _parse_methods_block(meta_lines, idx):
+                    _add_candidate(candidate)
+            break
+
+    if candidates_map or is_methodology:
+        lines = body.splitlines()
+        in_method_section = False
+        method_section_level = None
+        idx = 0
+        while idx < len(lines):
+            line = lines[idx]
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                level = len(stripped.split(" ", 1)[0])
+                heading_text = stripped.lstrip("#").strip()
+                heading_fold = heading_text.casefold()
+                if "method" in heading_fold or "方法" in heading_text or "方法论" in heading_text:
+                    in_method_section = True
+                    method_section_level = level
+                elif method_section_level is not None and level <= method_section_level:
+                    in_method_section = False
+                    method_section_level = None
+            if "|" in stripped:
+                table_candidates, new_idx = _parse_method_table(lines, idx)
+                if table_candidates:
+                    for candidate in table_candidates:
+                        _add_candidate(candidate)
+                    idx = new_idx + 1
+                    continue
+            if in_method_section:
+                bullet_match = re.match(r"^[-*]\s+\*\*(.+?)\*\*\s*(?:[—:-]\s*(.+))?$", stripped)
+                if bullet_match:
+                    _add_candidate(MethodCandidate(name=bullet_match.group(1), description=bullet_match.group(2) or ""))
+                    idx += 1
+                    continue
+                heading_match = re.match(r"^#+\s*Method\s*\d*\s*[:：]\s*(.+)$", stripped, flags=re.IGNORECASE)
+                if heading_match:
+                    _add_candidate(MethodCandidate(name=heading_match.group(1)))
+                    idx += 1
+                    continue
+                inline_match = re.match(r"^Method\s*\d*\s*[:：]\s*(.+)$", stripped, flags=re.IGNORECASE)
+                if inline_match:
+                    _add_candidate(MethodCandidate(name=inline_match.group(1)))
+                    idx += 1
+                    continue
+            idx += 1
+    return list(candidates_map.values())
+
+
+def _match_candidate_from_text(texts: list[str], candidates: list[MethodCandidate]) -> MethodCandidate | None:
+    haystack = " ".join(text for text in texts if text).casefold()
+    if not haystack:
+        return None
+    matches: list[tuple[int, MethodCandidate]] = []
+    for candidate in candidates:
+        terms = [candidate.name, *candidate.aliases]
+        for term in terms:
+            if not term:
+                continue
+            term_fold = term.casefold()
+            if term_fold and term_fold in haystack:
+                matches.append((len(term_fold), candidate))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: item[0], reverse=True)
+    return matches[0][1]
+
+
+def _match_candidate_from_methods(methods: list[db.Method], candidates: list[MethodCandidate]) -> MethodCandidate | None:
+    if not methods:
+        return None
+    candidate_map = {candidate.name.casefold(): candidate for candidate in candidates}
+    for candidate in candidates:
+        for alias in candidate.aliases:
+            if alias:
+                candidate_map[alias.casefold()] = candidate
+    for method in methods:
+        if not method.method:
+            continue
+        match = candidate_map.get(method.method.casefold())
+        if match:
+            return match
+    return None
+
+
+def _select_skill_method(
+    ctx: SkillContext,
+    spec: SkillSpec,
+    candidates: list[MethodCandidate],
+) -> tuple[MethodCandidate | None, str | None, float | None]:
+    if not candidates:
+        return (None, None, None)
+    explicit = _match_candidate_from_text(
+        [ctx.raw_topic, ctx.topic, ctx.normalized_query],
+        candidates,
+    )
+    if explicit:
+        return (explicit, "user_explicit", 1.0)
+    if ctx.llm:
+        payload = {
+            "skill": spec.display_name or spec.name,
+            "query": ctx.topic,
+            "raw_query": ctx.raw_topic,
+            "normalized_query": ctx.normalized_query,
+            "candidates": [
+                {
+                    "name": candidate.name,
+                    "description": candidate.description,
+                    "steps": candidate.steps,
+                    "aliases": candidate.aliases,
+                }
+                for candidate in candidates
+            ],
+            "instructions": [
+                "Select the single most appropriate method for the user's task.",
+                "Return null if none of the methods apply.",
+                "Prefer methods whose steps align with the user's requested workflow.",
+                "Respond with JSON only: {\"method\": \"name\" | null, \"confidence\": 0-1, \"rationale\": \"...\"}.",
+            ],
+        }
+        try:
+            response = ctx.llm.generate(
+                system_prompt="You select the best method from a skill's available methods. Return JSON only.",
+                user_prompt=json.dumps(payload, ensure_ascii=False, indent=2),
+                task="skill method selection",
+                agent="Planner",
+            )
+            selection = _extract_json_payload(response)
+        except Exception:
+            selection = {}
+        method = selection.get("method")
+        if isinstance(method, str):
+            method_name = method.strip()
+            for candidate in candidates:
+                if candidate.name.casefold() == method_name.casefold():
+                    confidence = selection.get("confidence")
+                    try:
+                        conf_value = float(confidence)
+                    except (TypeError, ValueError):
+                        conf_value = None
+                    if conf_value is not None and conf_value < 0.35:
+                        break
+                    return (candidate, "skill_selected", conf_value)
+    text = " ".join(item for item in [ctx.topic, ctx.raw_topic, ctx.normalized_query] if item)
+    query_tokens = set(tokenize(text))
+    best_candidate = None
+    best_score = 0
+    for candidate in candidates:
+        blob = f"{candidate.name} {candidate.description} {' '.join(candidate.steps)}"
+        tokens = set(tokenize(blob))
+        score = len(query_tokens & tokens)
+        if score > best_score:
+            best_score = score
+            best_candidate = candidate
+    if best_candidate and best_score > 0:
+        return (best_candidate, "skill_selected", 0.35)
+    inferred = _match_candidate_from_methods(ctx.inferred_methods, candidates)
+    if inferred:
+        return (inferred, "query_inferred", 0.5)
+    return (None, None, None)
+
+
+def _record_method_selection(
+    ctx: SkillContext,
+    spec: SkillSpec,
+    candidate: MethodCandidate,
+    source: str,
+    confidence: float | None,
+) -> None:
+    ctx.skill_method_selections[spec.name] = MethodSelection(
+        skill_name=spec.name,
+        method=candidate.name,
+        source=source,
+        confidence=confidence,
+        steps=candidate.steps,
+    )
+    notes = f"source={source};skill={spec.display_name or spec.name}"
+    if confidence is not None:
+        notes = f"{notes};confidence={confidence:.2f}"
+    _ensure_method(ctx, candidate.name, notes)
+
+
+def _auto_select_method_from_skill(ctx: SkillContext, spec: SkillSpec, content: str, texts: list[str]) -> None:
+    candidates = _extract_skill_method_candidates(content)
+    if not candidates:
+        return
+    ctx.skill_method_index[spec.name] = candidates
+    chosen, source, confidence = _select_skill_method(ctx, spec, candidates)
+    if not chosen or not source:
+        return
+    _record_method_selection(ctx, spec, chosen, source, confidence)
 
 
 def _progress_line(agent: str, task: str, model: str, current: int, total: int) -> None:
@@ -674,20 +1111,28 @@ def _normalize_skill_hints(raw: object, registry: SkillRegistry) -> list[str]:
 
 
 def _build_allowed_outline_tags(active_skills: list[str]) -> set[str]:
+    allowed: set[str] = set()
+    for tag in ("關切", "關切證據", "profile", "profile evidence"):
+        normalized = normalize_bracket_tag(tag)
+        if normalized:
+            allowed.add(normalized)
     if not active_skills:
-        return set()
+        return allowed
     registry = SkillRegistry()
     registry.load()
-    allowed: set[str] = set()
     for name in active_skills:
         spec = registry.skills.get(name)
         if not spec:
             continue
-        candidates = [spec.display_name, spec.name, *spec.aliases]
+        derived_label = name.replace("-", " ").title()
+        candidates = [spec.display_name, spec.name, derived_label, *spec.aliases]
         for item in candidates:
             tag = normalize_bracket_tag(str(item))
             if tag:
                 allowed.add(tag)
+            method_tag = normalize_bracket_tag(f"Methodology Skill: {item}")
+            if method_tag:
+                allowed.add(method_tag)
     return allowed
 
 
@@ -902,6 +1347,23 @@ def skill_load_profile(ctx: SkillContext) -> SkillContext:
         summary = store.get_profile_summary(max_signals=ctx.profile_top_k, scope="local")
         if summary:
             ctx.profile_summary = summary
+        else:
+            try:
+                signals = build_profile_signals(
+                    topic=ctx.topic,
+                    interests=ctx.interests,
+                    query_hints=ctx.query_hints,
+                    llm=ctx.llm,
+                    top_k_docs=ctx.top_k,
+                    max_signals=ctx.profile_top_k,
+                    use_cache=False,
+                    cache_result=True,
+                )
+            except LLMClientError as exc:
+                log_task_event(f"Profile summary rebuild failed: {exc}")
+                signals = []
+            if signals:
+                ctx.profile_summary = signals
     return ctx
 
 
@@ -1391,22 +1853,25 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             else:
                 log_task_event("Web search plan review ignored (invalid JSON).")
 
-    should_expand, reasons = _should_expand_web(ctx, store)
-    if not should_expand:
-        stats = ctx.kg_subgraph_stats or {}
-        log_task_event(
-            "Web retrieval skipped: "
-            f"entities={stats.get('entity_count', 0)} "
-            f"relations={stats.get('relation_count', 0)} "
-            f"claims={stats.get('claim_count', 0)} "
-            f"evidence={stats.get('evidence_count', 0)} "
-            f"avg_conf={stats.get('avg_confidence', 0.0):.2f}"
-        )
-        return ctx
-    if reasons == ["forced"]:
-        log_task_event("Web retrieval forced by CLI flags.")
+    if ctx.web_auto:
+        should_expand, reasons = _should_expand_web(ctx, store)
+        if not should_expand:
+            stats = ctx.kg_subgraph_stats or {}
+            log_task_event(
+                "Web retrieval skipped (auto): "
+                f"entities={stats.get('entity_count', 0)} "
+                f"relations={stats.get('relation_count', 0)} "
+                f"claims={stats.get('claim_count', 0)} "
+                f"evidence={stats.get('evidence_count', 0)} "
+                f"avg_conf={stats.get('avg_confidence', 0.0):.2f}"
+            )
+            return ctx
+        if reasons == ["forced"]:
+            log_task_event("Web retrieval forced by CLI flags.")
+        else:
+            log_task_event(f"Web retrieval triggered (auto): {', '.join(reasons)}")
     else:
-        log_task_event(f"Web retrieval triggered: {', '.join(reasons)}")
+        log_task_event("Web retrieval triggered (default).")
 
     ctx.web_modes = modes
     if interest_queries:
@@ -1584,7 +2049,10 @@ def skill_refine_plan(ctx: SkillContext) -> SkillContext:
     if not ctx.llm:
         raise ValueError("LLM is required for refinement but was not configured.")
 
-    ready, gaps = is_ready(ctx.plan)
+    if ctx.llm:
+        ready, gaps = review_plan_readiness(ctx.llm, ctx.plan, ctx.output_language)
+    else:
+        ready, gaps = is_ready(ctx.plan)
     if ready:
         ctx.plan.readiness = "ready"
         return ctx
@@ -1622,6 +2090,14 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
     if not ctx.llm:
         raise ValueError("LLM is required for outlining but was not configured.")
     allowed_tags = _build_allowed_outline_tags(ctx.active_skills)
+    method_steps = {
+        name: {
+            "method": selection.method,
+            "steps": selection.steps,
+            "source": selection.source,
+        }
+        for name, selection in ctx.skill_method_selections.items()
+    }
     ctx.outline = llm_build_outline(
         llm=ctx.llm,
         topic=ctx.topic,
@@ -1634,8 +2110,10 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         profile_summary=ctx.profile_summary,
         skill_guidance=ctx.skill_guidance,
         active_skills=ctx.active_skills,
+        skill_method_steps=method_steps,
         run_id=ctx.run_id,
         allowed_bracket_tags=allowed_tags,
+        profile_review_rounds=ctx.outline_review_rounds,
     )
     return ctx
 
@@ -1669,6 +2147,7 @@ def build_default_runner() -> SkillRunner:
         content = spec.path.read_text(encoding="utf-8")
         ctx.active_skills.append(spec.name)
         ctx.skill_guidance.append(content)
+        _auto_select_method_from_skill(ctx, spec, content, texts)
         return ctx
     def skill_apply_skill_hints(ctx: SkillContext) -> SkillContext:
         if not ctx.skill_hints:
@@ -1683,6 +2162,11 @@ def build_default_runner() -> SkillRunner:
             content = spec.path.read_text(encoding="utf-8")
             ctx.active_skills.append(spec.name)
             ctx.skill_guidance.append(content)
+            texts = [ctx.topic, ctx.normalized_query, ctx.raw_topic]
+            for method in ctx.methods:
+                if method.method:
+                    texts.append(method.method)
+            _auto_select_method_from_skill(ctx, spec, content, texts)
         return ctx
     runner.register("infer_query", skill_infer_query)
     runner.register("collect_interests", skill_collect_interests)

@@ -42,7 +42,7 @@ Requirements:
 - Optional sub-substeps are allowed when helpful.
 - Use imperative phrasing (e.g., "Search...", "Compare...", "Investigate...").
 - Do not write report section headings.
-- Total outline length MUST be 1000-2000 words across titles and substeps in the output language.
+- Total outline length MUST be at least 1000 words across titles and substeps in the output language.
 - Output must be strict JSON (double quotes, no trailing commas)
 - Treat methods as analysis approaches to apply to the topic, not as the topic itself.
 - If methods are provided, the research plan MUST explicitly structure steps around those methods, even if the step count changes.
@@ -63,6 +63,11 @@ Example (English):
 SYSTEM_QUERY_UNDERSTANDING_PROMPT = (
     "You are a query understanding agent. "
     "Infer the core topic and analysis methodologies. "
+    "Return JSON only."
+)
+
+SYSTEM_REVIEW_PROMPT = (
+    "You are a careful reviewer. Evaluate compliance and relevance rigorously. "
     "Return JSON only."
 )
 
@@ -156,8 +161,12 @@ def plan_prompt(
             ],
             "profile_guidance": [
                 "If profile_summary is provided, use it to personalize the plan without overriding the query.",
-                "Add 1-3 Notes bullets that explicitly connect the plan to relevant profile signals.",
-                "Treat profile_summary as context, not evidence; do not fabricate claims.",
+                "You may use profile themes or summarized themes even when supporting evidence is thin; treat them as inferred context rather than verified facts.",
+                "If a profile theme aligns with kg_fact_cards evidence, you may treat that evidence as support for the theme.",
+                "Whenever you mention a profile theme or summarized theme in ANY field, add a brief explanation of relevance and append ' [關切]' at the end of that sentence.",
+                "When a profile theme mention is supported by aligned kg_fact_cards evidence, append ' [關切證據]' instead of ' [關切]'.",
+                "Add 1-3 Notes bullets that explicitly connect the plan to relevant profile signals, following the [關切] rule.",
+                "Treat profile_summary as context, not evidence; do not fabricate sources or claims of evidence.",
             ],
         },
     }
@@ -271,7 +280,9 @@ def refine_prompt(
             ],
             "profile_guidance": [
                 "If profile_summary is provided, use it to personalize the plan without overriding the query.",
-                "Add 1-3 Notes bullets that explicitly connect the plan to relevant profile signals.",
+                "Whenever you mention a profile theme or summarized theme in ANY field, add a brief explanation of relevance and append ' [關切]' at the end of that sentence.",
+                "When a profile theme mention is supported by aligned kg_fact_cards evidence, append ' [關切證據]' instead of ' [關切]'.",
+                "Add 1-3 Notes bullets that explicitly connect the plan to relevant profile signals, following the [關切] rule.",
                 "Treat profile_summary as context, not evidence; do not fabricate claims.",
             ],
         },
@@ -322,22 +333,25 @@ def outline_prompt(
             "Provide 8-12 major steps by default; if methods or structure_guidance are provided, follow them even if the step count changes.",
             "Each major step should include 3-5 substeps by default; expand or vary when it improves clarity, depth, or method alignment.",
             "Each substep should be 2-3 sentences by default; add or reduce sentences when needed for important elaboration.",
-            "List source-backed bullets when available.",
+            "Do not include citations, references, or 'Sources:' style markers in the outline output.",
             "Emphasize gaps and future research directions.",
-            "Length must be 1000-2000 words in the output language.",
+            "Length must be at least 1000 words in the output language.",
         ],
             "method_guidance": [
                 "Use methods as analytical lenses applied to the topic and evidence.",
                 "Do not treat methods as the topic itself.",
                 "If methods are provided, align major steps to the methods and weave method names into the step text, even if the step count differs from the default.",
-                "Do not add bracketed method tags in titles.",
+                "When structure_guidance provides method steps for a skill, use those steps to define the major steps for that skill; treat other methods as analytical lenses only.",
+                "Do not add bracketed method tags in titles other than the required [Methodology Skill: ...] label when instructed.",
                 f"If method names are not in {output_language}, translate them into {output_language} step titles and include the original in parentheses.",
             ],
             "profile_guidance": [
                 "If profile_summary is provided, use it to personalize the outline without overriding the query.",
                 "For each top-layer step/section, include at least one explicit inline mention explaining how it ties to relevant profile signals when applicable.",
                 "Keep profile ties selective and relevant; do not force ties that are misleading.",
-                "Use brief natural-language explanations (no special labels required). Up to 10 profile ties per top-layer step.",
+                "Use brief natural-language explanations. Up to 10 profile ties per top-layer step.",
+                "Whenever you mention a profile theme or summarized theme in ANY step, add a brief explanation of relevance and append ' [關切]' at the end of that sentence.",
+                "When a profile theme mention is supported by aligned kg_fact_cards evidence, append ' [關切證據]' instead of ' [關切]'.",
                 "Treat profile_summary as context, not evidence; do not fabricate claims.",
             ],
             "kg_guidance": [
@@ -345,7 +359,7 @@ def outline_prompt(
                 "Prefer higher-confidence and more recent evidence when shaping the outline.",
                 "Prefer evidence-backed relationships over unsupported assertions.",
                 "Do not copy evidence snippets verbatim; paraphrase.",
-                "When you use kg_fact_cards, add a short citation in-line like 'Sources: title1; title2'.",
+                "Do not include explicit source citations or reference lists in the outline text.",
                 "Do not fabricate sources that are not in kg_fact_cards or documents.",
                 "Contradictions may reflect genuine disagreements, errors, evolving consensus, or shifts in paradigm/direction over time; treat them as signals to analyze, not just errors to eliminate.",
                 "Use trend stats and contradictions in kg_fact_cards to highlight agreements, shifts, and disagreements when evidence supports it.",
@@ -367,4 +381,73 @@ def outline_prompt(
         payload["length_hint"] = length_hint
     if language_hint:
         payload["language_hint"] = language_hint
+    return json.dumps(payload, indent=2)
+
+
+def outline_profile_review_prompt(
+    topic: str,
+    outline: list[str],
+    keywords: list[str],
+    profile_summary: list[dict],
+    kg_fact_cards: list[dict] | None = None,
+    output_language: str = "Chinese",
+) -> str:
+    payload = {
+        "topic": topic,
+        "keywords": keywords,
+        "outline": outline,
+        "profile_summary": profile_summary[:10],
+        "output_language": output_language,
+        "instructions": {
+            "output_json_schema": {
+                "relevant_labels": ["string"],
+                "missing_labels": ["string"],
+                "untagged_mentions": [{"label": "string", "line": "string"}],
+                "suggested_additions": [{"label": "string", "why": "string", "placement_hint": "string"}],
+                "needs_revision": "true|false",
+                "rationale": "string",
+            },
+            "requirements": [
+                "Decide which profile labels are actually relevant to the topic and outline.",
+                "Only consider relevant labels; do not force irrelevant profile themes.",
+                "If a relevant label should appear in the outline but does not, list it in missing_labels.",
+                "If a line mentions a relevant label but lacks [關切] or [關切證據], include it in untagged_mentions with the exact line.",
+                "Identify additional relevant profile themes that would materially improve the outline if added; list them in suggested_additions with a brief why and placement_hint.",
+                "Set needs_revision to true when missing_labels or untagged_mentions are non-empty.",
+                "Keep rationale brief and in the output language.",
+            ],
+        },
+    }
+    if kg_fact_cards:
+        payload["kg_fact_cards"] = kg_fact_cards[:20]
+    return json.dumps(payload, indent=2)
+
+
+def plan_readiness_review_prompt(
+    topic: str,
+    plan: dict,
+    source_briefs_count: int,
+    source_types: list[str],
+    output_language: str = "Chinese",
+) -> str:
+    payload = {
+        "topic": topic,
+        "plan": plan,
+        "source_briefs_count": source_briefs_count,
+        "source_types": source_types,
+        "output_language": output_language,
+        "instructions": {
+            "output_json_schema": {
+                "ready": "true|false",
+                "readiness": "draft | refined | ready",
+                "gaps": ["string"],
+                "rationale": "string",
+            },
+            "requirements": [
+                "Judge whether the plan is ready to proceed based on completeness, specificity, and evidence coverage.",
+                "If not ready, list concrete gaps that should be addressed.",
+                "Keep rationale brief and in the output language.",
+            ],
+        },
+    }
     return json.dumps(payload, indent=2)
