@@ -187,6 +187,8 @@ class SkillContext:
     outline_plan_gaps: list[str] = field(default_factory=list)
     outline_triggered_retrieval: bool = False
     outline_triggered_plan_retry: bool = False
+    plan_validation: dict[str, object] = field(default_factory=dict)
+    outline_validation: dict[str, object] = field(default_factory=dict)
     web_last_search_topics: list[str] = field(default_factory=list)
     web_last_added: int = 0
     web_stop_early: bool = False
@@ -254,7 +256,6 @@ class SkillRunner:
             raise ValueError(f"Skill '{name}' is not registered")
         if name not in self.registry.skills:
             raise ValueError(f"Skill '{name}' not found in skills registry")
-        log_task_event(f"***Skill activated: {name}***")
         return self.handlers[name](ctx)
 
 
@@ -1582,6 +1583,9 @@ def skill_extract_kg(ctx: SkillContext) -> SkillContext:
 
 
 def skill_retrieve_subgraph(ctx: SkillContext) -> SkillContext:
+    if ctx.round_number > 1 and not ctx.kg_updated and ctx.web_last_added == 0:
+        log_task_event("KG subgraph retrieval skipped: no new KG updates or web docs added.")
+        return ctx
     ctx.kg_fact_cards = []
     store = KGStore()
     query_parts = [ctx.topic]
@@ -2222,6 +2226,7 @@ def skill_plan_research(ctx: SkillContext) -> SkillContext:
                 run_id=ctx.run_id,
             )
         validation = validate_plan(plan)
+        ctx.plan_validation = validation
         review = review_plan_quality(ctx.llm, plan, validation, ctx.output_language)
         action = ""
         if review and isinstance(review.get("action"), str):
@@ -2310,6 +2315,9 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         "key_questions": ctx.plan.key_questions,
         "scope": ctx.plan.scope,
     }
+    outline_profile_summary = ctx.profile_summary
+    if not outline_profile_summary:
+        raise ValueError("Profile summary is required for outline tagging but was not available.")
     rounds = max(1, int(ctx.outline_review_rounds or 0))
     feedback = list(ctx.outline_revision_feedback)
     ctx.outline_review_action = ""
@@ -2329,7 +2337,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
             plan_requirements=plan_requirements,
             kg_fact_cards=ctx.kg_fact_cards,
             output_language=ctx.output_language,
-            profile_summary=ctx.profile_summary,
+            profile_summary=outline_profile_summary,
             skill_guidance=ctx.skill_guidance,
             active_skills=ctx.active_skills,
             skill_method_steps=method_steps,
@@ -2339,7 +2347,13 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
             revision_feedback=feedback,
             internal_retries=ctx.outline_internal_retries,
         )
-        validation = validate_outline(outline, ctx.output_language)
+        validation = validate_outline(
+            outline,
+            ctx.output_language,
+            kg_fact_cards=ctx.kg_fact_cards,
+            profile_summary=outline_profile_summary,
+        )
+        ctx.outline_validation = validation
         review = review_outline_quality(
             ctx.llm,
             ctx.topic,

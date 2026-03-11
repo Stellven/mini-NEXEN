@@ -456,7 +456,30 @@ def validate_plan(plan: PlanDraft) -> dict[str, object]:
     return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings}
 
 
-def validate_outline(outline: list[str], output_language: str) -> dict[str, object]:
+def _outline_evidence_alignment_ok(line: str, kg_fact_cards: list[dict]) -> bool:
+    if not line or not kg_fact_cards:
+        return False
+    lowered = line.casefold()
+    needles: list[str] = []
+    for card in kg_fact_cards:
+        for key in ("claim", "statement", "subject", "object"):
+            text = str(card.get(key) or "").strip()
+            if text and text.casefold() not in needles:
+                needles.append(text.casefold())
+    for needle in needles:
+        if len(needle) < 3:
+            continue
+        if needle in lowered:
+            return True
+    return False
+
+
+def validate_outline(
+    outline: list[str],
+    output_language: str,
+    kg_fact_cards: list[dict] | None = None,
+    profile_summary: list[dict] | None = None,
+) -> dict[str, object]:
     errors: list[str] = []
     warnings: list[str] = []
     if not outline:
@@ -472,6 +495,18 @@ def validate_outline(outline: list[str], output_language: str) -> dict[str, obje
             errors.append(
                 f"outline language ratio below minimum ({ratio:.2f} < {OUTLINE_MIN_CJK_RATIO:.2f})."
             )
+    evidence_cards = kg_fact_cards or []
+    for line in outline:
+        if "[關切證據]" in line or "[关切证据]" in line or "[profile evidence]" in line.casefold():
+            if not evidence_cards:
+                warnings.append("outline uses [關切證據] but no evidence cards are available; consider [關切].")
+                continue
+            if not _outline_evidence_alignment_ok(line, evidence_cards):
+                warnings.append("outline uses [關切證據] without aligned evidence; consider [關切].")
+    if profile_summary and not _outline_has_profile_tags(outline):
+        warnings.append(
+            "missing_profile_tags: outline has profile signals available but no [關切]/[關切證據] tags."
+        )
     return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings}
 
 
@@ -843,6 +878,15 @@ def _strip_bracket_tags(text: str, allowed_tags: set[str] | None = None) -> str:
         return ""
 
     cleaned = re.sub(r"[\[\【]([^\]\】]+)[\]\】]", _repl, text)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
+
+
+def _strip_profile_tags(text: str) -> str:
+    if not text:
+        return ""
+    pattern = r"\s*[\[\【](關切證據|关切证据|關切|关切|profile evidence|profile)[\]\】]\s*"
+    cleaned = re.sub(pattern, " ", text, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
     return cleaned
 
@@ -1820,49 +1864,16 @@ def render_plan_md(
         "## Scope",
     ]
     for item in plan.scope:
-        lines.append(f"- {item}")
+        lines.append(f"- {_strip_profile_tags(item)}")
 
     lines.append("")
     lines.append("## Key Questions")
     for item in plan.key_questions:
-        lines.append(f"- {item}")
+        lines.append(f"- {_strip_profile_tags(item)}")
 
     lines.append("")
     lines.append("## Keywords")
     lines.append("- " + ", ".join(plan.keywords))
-
-    lines.append("")
-    lines.append("## Source Requirements (Global)")
-    if plan.source_requirements:
-        for key, value in plan.source_requirements.items():
-            lines.append(f"- {key}: {value}")
-    else:
-        lines.append("- None")
-
-    lines.append("")
-    lines.append("## Section Requirements")
-    if plan.section_requirements:
-        for item in plan.section_requirements:
-            section = str(item.get("section") or "").strip()
-            objective = str(item.get("objective") or "").strip()
-            if section:
-                lines.append(f"- {section}")
-            if objective:
-                lines.append(f"  - Objective: {objective}")
-            subsections = item.get("subsections") or []
-            if isinstance(subsections, list) and subsections:
-                lines.append("  - Subsections:")
-                for sub in subsections:
-                    text = str(sub).strip()
-                    if text:
-                        lines.append(f"    - {text}")
-            requirements = item.get("evidence_requirements") or item.get("requirements") or {}
-            if isinstance(requirements, dict) and requirements:
-                lines.append("  - Evidence Requirements:")
-                for key, value in requirements.items():
-                    lines.append(f"    - {key}: {value}")
-    else:
-        lines.append("- None")
 
     lines.append("")
     lines.append("## Source Types in Selected Docs")
@@ -1897,14 +1908,14 @@ def render_plan_md(
     lines.append("## Gaps and Retrieval Needs")
     if plan.gaps:
         for item in plan.gaps:
-            lines.append(f"- {item}")
+            lines.append(f"- {_strip_profile_tags(item)}")
     else:
         lines.append("- None")
 
     lines.append("")
     lines.append("## Notes")
     for item in plan.notes:
-        lines.append(f"- {item}")
+        lines.append(f"- {_strip_profile_tags(item)}")
 
     lines.append("")
     lines.append("## Analysis Methods")
