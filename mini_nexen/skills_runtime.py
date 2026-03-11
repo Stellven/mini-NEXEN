@@ -19,6 +19,9 @@ from .config import (
     DEFAULT_PROFILE_TOP_K,
     DEFAULT_TOP_K,
     DEFAULT_OUTLINE_REVIEW_ROUNDS,
+    DEFAULT_OUTLINE_PROFILE_REVIEW_ROUNDS,
+    DEFAULT_OUTLINE_INTERNAL_RETRIES,
+    DEFAULT_PLAN_REVIEW_ROUNDS,
     SKILLS_DIR,
     WEB_AUTO_MAX_ROUNDS,
     WEB_EVIDENCE_DEFAULT_DAYS,
@@ -48,8 +51,10 @@ from .llm import (
     LLMClient,
     LLMClientError,
     emit_progress,
+    clear_log_context,
     log_task_event,
     log_task_event_quiet,
+    set_log_context,
 )
 from .planning import (
     PlanDraft,
@@ -60,6 +65,10 @@ from .planning import (
     llm_refine_plan,
     normalize_bracket_tag,
     review_plan_readiness,
+    review_plan_quality,
+    review_outline_quality,
+    validate_outline,
+    validate_plan,
     render_plan_md,
 )
 from .text_utils import score_documents, tokenize
@@ -162,11 +171,26 @@ class SkillContext:
     web_max_per_query: int = WEB_MAX_PER_QUERY
     web_relevance_threshold: float = WEB_RELEVANCE_THRESHOLD
     profile_top_k: int = DEFAULT_PROFILE_TOP_K
+    plan_review_rounds: int = DEFAULT_PLAN_REVIEW_ROUNDS
     outline_review_rounds: int = DEFAULT_OUTLINE_REVIEW_ROUNDS
+    outline_profile_review_rounds: int = DEFAULT_OUTLINE_PROFILE_REVIEW_ROUNDS
+    outline_internal_retries: bool = DEFAULT_OUTLINE_INTERNAL_RETRIES
     kg_hops: int = DEFAULT_KG_HOPS
     kg_subgraph_stats: dict[str, float | int | str] = field(default_factory=dict)
     kg_updated: bool = False
     llm: Optional[LLMClient] = None
+    plan_revision_feedback: list[str] = field(default_factory=list)
+    outline_revision_feedback: list[str] = field(default_factory=list)
+    outline_review_action: str = ""
+    outline_review_feedback: list[str] = field(default_factory=list)
+    outline_retrieval_gaps: list[str] = field(default_factory=list)
+    outline_plan_gaps: list[str] = field(default_factory=list)
+    outline_triggered_retrieval: bool = False
+    outline_triggered_plan_retry: bool = False
+    web_last_search_topics: list[str] = field(default_factory=list)
+    web_last_added: int = 0
+    web_stop_early: bool = False
+    web_stop_reason: str = ""
 
 
 SkillFn = Callable[[SkillContext], SkillContext]
@@ -823,6 +847,92 @@ def _should_expand_web(ctx: SkillContext, store: KGStore) -> tuple[bool, list[st
         reasons.append(f"contradictions={contra_count}")
 
     return bool(reasons), reasons
+
+
+def _parse_min_sources(value: object, default: int = 3) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, parsed)
+
+
+def _required_source_buckets(plan: PlanDraft) -> set[str]:
+    required: set[str] = set()
+    if not plan or not isinstance(plan.source_requirements, dict):
+        return required
+    source_types = plan.source_requirements.get("source_types") or []
+    if not isinstance(source_types, list):
+        return required
+    for item in source_types:
+        text = str(item).casefold()
+        if not text:
+            continue
+        if "web" in text or "online" in text or "open" in text:
+            required.add("web")
+        if "local" in text or "internal" in text:
+            required.add("local")
+        if "file" in text:
+            required.add("file")
+        if "note" in text:
+            required.add("note")
+        if "url" in text:
+            required.add("url")
+    return required
+
+
+def _present_source_buckets(documents: list[db.Document]) -> set[str]:
+    present: set[str] = set()
+    for doc in documents:
+        source_type = (doc.source_type or "").strip().casefold()
+        if not source_type:
+            continue
+        if source_type == "web":
+            present.add("web")
+        if source_type in {"file", "note", "url"}:
+            present.add("local")
+        present.add(source_type)
+    return present
+
+
+def _assess_sufficiency(ctx: SkillContext, store: KGStore) -> tuple[bool, list[str]]:
+    if not ctx.plan:
+        return False, ["plan_missing"]
+    reasons: list[str] = []
+    stats = ctx.kg_subgraph_stats or {}
+    evidence_count = int(stats.get("evidence_count", 0) or 0)
+    section_count = len(ctx.plan.section_requirements or [])
+    global_min = _parse_min_sources(
+        (ctx.plan.source_requirements or {}).get("min_sources"), default=3
+    )
+    section_min_total = 0
+    for item in ctx.plan.section_requirements or []:
+        if not isinstance(item, dict):
+            continue
+        reqs = item.get("evidence_requirements") or {}
+        section_min_total += _parse_min_sources(reqs.get("min_sources"), default=0)
+    required = max(global_min, section_count, min(section_min_total, global_min * max(1, section_count)))
+    if evidence_count < required:
+        reasons.append(f"evidence_count<{required}")
+
+    required_buckets = _required_source_buckets(ctx.plan)
+    if required_buckets:
+        present = _present_source_buckets(ctx.documents)
+        missing = required_buckets - present
+        if missing:
+            reasons.append("missing_source_types=" + ",".join(sorted(missing)))
+
+    latest_added_at = stats.get("latest_doc_added_at") or None
+    timeframe_specified = bool(stats.get("timeframe_specified"))
+    if (not timeframe_specified) and latest_added_at and _is_stale(latest_added_at, WEB_EXPAND_STALE_DAYS):
+        reasons.append("evidence_stale")
+
+    _, expand_reasons = _should_expand_web(ctx, store)
+    for item in expand_reasons:
+        if item not in reasons:
+            reasons.append(item)
+
+    return len(reasons) == 0, reasons
 
 
 def _extract_json_payload(text: str) -> object:
@@ -1706,6 +1816,12 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
             f"Web retrieval skipped: max rounds reached ({ctx.web_rounds_used}/{ctx.web_max_rounds})."
         )
         return ctx
+    set_log_context(
+        loop="retrieval",
+        loop_round=ctx.web_rounds_used + 1,
+        loop_total=ctx.web_max_rounds,
+        component="Retriever",
+    )
 
     if not ctx.kg_subgraph_stats:
         ctx = skill_retrieve_subgraph(ctx)
@@ -1727,6 +1843,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         + [interest.topic for interest in ctx.interests]
         + profile_terms
         + ctx.query_hints
+        + ctx.outline_retrieval_gaps
     ):
         text = (item or "").strip()
         if not text:
@@ -1739,7 +1856,20 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
     if ctx.web_search_topics:
         interest_queries = list(ctx.web_search_topics)
     if not interest_queries:
+        clear_log_context(loop=True, component=True)
         return ctx
+    has_new_queries = False
+    if ctx.web_last_search_topics:
+        last = {item.casefold() for item in ctx.web_last_search_topics if item}
+        current = {item.casefold() for item in interest_queries if item}
+        has_new_queries = bool(current - last)
+    elif interest_queries:
+        has_new_queries = True
+    if ctx.web_stop_early and not ctx.web_forced:
+        if ctx.web_stop_reason == "sufficient" or not has_new_queries:
+            log_task_event("Web retrieval skipped: early stop (no new queries or sources).")
+            clear_log_context(loop=True, component=True)
+            return ctx
 
     if ctx.round_number == 1 and not ctx.web_search_topics:
         ensure_dirs()
@@ -1854,24 +1984,22 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
                 log_task_event("Web search plan review ignored (invalid JSON).")
 
     if ctx.web_auto:
-        should_expand, reasons = _should_expand_web(ctx, store)
-        if not should_expand:
+        sufficient, reasons = _assess_sufficiency(ctx, store)
+        if sufficient:
             stats = ctx.kg_subgraph_stats or {}
             log_task_event(
-                "Web retrieval skipped (auto): "
+                "Web retrieval skipped (auto, sufficient): "
                 f"entities={stats.get('entity_count', 0)} "
                 f"relations={stats.get('relation_count', 0)} "
                 f"claims={stats.get('claim_count', 0)} "
                 f"evidence={stats.get('evidence_count', 0)} "
                 f"avg_conf={stats.get('avg_confidence', 0.0):.2f}"
             )
+            clear_log_context(loop=True, component=True)
             return ctx
-        if reasons == ["forced"]:
-            log_task_event("Web retrieval forced by CLI flags.")
-        else:
-            log_task_event(f"Web retrieval triggered (auto): {', '.join(reasons)}")
+        log_task_event(f"Web retrieval triggered (auto): {', '.join(reasons)}")
     else:
-        log_task_event("Web retrieval triggered (default).")
+        log_task_event("Web retrieval triggered (full).")
 
     ctx.web_modes = modes
     if interest_queries:
@@ -1940,6 +2068,12 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
 
     ctx.web_rounds_used += 1
     if not scored_results:
+        ctx.web_last_search_topics = list(interest_queries)
+        ctx.web_last_added = 0
+        if not ctx.web_forced:
+            ctx.web_stop_early = not has_new_queries
+            ctx.web_stop_reason = "no_new" if ctx.web_stop_early else ""
+        clear_log_context(loop=True, component=True)
         return ctx
 
     deduped: dict[str, tuple[float, object]] = {}
@@ -2018,28 +2152,100 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         if extracted:
             log_task_event(f"KG extraction (web): added_triples={extracted}")
             ctx.kg_updated = True
+    new_queries = False
+    if ctx.web_last_search_topics:
+        last = {item.casefold() for item in ctx.web_last_search_topics if item}
+        current = {item.casefold() for item in interest_queries if item}
+        new_queries = bool(current - last)
+    elif interest_queries:
+        new_queries = True
+    ctx.web_last_search_topics = list(interest_queries)
+    ctx.web_last_added = added
+    if (added == 0) and (not new_queries) and not ctx.web_forced:
+        ctx.web_stop_early = True
+        ctx.web_stop_reason = "no_new"
+    else:
+        ctx.web_stop_early = False
+        ctx.web_stop_reason = ""
+    if not ctx.web_auto and not ctx.web_forced:
+        sufficient, _reasons = _assess_sufficiency(ctx, store)
+        if sufficient:
+            ctx.web_stop_early = True
+            ctx.web_stop_reason = "sufficient"
+            log_task_event("Web retrieval early stop: sufficiency achieved.")
+    clear_log_context(loop=True, component=True)
     return ctx
 
 
 def skill_plan_research(ctx: SkillContext) -> SkillContext:
     if not ctx.llm:
         raise ValueError("LLM is required for planning but was not configured.")
-    ctx.plan = llm_draft_plan(
-        llm=ctx.llm,
-        topic=ctx.topic,
-        interests=ctx.interests,
-        methods=ctx.methods,
-        extracted_interests=ctx.extracted_interests,
-        documents=ctx.documents,
-        round_number=ctx.round_number,
-        profile_top_k=ctx.profile_top_k,
-        top_k_docs=ctx.top_k,
-        kg_fact_cards=ctx.kg_fact_cards,
-        output_language=ctx.output_language,
-        profile_summary=ctx.profile_summary,
-        skill_guidance=ctx.skill_guidance,
-        run_id=ctx.run_id,
-    )
+    rounds = max(1, int(ctx.plan_review_rounds or 0))
+    feedback = list(ctx.plan_revision_feedback)
+    plan: PlanDraft | None = None
+    for attempt in range(rounds):
+        set_log_context(loop="plan_review", loop_round=attempt + 1, loop_total=rounds, component="Planner")
+        if plan is None:
+            plan = llm_draft_plan(
+                llm=ctx.llm,
+                topic=ctx.topic,
+                interests=ctx.interests,
+                methods=ctx.methods,
+                extracted_interests=ctx.extracted_interests,
+                documents=[],
+                round_number=ctx.round_number,
+                profile_top_k=ctx.profile_top_k,
+                top_k_docs=ctx.top_k,
+                kg_fact_cards=None,
+                output_language=ctx.output_language,
+                profile_summary=ctx.profile_summary,
+                skill_guidance=ctx.skill_guidance,
+                revision_feedback=feedback,
+                run_id=ctx.run_id,
+            )
+        else:
+            plan = llm_refine_plan(
+                llm=ctx.llm,
+                plan=plan,
+                documents=[],
+                interests=ctx.interests,
+                methods=ctx.methods,
+                extracted_interests=ctx.extracted_interests,
+                round_number=ctx.round_number,
+                profile_top_k=ctx.profile_top_k,
+                top_k_docs=ctx.top_k,
+                kg_fact_cards=None,
+                output_language=ctx.output_language,
+                profile_summary=ctx.profile_summary,
+                skill_guidance=ctx.skill_guidance,
+                revision_feedback=feedback,
+                run_id=ctx.run_id,
+            )
+        validation = validate_plan(plan)
+        review = review_plan_quality(ctx.llm, plan, validation, ctx.output_language)
+        action = ""
+        if review and isinstance(review.get("action"), str):
+            action = review.get("action", "").strip().lower()
+        if validation.get("ok") and (not review or action == "accept"):
+            plan.readiness = "ready"
+            break
+        feedback = []
+        for item in validation.get("errors", []):
+            feedback.append(str(item))
+        if review:
+            for item in review.get("feedback", []) or []:
+                feedback.append(str(item))
+            for item in review.get("gaps", []) or []:
+                feedback.append(str(item))
+            plan.readiness = "refined"
+    ctx.plan = plan
+    ctx.plan_revision_feedback = []
+    if plan and plan.retrieval_queries:
+        ctx.query_hints = [
+            _trim_query(text)
+            for text in _clean_query_list(plan.retrieval_queries, ctx.methodology_terms)
+        ]
+    clear_log_context(loop=True, component=True)
     return ctx
 
 
@@ -2098,23 +2304,82 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         }
         for name, selection in ctx.skill_method_selections.items()
     }
-    ctx.outline = llm_build_outline(
-        llm=ctx.llm,
-        topic=ctx.topic,
-        documents=ctx.documents,
-        interests=ctx.interests,
-        methods=ctx.methods,
-        keywords=ctx.plan.keywords,
-        kg_fact_cards=ctx.kg_fact_cards,
-        output_language=ctx.output_language,
-        profile_summary=ctx.profile_summary,
-        skill_guidance=ctx.skill_guidance,
-        active_skills=ctx.active_skills,
-        skill_method_steps=method_steps,
-        run_id=ctx.run_id,
-        allowed_bracket_tags=allowed_tags,
-        profile_review_rounds=ctx.outline_review_rounds,
-    )
+    plan_requirements = {
+        "source_requirements": ctx.plan.source_requirements,
+        "section_requirements": ctx.plan.section_requirements,
+        "key_questions": ctx.plan.key_questions,
+        "scope": ctx.plan.scope,
+    }
+    rounds = max(1, int(ctx.outline_review_rounds or 0))
+    feedback = list(ctx.outline_revision_feedback)
+    ctx.outline_review_action = ""
+    ctx.outline_review_feedback = []
+    ctx.outline_retrieval_gaps = []
+    ctx.outline_plan_gaps = []
+    final_outline: list[str] = []
+    for attempt in range(rounds):
+        set_log_context(loop="outline_review", loop_round=attempt + 1, loop_total=rounds, component="Outliner")
+        outline = llm_build_outline(
+            llm=ctx.llm,
+            topic=ctx.topic,
+            documents=ctx.documents,
+            interests=ctx.interests,
+            methods=ctx.methods,
+            keywords=ctx.plan.keywords,
+            plan_requirements=plan_requirements,
+            kg_fact_cards=ctx.kg_fact_cards,
+            output_language=ctx.output_language,
+            profile_summary=ctx.profile_summary,
+            skill_guidance=ctx.skill_guidance,
+            active_skills=ctx.active_skills,
+            skill_method_steps=method_steps,
+            run_id=ctx.run_id,
+            allowed_bracket_tags=allowed_tags,
+            profile_review_rounds=ctx.outline_profile_review_rounds if ctx.outline_internal_retries else 0,
+            revision_feedback=feedback,
+            internal_retries=ctx.outline_internal_retries,
+        )
+        validation = validate_outline(outline, ctx.output_language)
+        review = review_outline_quality(
+            ctx.llm,
+            ctx.topic,
+            outline,
+            ctx.plan,
+            validation,
+            ctx.output_language,
+        )
+        action = ""
+        if review and isinstance(review.get("action"), str):
+            action = review.get("action", "").strip().lower()
+        if not validation.get("ok"):
+            action = "outline_retry"
+        if validation.get("ok") and (not review or action in {"accept", ""}):
+            final_outline = outline
+            ctx.outline_review_action = "accept"
+            break
+        if action == "outline_retry" or not action:
+            feedback = []
+            for item in validation.get("errors", []):
+                feedback.append(str(item))
+            if review:
+                for item in review.get("feedback", []) or []:
+                    feedback.append(str(item))
+                for item in review.get("plan_gaps", []) or []:
+                    feedback.append(str(item))
+            final_outline = outline
+            continue
+        if action in {"retrieve_more", "plan_retry"}:
+            ctx.outline_review_action = action
+            if review:
+                ctx.outline_review_feedback = [str(item) for item in review.get("feedback", []) or []]
+                ctx.outline_retrieval_gaps = [str(item) for item in review.get("retrieval_gaps", []) or []]
+                ctx.outline_plan_gaps = [str(item) for item in review.get("plan_gaps", []) or []]
+            final_outline = outline
+            break
+    if not final_outline:
+        final_outline = outline if "outline" in locals() else []
+    ctx.outline = final_outline
+    clear_log_context(loop=True, component=True)
     return ctx
 
 

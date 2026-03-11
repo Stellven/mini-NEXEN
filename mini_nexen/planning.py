@@ -8,7 +8,12 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from . import db
-from .config import ARTIFACTS_DIR, DEFAULT_OUTLINE_REVIEW_ROUNDS, DEFAULT_PROFILE_TOP_K, ensure_dirs
+from .config import (
+    ARTIFACTS_DIR,
+    DEFAULT_OUTLINE_PROFILE_REVIEW_ROUNDS,
+    DEFAULT_PROFILE_TOP_K,
+    ensure_dirs,
+)
 from .db import Document, Interest, Method
 from .kg import KGStore
 from .llm import LLMClient, LLMClientError, emit_progress, log_task_event
@@ -19,8 +24,10 @@ from .llm_prompts import (
     outline_profile_review_prompt,
     outline_prompt,
     plan_prompt,
+    plan_quality_review_prompt,
     plan_readiness_review_prompt,
     refine_prompt,
+    outline_quality_review_prompt,
 )
 from .text_utils import tokenize
 
@@ -55,6 +62,19 @@ _JSON_KEY_MAP = {
     "检索查询": "retrieval_queries",
     "检索查询语句": "retrieval_queries",
     "检索关键词": "retrieval_queries",
+    "source_requirements": "source_requirements",
+    "source requirements": "source_requirements",
+    "source requirement": "source_requirements",
+    "section_requirements": "section_requirements",
+    "section requirements": "section_requirements",
+    "sections": "section_requirements",
+    "section plan": "section_requirements",
+    "研究段落": "section_requirements",
+    "章节需求": "section_requirements",
+    "来源要求": "source_requirements",
+    "来源需求": "source_requirements",
+    "证据要求": "source_requirements",
+    "证据需求": "source_requirements",
 }
 
 OUTLINE_MIN_WORDS = 1000
@@ -76,6 +96,8 @@ class PlanDraft:
     scope: list[str]
     key_questions: list[str]
     keywords: list[str]
+    source_requirements: dict[str, object]
+    section_requirements: list[dict[str, object]]
     source_types: list[str]
     source_briefs: list[SourceBrief]
     gaps: list[str]
@@ -393,6 +415,66 @@ def is_ready(plan: PlanDraft, min_sources: int = 3) -> tuple[bool, list[str]]:
     return ready, gaps
 
 
+def validate_plan(plan: PlanDraft) -> dict[str, object]:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if len(plan.scope) < 3:
+        errors.append("scope must include at least 3 items.")
+    if len(plan.key_questions) < 3:
+        errors.append("key_questions must include at least 3 items.")
+    if len(plan.keywords) < 3:
+        errors.append("keywords must include at least 3 items.")
+    if plan.readiness not in {"draft", "refined", "ready"}:
+        warnings.append("readiness should be draft/refined/ready.")
+
+    if not isinstance(plan.source_requirements, dict) or not plan.source_requirements:
+        errors.append("source_requirements must be a non-empty object.")
+    else:
+        required_keys = {"depth", "breadth", "rigor", "recency", "source_types", "min_sources"}
+        missing = [key for key in required_keys if key not in plan.source_requirements]
+        if missing:
+            errors.append(f"source_requirements missing keys: {', '.join(missing)}.")
+
+    if not isinstance(plan.section_requirements, list) or not plan.section_requirements:
+        errors.append("section_requirements must be a non-empty array.")
+    else:
+        for idx, item in enumerate(plan.section_requirements, start=1):
+            if not isinstance(item, dict):
+                errors.append(f"section_requirements[{idx}] must be an object.")
+                continue
+            section = str(item.get("section") or "").strip()
+            evidence = item.get("evidence_requirements") or {}
+            if not section:
+                errors.append(f"section_requirements[{idx}] missing section name.")
+            if not isinstance(evidence, dict) or not evidence:
+                errors.append(f"section_requirements[{idx}] missing evidence_requirements.")
+
+    if not plan.retrieval_queries:
+        warnings.append("retrieval_queries are empty.")
+
+    return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings}
+
+
+def validate_outline(outline: list[str], output_language: str) -> dict[str, object]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not outline:
+        errors.append("outline must not be empty.")
+        return {"ok": False, "errors": errors, "warnings": warnings}
+
+    count = outline_word_count(outline)
+    if count < OUTLINE_MIN_WORDS:
+        errors.append(f"outline length below minimum ({count} < {OUTLINE_MIN_WORDS}).")
+    if _is_chinese_language(output_language):
+        ratio = outline_cjk_ratio(outline)
+        if ratio < OUTLINE_MIN_CJK_RATIO:
+            errors.append(
+                f"outline language ratio below minimum ({ratio:.2f} < {OUTLINE_MIN_CJK_RATIO:.2f})."
+            )
+    return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings}
+
+
 def review_plan_readiness(
     llm: LLMClient,
     plan: PlanDraft,
@@ -436,6 +518,83 @@ def review_plan_readiness(
     if isinstance(ready_flag, bool):
         return ready_flag, gaps
     return is_ready(plan)
+
+
+def review_plan_quality(
+    llm: LLMClient,
+    plan: PlanDraft,
+    validation: dict[str, object],
+    output_language: str,
+) -> dict | None:
+    prompt = plan_quality_review_prompt(
+        topic=plan.topic,
+        plan={
+            "scope": plan.scope,
+            "key_questions": plan.key_questions,
+            "keywords": plan.keywords,
+            "source_requirements": plan.source_requirements,
+            "section_requirements": plan.section_requirements,
+            "gaps": plan.gaps,
+            "notes": plan.notes,
+            "readiness": plan.readiness,
+            "retrieval_queries": plan.retrieval_queries,
+        },
+        validation=validation,
+        output_language=output_language,
+    )
+    try:
+        response = llm.generate(
+            SYSTEM_REVIEW_PROMPT,
+            prompt,
+            task="plan quality review",
+            agent="Reviewer",
+        )
+    except Exception as exc:
+        log_task_event(f"Reviewer failed: plan quality review error={exc}")
+        return None
+    payload = _extract_json(response)
+    if not payload:
+        log_task_event("Reviewer: invalid JSON for plan quality review.")
+        return None
+    return payload
+
+
+def review_outline_quality(
+    llm: LLMClient,
+    topic: str,
+    outline: list[str],
+    plan: PlanDraft,
+    validation: dict[str, object],
+    output_language: str,
+) -> dict | None:
+    plan_requirements = {
+        "source_requirements": plan.source_requirements,
+        "section_requirements": plan.section_requirements,
+        "key_questions": plan.key_questions,
+        "scope": plan.scope,
+    }
+    prompt = outline_quality_review_prompt(
+        topic=topic,
+        outline=outline,
+        plan_requirements=plan_requirements,
+        validation=validation,
+        output_language=output_language,
+    )
+    try:
+        response = llm.generate(
+            SYSTEM_REVIEW_PROMPT,
+            prompt,
+            task="outline quality review",
+            agent="Reviewer",
+        )
+    except Exception as exc:
+        log_task_event(f"Reviewer failed: outline quality review error={exc}")
+        return None
+    payload = _extract_json(response)
+    if not payload:
+        log_task_event("Reviewer: invalid JSON for outline quality review.")
+        return None
+    return payload
 
 
 def _extract_json(text: str) -> dict:
@@ -763,6 +922,12 @@ def _apply_llm_fields(plan: PlanDraft, payload: dict) -> PlanDraft:
     plan.scope = _clean_list(payload.get("scope")) or plan.scope
     plan.key_questions = _clean_list(payload.get("key_questions")) or plan.key_questions
     plan.keywords = _clean_list(payload.get("keywords")) or plan.keywords
+    source_requirements = payload.get("source_requirements")
+    if isinstance(source_requirements, dict):
+        plan.source_requirements = source_requirements
+    section_requirements = payload.get("section_requirements")
+    if isinstance(section_requirements, list):
+        plan.section_requirements = [item for item in section_requirements if isinstance(item, dict)]
     plan.gaps = _clean_list(payload.get("gaps")) or plan.gaps
     plan.notes = _clean_list(payload.get("notes")) or plan.notes
     plan.retrieval_queries = _clean_list(payload.get("retrieval_queries")) or plan.retrieval_queries
@@ -884,6 +1049,8 @@ def _base_plan(
         scope=[],
         key_questions=[],
         keywords=[],
+        source_requirements={},
+        section_requirements=[],
         source_types=source_types,
         source_briefs=source_briefs,
         gaps=[],
@@ -895,7 +1062,7 @@ def _base_plan(
     )
 
 
-def _validate_llm_plan(plan: PlanDraft) -> None:
+def _validate_llm_plan(plan: PlanDraft) -> list[str]:
     missing = []
     if not plan.scope:
         missing.append("scope")
@@ -903,8 +1070,7 @@ def _validate_llm_plan(plan: PlanDraft) -> None:
         missing.append("key_questions")
     if not plan.keywords:
         missing.append("keywords")
-    if missing:
-        raise LLMClientError(f"LLM output missing fields: {', '.join(missing)}")
+    return missing
 
 
 def llm_draft_plan(
@@ -921,6 +1087,7 @@ def llm_draft_plan(
     output_language: str = "Chinese",
     profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
+    revision_feedback: list[str] | None = None,
     run_id: int | None = None,
     save_prefix: str | None = None,
 ) -> PlanDraft:
@@ -945,6 +1112,7 @@ def llm_draft_plan(
         output_language=output_language,
         profile_summary=profile_summary,
         skill_guidance=skill_guidance,
+        revision_feedback=revision_feedback,
     )
     model_label = llm.config.model
     emit_progress("Planner", model_label, "plan draft", 0, 1, done=False)
@@ -968,11 +1136,9 @@ def llm_draft_plan(
         plan.scope = [f"Research and summarize {topic}."]
     if not plan.key_questions:
         plan.key_questions = [f"What are the core ideas and open questions in {topic}?"]
-    try:
-        _validate_llm_plan(plan)
-    except LLMClientError as exc:
-        _log_llm_failure("Planner", "plan draft", response)
-        raise LLMClientError(str(exc)) from exc
+    missing = _validate_llm_plan(plan)
+    if missing:
+        log_task_event(f"Planner: draft missing fields: {', '.join(missing)}")
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     prefix = save_prefix or f"{timestamp}_plan"
     if run_id is not None and save_prefix is None:
@@ -995,6 +1161,7 @@ def llm_refine_plan(
     output_language: str = "Chinese",
     profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
+    revision_feedback: list[str] | None = None,
     run_id: int | None = None,
     save_prefix: str | None = None,
 ) -> PlanDraft:
@@ -1013,6 +1180,8 @@ def llm_refine_plan(
         "scope": plan.scope,
         "key_questions": plan.key_questions,
         "keywords": plan.keywords,
+        "source_requirements": plan.source_requirements,
+        "section_requirements": plan.section_requirements,
         "gaps": plan.gaps,
         "notes": plan.notes,
         "readiness": plan.readiness,
@@ -1029,6 +1198,7 @@ def llm_refine_plan(
         output_language=output_language,
         profile_summary=profile_summary,
         skill_guidance=skill_guidance,
+        revision_feedback=revision_feedback,
     )
     model_label = llm.config.model
     emit_progress("Planner", model_label, "plan refinement", 0, 1, done=False)
@@ -1052,11 +1222,9 @@ def llm_refine_plan(
         refined.scope = plan.scope or [f"Research and summarize {plan.topic}."]
     if not refined.key_questions:
         refined.key_questions = plan.key_questions or [f"What are the core ideas and open questions in {plan.topic}?"]
-    try:
-        _validate_llm_plan(refined)
-    except LLMClientError as exc:
-        _log_llm_failure("Planner", "plan refinement", response)
-        raise LLMClientError(str(exc)) from exc
+    missing = _validate_llm_plan(refined)
+    if missing:
+        log_task_event(f"Planner: refinement missing fields: {', '.join(missing)}")
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     prefix = save_prefix or f"{timestamp}_plan"
     if run_id is not None and save_prefix is None:
@@ -1091,6 +1259,8 @@ def _save_plan_snapshot(plan: PlanDraft, prefix: str, label: str) -> None:
         "scope": plan.scope,
         "key_questions": plan.key_questions,
         "keywords": plan.keywords,
+        "source_requirements": plan.source_requirements,
+        "section_requirements": plan.section_requirements,
         "gaps": plan.gaps,
         "notes": plan.notes,
         "retrieval_queries": plan.retrieval_queries,
@@ -1109,6 +1279,7 @@ def llm_build_outline(
     interests: list[Interest],
     methods: list[Method],
     keywords: list[str],
+    plan_requirements: dict[str, object] | None = None,
     kg_fact_cards: list[dict] | None = None,
     output_language: str = "Chinese",
     profile_summary: list[dict] | None = None,
@@ -1118,7 +1289,9 @@ def llm_build_outline(
     run_id: int | None = None,
     save_prefix: str | None = None,
     allowed_bracket_tags: set[str] | None = None,
-    profile_review_rounds: int = DEFAULT_OUTLINE_REVIEW_ROUNDS,
+    profile_review_rounds: int = DEFAULT_OUTLINE_PROFILE_REVIEW_ROUNDS,
+    revision_feedback: list[str] | None = None,
+    internal_retries: bool = False,
 ) -> list[str]:
     def _parse_outline_response(response: str, attempt: int, task: str) -> list[str] | None:
         payload = _extract_json(response)
@@ -1522,13 +1695,19 @@ def llm_build_outline(
         methods,
         documents,
         keywords,
+        plan_requirements=plan_requirements,
         kg_fact_cards=kg_fact_cards,
         output_language=output_language,
         profile_summary=profile_summary,
         structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
+        revision_feedback=revision_feedback,
     )
     result = _attempt(prompt, 1)
+    if not internal_retries:
+        if result:
+            return result[0]
+        raise LLMClientError("LLM returned invalid JSON for outline.")
     if result and outline_length_ok(result[1]) and (not _is_chinese_language(output_language) or result[2] >= OUTLINE_MIN_CJK_RATIO):
         return _apply_profile_review_loop(result[0], result[1], result[2])
 
@@ -1552,6 +1731,7 @@ def llm_build_outline(
         methods,
         documents,
         keywords,
+        plan_requirements=plan_requirements,
         kg_fact_cards=kg_fact_cards,
         output_language=output_language,
         profile_summary=profile_summary,
@@ -1559,6 +1739,7 @@ def llm_build_outline(
         language_hint=language_hint,
         structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
+        revision_feedback=revision_feedback,
     )
     result = _attempt(retry_prompt, 2)
     if result and outline_length_ok(result[1]) and (not _is_chinese_language(output_language) or result[2] >= OUTLINE_MIN_CJK_RATIO):
@@ -1577,6 +1758,7 @@ def llm_build_outline(
         methods,
         documents,
         keywords,
+        plan_requirements=plan_requirements,
         kg_fact_cards=kg_fact_cards,
         output_language=output_language,
         profile_summary=profile_summary,
@@ -1584,6 +1766,7 @@ def llm_build_outline(
         language_hint=language_hint,
         structure_guidance=structure_guidance,
         skill_guidance=skill_guidance,
+        revision_feedback=revision_feedback,
     )
     result = _attempt(final_prompt, 3)
     if result and outline_length_ok(result[1]):
@@ -1647,6 +1830,39 @@ def render_plan_md(
     lines.append("")
     lines.append("## Keywords")
     lines.append("- " + ", ".join(plan.keywords))
+
+    lines.append("")
+    lines.append("## Source Requirements (Global)")
+    if plan.source_requirements:
+        for key, value in plan.source_requirements.items():
+            lines.append(f"- {key}: {value}")
+    else:
+        lines.append("- None")
+
+    lines.append("")
+    lines.append("## Section Requirements")
+    if plan.section_requirements:
+        for item in plan.section_requirements:
+            section = str(item.get("section") or "").strip()
+            objective = str(item.get("objective") or "").strip()
+            if section:
+                lines.append(f"- {section}")
+            if objective:
+                lines.append(f"  - Objective: {objective}")
+            subsections = item.get("subsections") or []
+            if isinstance(subsections, list) and subsections:
+                lines.append("  - Subsections:")
+                for sub in subsections:
+                    text = str(sub).strip()
+                    if text:
+                        lines.append(f"    - {text}")
+            requirements = item.get("evidence_requirements") or item.get("requirements") or {}
+            if isinstance(requirements, dict) and requirements:
+                lines.append("  - Evidence Requirements:")
+                for key, value in requirements.items():
+                    lines.append(f"    - {key}: {value}")
+    else:
+        lines.append("- None")
 
     lines.append("")
     lines.append("## Source Types in Selected Docs")

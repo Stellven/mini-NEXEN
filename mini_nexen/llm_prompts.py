@@ -5,17 +5,20 @@ from typing import Iterable
 
 from .db import Document, Interest, Method
 
-SYSTEM_PLAN_PROMPT = """You are a research planning agent. Produce a plan that is concise, actionable, and focused on gaps. All natural-language content MUST be in the requested output language.
+SYSTEM_PLAN_PROMPT = """You are a research planning agent. Produce a plan that is concise, actionable, and focused on what evidence is needed. All natural-language content MUST be in the requested output language.
 Return ONE valid JSON object only. No markdown, no commentary, no extra text.
 
 Requirements:
-- Must include keys: scope, key_questions, keywords, gaps, notes, readiness
+- Must include keys: scope, key_questions, keywords, source_requirements, section_requirements, gaps, notes, readiness
 - scope, key_questions, keywords MUST be non-empty arrays (>= 3 items each)
+- source_requirements MUST be an object describing global evidence characteristics (depth, breadth, rigor, recency, source_types, min_sources)
+- section_requirements MUST be a non-empty array; each item must specify section, objective, subsections, and evidence_requirements
 - keywords must include core terms from the topic and interests; include extracted interests if provided
 - methods are analysis approaches; use them to frame the plan, not as the topic itself
 - gaps and notes may be empty arrays
 - retrieval_queries is optional; if provided, it must be a short list of search phrases
 - readiness must be one of: "draft", "refined", "ready"
+- Do NOT summarize or cite specific sources; specify the kinds of sources needed instead.
 - Output must be strict JSON (double quotes, no trailing commas)
 - All natural-language content MUST be in the requested output language, except retrieval_queries must be in English.
 - Keep JSON keys in English.
@@ -25,10 +28,10 @@ Requirements:
 All natural-language content MUST be in the requested output language.
 
 Example (Chinese):
-{"scope":["..."],"key_questions":["..."],"keywords":["..."],"gaps":["..."],"notes":["..."],"readiness":"draft","retrieval_queries":["..."]}
+{"scope":["..."],"key_questions":["..."],"keywords":["..."],"source_requirements":{"depth":"...","breadth":"...","rigor":["..."],"recency":"...","source_types":["..."],"min_sources":3},"section_requirements":[{"section":"...","objective":"...","subsections":["..."],"evidence_requirements":{"depth":"...","breadth":"...","rigor":["..."],"recency":"...","source_types":["..."],"min_sources":2}}],"gaps":["..."],"notes":["..."],"readiness":"draft","retrieval_queries":["..."]}
 
 Example (English):
-{"scope":["..."],"key_questions":["..."],"keywords":["..."],"gaps":["..."],"notes":["..."],"readiness":"draft","retrieval_queries":["..."]}
+{"scope":["..."],"key_questions":["..."],"keywords":["..."],"source_requirements":{"depth":"...","breadth":"...","rigor":["..."],"recency":"...","source_types":["..."],"min_sources":3},"section_requirements":[{"section":"...","objective":"...","subsections":["..."],"evidence_requirements":{"depth":"...","breadth":"...","rigor":["..."],"recency":"...","source_types":["..."],"min_sources":2}}],"gaps":["..."],"notes":["..."],"readiness":"draft","retrieval_queries":["..."]}
 """
 
 SYSTEM_OUTLINE_PROMPT = """You are a research planning agent. Produce a research plan (not a report outline). All natural-language content MUST be in the requested output language.
@@ -46,6 +49,7 @@ Requirements:
 - Output must be strict JSON (double quotes, no trailing commas)
 - Treat methods as analysis approaches to apply to the topic, not as the topic itself.
 - If methods are provided, the research plan MUST explicitly structure steps around those methods, even if the step count changes.
+- If plan_requirements are provided, align steps to the required sections and evidence needs.
 - All natural-language content MUST be in the requested output language.
 - Keep JSON keys in English.
 - Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English.
@@ -114,6 +118,7 @@ def plan_prompt(
     output_language: str = "Chinese",
     profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
+    revision_feedback: list[str] | None = None,
 ) -> str:
     payload = {
         "topic": topic,
@@ -126,6 +131,29 @@ def plan_prompt(
                 "scope": ["string"],
                 "key_questions": ["string"],
                 "keywords": ["string"],
+                "source_requirements": {
+                    "depth": "string",
+                    "breadth": "string",
+                    "rigor": ["string"],
+                    "recency": "string",
+                    "source_types": ["string"],
+                    "min_sources": "number",
+                },
+                "section_requirements": [
+                    {
+                        "section": "string",
+                        "objective": "string",
+                        "subsections": ["string"],
+                        "evidence_requirements": {
+                            "depth": "string",
+                            "breadth": "string",
+                            "rigor": ["string"],
+                            "recency": "string",
+                            "source_types": ["string"],
+                            "min_sources": "number",
+                        },
+                    }
+                ],
                 "gaps": ["string"],
                 "notes": ["string"],
                 "retrieval_queries": ["string"],
@@ -151,7 +179,12 @@ def plan_prompt(
             ],
             "method_guidance": [
                 "Methods are analysis approaches (lenses), not standalone topics.",
-                "Apply methods to the topic and evidence.",
+                "Apply methods to the topic and evidence requirements.",
+            ],
+            "planning_policy": [
+                "Do not summarize or cite specific sources; specify source needs instead.",
+                "Treat documents as empty; do not reference evidence.",
+                "Use section_requirements to break down major sections and required evidence characteristics.",
             ],
             "kg_guidance": [
                 "If kg_fact_cards is provided, use it to ground claims and plan steps.",
@@ -179,6 +212,8 @@ def plan_prompt(
         payload["profile_summary"] = profile_summary[:10]
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
+    if revision_feedback:
+        payload["revision_feedback"] = revision_feedback[:10]
     return json.dumps(payload, indent=2)
 
 
@@ -233,6 +268,7 @@ def refine_prompt(
     output_language: str = "Chinese",
     profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
+    revision_feedback: list[str] | None = None,
 ) -> str:
     payload = {
         "topic": topic,
@@ -246,6 +282,29 @@ def refine_prompt(
                 "scope": ["string"],
                 "key_questions": ["string"],
                 "keywords": ["string"],
+                "source_requirements": {
+                    "depth": "string",
+                    "breadth": "string",
+                    "rigor": ["string"],
+                    "recency": "string",
+                    "source_types": ["string"],
+                    "min_sources": "number",
+                },
+                "section_requirements": [
+                    {
+                        "section": "string",
+                        "objective": "string",
+                        "subsections": ["string"],
+                        "evidence_requirements": {
+                            "depth": "string",
+                            "breadth": "string",
+                            "rigor": ["string"],
+                            "recency": "string",
+                            "source_types": ["string"],
+                            "min_sources": "number",
+                        },
+                    }
+                ],
                 "gaps": ["string"],
                 "notes": ["string"],
                 "retrieval_queries": ["string"],
@@ -271,7 +330,12 @@ def refine_prompt(
             ],
             "method_guidance": [
                 "Methods are analysis approaches (lenses), not standalone topics.",
-                "Apply methods to the topic and evidence.",
+                "Apply methods to the topic and evidence requirements.",
+            ],
+            "planning_policy": [
+                "Do not summarize or cite specific sources; specify source needs instead.",
+                "Treat documents as empty; do not reference evidence.",
+                "Use section_requirements to break down major sections and required evidence characteristics.",
             ],
             "kg_guidance": [
                 "If kg_fact_cards is provided, use it to ground claims and plan steps.",
@@ -297,6 +361,8 @@ def refine_prompt(
         payload["profile_summary"] = profile_summary[:10]
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
+    if revision_feedback:
+        payload["revision_feedback"] = revision_feedback[:10]
     return json.dumps(payload, indent=2)
 
 
@@ -306,6 +372,7 @@ def outline_prompt(
     methods: list[Method],
     documents: list[Document],
     keywords: list[str],
+    plan_requirements: dict[str, object] | None = None,
     kg_fact_cards: list[dict] | None = None,
     output_language: str = "Chinese",
     length_hint: str | None = None,
@@ -313,6 +380,7 @@ def outline_prompt(
     structure_guidance: list[str] | None = None,
     profile_summary: list[dict] | None = None,
     skill_guidance: list[str] | None = None,
+    revision_feedback: list[str] | None = None,
 ) -> str:
     payload = {
         "topic": topic,
@@ -339,6 +407,11 @@ def outline_prompt(
             "Emphasize gaps and future research directions.",
             "Length must be at least 1000 words in the output language.",
         ],
+            "plan_guidance": [
+                "If plan_requirements is provided, ensure every required section is represented in the outline.",
+                "Translate each section's evidence_requirements into concrete research steps and source acquisition actions.",
+                "Carry forward any depth/breadth/rigor/recency/source_type requirements into the outline steps.",
+            ],
             "method_guidance": [
                 "Use methods as analytical lenses applied to the topic and evidence.",
                 "Do not treat methods as the topic itself.",
@@ -381,6 +454,10 @@ def outline_prompt(
         payload["profile_summary"] = profile_summary[:10]
     if skill_guidance:
         payload["skill_guidance"] = skill_guidance
+    if plan_requirements:
+        payload["plan_requirements"] = plan_requirements
+    if revision_feedback:
+        payload["revision_feedback"] = revision_feedback[:10]
     if length_hint:
         payload["length_hint"] = length_hint
     if language_hint:
@@ -452,6 +529,71 @@ def plan_readiness_review_prompt(
             "requirements": [
                 "Judge whether the plan is ready to proceed based on completeness, specificity, and evidence coverage.",
                 "If not ready, list concrete gaps that should be addressed.",
+                "Keep rationale brief and in the output language.",
+            ],
+        },
+    }
+    return json.dumps(payload, indent=2)
+
+
+def plan_quality_review_prompt(
+    topic: str,
+    plan: dict,
+    validation: dict,
+    output_language: str = "Chinese",
+) -> str:
+    payload = {
+        "topic": topic,
+        "plan": plan,
+        "validation": validation,
+        "output_language": output_language,
+        "instructions": {
+            "output_json_schema": {
+                "action": "accept | retry",
+                "feedback": ["string"],
+                "gaps": ["string"],
+                "rationale": "string",
+            },
+            "requirements": [
+                "Use validation.errors to decide if retry is required.",
+                "Evaluate plan completeness, section coverage, and alignment to topic/methods.",
+                "Ensure section_requirements specify depth, breadth, rigor, recency, and source types.",
+                "Do not require evidence or citations; this is an evidence-needs plan.",
+                "Return brief, actionable feedback for improving the plan.",
+                "Keep rationale brief and in the output language.",
+            ],
+        },
+    }
+    return json.dumps(payload, indent=2)
+
+
+def outline_quality_review_prompt(
+    topic: str,
+    outline: list[str],
+    plan_requirements: dict,
+    validation: dict,
+    output_language: str = "Chinese",
+) -> str:
+    payload = {
+        "topic": topic,
+        "plan_requirements": plan_requirements,
+        "outline": outline,
+        "validation": validation,
+        "output_language": output_language,
+        "instructions": {
+            "output_json_schema": {
+                "action": "accept | outline_retry | retrieve_more | plan_retry",
+                "feedback": ["string"],
+                "retrieval_gaps": ["string"],
+                "plan_gaps": ["string"],
+                "rationale": "string",
+            },
+            "requirements": [
+                "Use validation.errors to decide if outline_retry is required.",
+                "If evidence is insufficient for plan_requirements, set action to retrieve_more and list concrete retrieval_gaps.",
+                "If the plan itself is missing or inconsistent with the outline, set action to plan_retry and list plan_gaps.",
+                "Otherwise, accept or outline_retry with actionable feedback.",
+                "Do not request citations in the outline itself; focus on research steps and evidence needs.",
                 "Keep rationale brief and in the output language.",
             ],
         },

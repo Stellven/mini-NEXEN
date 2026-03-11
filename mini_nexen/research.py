@@ -10,6 +10,9 @@ from .config import (
     ARTIFACTS_DIR,
     DEFAULT_KG_HOPS,
     DEFAULT_OUTLINE_REVIEW_ROUNDS,
+    DEFAULT_OUTLINE_PROFILE_REVIEW_ROUNDS,
+    DEFAULT_OUTLINE_INTERNAL_RETRIES,
+    DEFAULT_PLAN_REVIEW_ROUNDS,
     DEFAULT_PROFILE_TOP_K,
     WEB_ARCHIVE_RUNS_UNUSED,
     WEB_ARCHIVE_SCORE_THRESHOLD,
@@ -293,7 +296,10 @@ def run_research(
     interactive: bool = False,
     methodology_taxonomy: list[str] | None = None,
     profile_top_k: int = DEFAULT_PROFILE_TOP_K,
+    plan_review_rounds: int = DEFAULT_PLAN_REVIEW_ROUNDS,
     outline_review_rounds: int = DEFAULT_OUTLINE_REVIEW_ROUNDS,
+    outline_profile_review_rounds: int = DEFAULT_OUTLINE_PROFILE_REVIEW_ROUNDS,
+    outline_internal_retries: bool = DEFAULT_OUTLINE_INTERNAL_RETRIES,
     kg_hops: int = DEFAULT_KG_HOPS,
 ) -> ResearchResult:
     ensure_dirs()
@@ -356,7 +362,10 @@ def run_research(
         web_relevance_threshold=web_relevance_threshold,
         web_max_rounds=web_max_rounds,
         profile_top_k=profile_top_k,
+        plan_review_rounds=plan_review_rounds,
         outline_review_rounds=outline_review_rounds,
+        outline_profile_review_rounds=outline_profile_review_rounds,
+        outline_internal_retries=outline_internal_retries,
         kg_hops=kg_hops,
     )
     ctx = supervisor.run(ctx)

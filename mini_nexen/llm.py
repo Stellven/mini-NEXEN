@@ -18,6 +18,14 @@ _PROGRESS_LINE: str | None = None
 _PROGRESS_ACTIVE = False
 _RETRY_NOTICE: dict[str, str] | None = None
 _PROGRESS_LAST_PERCENT: dict[tuple[str, str], int] = {}
+_LOG_CONTEXT: dict[str, object] = {
+    "external_round": None,
+    "external_total": None,
+    "loop": None,
+    "loop_round": None,
+    "loop_total": None,
+    "component": None,
+}
 BACKOFF_INITIAL_SECONDS = 2
 BACKOFF_MAX_SECONDS = 30
 BACKOFF_TOTAL_MAX_SECONDS = 180
@@ -73,6 +81,75 @@ def update_progress_line(line: str, *, done: bool = False) -> None:
             _PROGRESS_LINE = None
             print("", flush=True)
 
+
+def set_log_context(
+    *,
+    external_round: int | None = None,
+    external_total: int | None = None,
+    loop: str | None = None,
+    loop_round: int | None = None,
+    loop_total: int | None = None,
+    component: str | None = None,
+) -> None:
+    if external_round is not None:
+        _LOG_CONTEXT["external_round"] = external_round
+    if external_total is not None:
+        _LOG_CONTEXT["external_total"] = external_total
+    if loop is not None:
+        _LOG_CONTEXT["loop"] = loop
+    if loop_round is not None:
+        _LOG_CONTEXT["loop_round"] = loop_round
+    if loop_total is not None:
+        _LOG_CONTEXT["loop_total"] = loop_total
+    if component is not None:
+        _LOG_CONTEXT["component"] = component
+
+
+def clear_log_context(*, loop: bool = False, component: bool = False, all_context: bool = False) -> None:
+    if all_context:
+        for key in _LOG_CONTEXT:
+            _LOG_CONTEXT[key] = None
+        return
+    if loop:
+        _LOG_CONTEXT["loop"] = None
+        _LOG_CONTEXT["loop_round"] = None
+        _LOG_CONTEXT["loop_total"] = None
+    if component:
+        _LOG_CONTEXT["component"] = None
+
+
+def _format_log_context() -> str:
+    parts: list[str] = []
+    ext_round = _LOG_CONTEXT.get("external_round")
+    ext_total = _LOG_CONTEXT.get("external_total")
+    if isinstance(ext_round, int):
+        if isinstance(ext_total, int) and ext_total > 0:
+            parts.append(f"Round {ext_round}/{ext_total}")
+        else:
+            parts.append(f"Round {ext_round}")
+    loop_name = _LOG_CONTEXT.get("loop")
+    loop_round = _LOG_CONTEXT.get("loop_round")
+    loop_total = _LOG_CONTEXT.get("loop_total")
+    if loop_name:
+        if isinstance(loop_round, int):
+            if isinstance(loop_total, int) and loop_total > 0:
+                parts.append(f"Loop {loop_name} {loop_round}/{loop_total}")
+            else:
+                parts.append(f"Loop {loop_name} {loop_round}")
+        else:
+            parts.append(f"Loop {loop_name}")
+    component = _LOG_CONTEXT.get("component")
+    if component:
+        parts.append(str(component))
+    return " | ".join(parts)
+
+
+def _format_log_prefix(stamp: str) -> str:
+    context = _format_log_context()
+    if context:
+        return f"{stamp} | {context} | "
+    return f"{stamp} | "
+
 def note_retry_notice(agent: str, task: str, wait_seconds: float, category: str) -> None:
     if category != "rate_limit":
         return
@@ -115,7 +192,8 @@ def format_progress_line(
 ) -> str:
     percent = percent if percent is not None else int((current / total) * 100) if total else 0
     stamp = datetime.now(timezone.utc).isoformat()
-    label = f"{stamp} | {agent} | Model {model} is generating {task}... ({percent}%)"
+    prefix = _format_log_prefix(stamp)
+    label = f"{prefix}{agent} | Model {model} is generating {task}... ({percent}%)"
     suffix = consume_retry_notice(agent, task)
     if suffix:
         label = f"{label} {suffix}"
@@ -187,7 +265,8 @@ class LLMClient:
 
     def _log(self, agent: str, message: str) -> None:
         stamp = datetime.now(timezone.utc).isoformat()
-        message = f"{stamp} | {agent} | {message}"
+        prefix = _format_log_prefix(stamp)
+        message = f"{prefix}{agent} | {message}"
         _write_log_line(message)
 
     def _is_inline_task(self, agent: str, task: str) -> bool:
@@ -483,12 +562,14 @@ class LMStudioClient(LLMClient):
 
 def log_task_event(message: str) -> None:
     stamp = datetime.now(timezone.utc).isoformat()
-    _write_log_line(f"{stamp} | {message}")
+    prefix = _format_log_prefix(stamp)
+    _write_log_line(f"{prefix}{message}")
 
 
 def log_task_event_quiet(message: str) -> None:
     stamp = datetime.now(timezone.utc).isoformat()
-    _write_log_line(f"{stamp} | {message}", echo=False)
+    prefix = _format_log_prefix(stamp)
+    _write_log_line(f"{prefix}{message}", echo=False)
 
 
 def _load_timeout_env() -> Optional[float]:

@@ -16,6 +16,9 @@ from .config import (
     ARTIFACTS_DIR,
     DEFAULT_KG_HOPS,
     DEFAULT_OUTLINE_REVIEW_ROUNDS,
+    DEFAULT_OUTLINE_PROFILE_REVIEW_ROUNDS,
+    DEFAULT_OUTLINE_INTERNAL_RETRIES,
+    DEFAULT_PLAN_REVIEW_ROUNDS,
     DEFAULT_ROUNDS,
     DEFAULT_PROFILE_TOP_K,
     DEFAULT_TOP_K,
@@ -720,7 +723,10 @@ def _research(args: argparse.Namespace) -> None:
             review_query=review_query,
             interactive=interactive,
             profile_top_k=args.profile_top_k,
+            plan_review_rounds=args.plan_review_rounds,
             outline_review_rounds=args.outline_review_rounds,
+            outline_profile_review_rounds=args.outline_profile_review_rounds,
+            outline_internal_retries=args.outline_internal_retries,
             kg_hops=args.kg_hops,
         )
         if result.query_artifact_path:
@@ -1109,10 +1115,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output language for plan and outline generation (default: Chinese)",
     )
     research.add_argument(
+        "--plan-review-rounds",
+        type=int,
+        default=DEFAULT_PLAN_REVIEW_ROUNDS,
+        help="Max planner validator/reviewer retry rounds (default: 2)",
+    )
+    research.add_argument(
         "--outline-review-rounds",
         type=int,
         default=DEFAULT_OUTLINE_REVIEW_ROUNDS,
-        help="Max reviewer-guided outline revision rounds for profile tagging (default: 1)",
+        help="Max outline validator/reviewer retry rounds (default: 2)",
+    )
+    research.add_argument(
+        "--outline-profile-review-rounds",
+        type=int,
+        default=DEFAULT_OUTLINE_PROFILE_REVIEW_ROUNDS,
+        help="Max outline profile-tag review rounds (default: 1)",
+    )
+    research.add_argument(
+        "--outline-internal-retries",
+        action="store_true",
+        default=DEFAULT_OUTLINE_INTERNAL_RETRIES,
+        help="Enable internal outline retries (revision/expansion) instead of relying on reviewer rounds.",
     )
     research.add_argument("--provider", choices=["gemini", "lmstudio"], help="LLM provider")
     research.add_argument("--model", help="Model name (provider-specific)")
