@@ -125,6 +125,7 @@ class SkillContext:
     auto_methods: bool = True
     review_query: bool = False
     interactive: bool = False
+    query_artifact_presented: bool = False
     query_artifact_path: Optional[Path] = None
     web_search_artifact_path: Optional[Path] = None
     query_understanding: Optional[QueryUnderstanding] = None
@@ -1223,7 +1224,14 @@ def _normalize_skill_hints(raw: object, registry: SkillRegistry) -> list[str]:
 
 def _build_allowed_outline_tags(active_skills: list[str]) -> set[str]:
     allowed: set[str] = set()
-    for tag in ("關切", "關切證據", "profile", "profile evidence"):
+    for tag in (
+        "關切",
+        "關切證據",
+        "关切",
+        "关切证据",
+        "profile",
+        "profile evidence",
+    ):
         normalized = normalize_bracket_tag(tag)
         if normalized:
             allowed.add(normalized)
@@ -1349,7 +1357,7 @@ def skill_infer_query(ctx: SkillContext) -> SkillContext:
     ctx.query_artifact_path = artifact_path
     log_task_event(f"Query understanding saved: {artifact_path}")
 
-    if ctx.review_query:
+    if ctx.review_query and not ctx.query_artifact_presented:
         if ctx.interactive:
             print(f"Query understanding saved to {artifact_path}")
             try:
@@ -1368,6 +1376,7 @@ def skill_infer_query(ctx: SkillContext) -> SkillContext:
             _apply_query_understanding(ctx, updated)
             ctx.skill_hints = _normalize_skill_hints(updated_payload.get("skill_hints"), registry)
             log_task_event("Query understanding updated from reviewed artifact.")
+        ctx.query_artifact_presented = True
     return ctx
 
 
@@ -1935,7 +1944,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
         ctx.query_artifact_path = artifact_path
         ctx.web_search_artifact_path = artifact_path
         log_task_event(f"Query + web search artifact saved: {artifact_path}")
-        if ctx.review_query:
+        if ctx.review_query and not ctx.query_artifact_presented:
             if ctx.interactive:
                 print(f"Query + web search artifact saved to {artifact_path}")
                 try:
@@ -1983,6 +1992,7 @@ def skill_web_retrieve(ctx: SkillContext) -> SkillContext:
                     semantic_flag = search_modes.get("semantic_rerank")
                     if isinstance(semantic_flag, bool):
                         ctx.web_hybrid = semantic_flag
+                ctx.query_artifact_presented = True
                 log_task_event("Web search plan updated from reviewed artifact.")
             else:
                 log_task_event("Web search plan review ignored (invalid JSON).")

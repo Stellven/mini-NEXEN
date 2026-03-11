@@ -499,13 +499,13 @@ def validate_outline(
     for line in outline:
         if "[關切證據]" in line or "[关切证据]" in line or "[profile evidence]" in line.casefold():
             if not evidence_cards:
-                warnings.append("outline uses [關切證據] but no evidence cards are available; consider [關切].")
+                warnings.append("outline uses [关切证据] but no evidence cards are available; consider [关切].")
                 continue
             if not _outline_evidence_alignment_ok(line, evidence_cards):
-                warnings.append("outline uses [關切證據] without aligned evidence; consider [關切].")
+                warnings.append("outline uses [关切证据] without aligned evidence; consider [关切].")
     if profile_summary and not _outline_has_profile_tags(outline):
         warnings.append(
-            "missing_profile_tags: outline has profile signals available but no [關切]/[關切證據] tags."
+            "missing_profile_tags: outline has profile signals available but no [关切]/[关切证据] tags."
         )
     return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings}
 
@@ -891,6 +891,21 @@ def _strip_profile_tags(text: str) -> str:
     return cleaned
 
 
+def _normalize_profile_tags(text: str) -> str:
+    if not text:
+        return ""
+    pattern = r"[\[\【](關切證據|关切证据|關切|关切|profile evidence|profile)[\]\】]"
+
+    def _repl(match: re.Match[str]) -> str:
+        token = match.group(1)
+        lowered = token.casefold()
+        if "证据" in token or "evidence" in lowered:
+            return "[关切证据]"
+        return "[关切]"
+
+    return re.sub(pattern, _repl, text, flags=re.IGNORECASE)
+
+
 def _normalize_outline(
     outline: list[object],
     allowed_bracket_tags: set[str] | None = None,
@@ -898,7 +913,7 @@ def _normalize_outline(
     normalized: list[str] = []
     for item in outline:
         if isinstance(item, str):
-            text = _strip_bracket_tags(item.strip(), allowed_bracket_tags)
+            text = _normalize_profile_tags(_strip_bracket_tags(item.strip(), allowed_bracket_tags))
             if text:
                 normalized.append(text)
             continue
@@ -907,6 +922,7 @@ def _normalize_outline(
                 str(item.get("title") or item.get("step") or item.get("name") or "").strip(),
                 allowed_bracket_tags,
             )
+            title = _normalize_profile_tags(title)
             if not title:
                 continue
             lines = [title]
@@ -914,7 +930,9 @@ def _normalize_outline(
             if isinstance(substeps, list):
                 for sub in substeps:
                     if isinstance(sub, str):
-                        sub_text = _strip_bracket_tags(sub.strip(), allowed_bracket_tags)
+                        sub_text = _normalize_profile_tags(
+                            _strip_bracket_tags(sub.strip(), allowed_bracket_tags)
+                        )
                         if sub_text:
                             lines.append(f"- {sub_text}")
                         continue
@@ -923,15 +941,15 @@ def _normalize_outline(
                             str(sub.get("text") or sub.get("title") or "").strip(),
                             allowed_bracket_tags,
                         )
+                        sub_text = _normalize_profile_tags(sub_text)
                         if sub_text:
                             lines.append(f"- {sub_text}")
                         sub_sub = sub.get("substeps") or sub.get("items") or []
                         if isinstance(sub_sub, list):
                             for sub_item in sub_sub:
                                 if isinstance(sub_item, str):
-                                    sub_item_text = _strip_bracket_tags(
-                                        sub_item.strip(),
-                                        allowed_bracket_tags,
+                                    sub_item_text = _normalize_profile_tags(
+                                        _strip_bracket_tags(sub_item.strip(), allowed_bracket_tags)
                                     )
                                     if sub_item_text:
                                         lines.append(f"  - {sub_item_text}")
@@ -1547,8 +1565,8 @@ def llm_build_outline(
         if not relevant_labels or (not missing_labels and not untagged_mentions and not suggested_additions):
             return outline, count, ratio
         tag_requirements = [
-            "Whenever a profile theme is relevant to the topic or report and you mention it, add a brief relevance explanation ending with ' [關切]'.",
-            "When a profile theme mention is supported by aligned kg_fact_cards evidence, end with ' [關切證據]' instead of ' [關切]'.",
+            "Whenever a profile theme is relevant to the topic or report and you mention it, add a brief relevance explanation ending with ' [关切]'.",
+            "When a profile theme mention is supported by aligned kg_fact_cards evidence, end with ' [关切证据]' instead of ' [关切]'.",
         ]
         if missing_labels:
             tag_requirements.append(
