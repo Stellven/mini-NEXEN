@@ -212,6 +212,10 @@ Export a subgraph as DOT (Graphviz) or HTML (interactive):
 python -m mini_nexen.cli kg-export-dot --seed "agentic science" --hops 2 --out ./kg.dot
 python -m mini_nexen.cli kg-export-html --seed "agentic science" --hops 2 --out ./kg.html
 ```
+Render the entire KG:
+```bash
+python -m mini_nexen.cli kg-export-html --all
+```
 If you omit `--seed`, it uses top profile terms or top subject entities as seeds.
 By default, the exported file is opened automatically. Disable that with `--no-open`.
 Use `--all` to export the full KG and ignore `--seed/--hops`.
@@ -248,15 +252,25 @@ docker run --rm -it \
 docker run --rm -it \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/artifacts:/app/artifacts" \
-  mini-nexen kg-export-html --seed "agentic science" --hops 2 --out /app/artifacts/kg.html --no-open
+  mini-nexen kg-export-html --seed "agentic science" --hops 2 --no-open
+```
+Render the entire KG with Docker:
+```bash
+docker run --rm -it \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  mini-nexen kg-export-html --all --no-open
 ```
 Docker Compose equivalents:
 ```bash
 docker compose run --rm mini-nexen kg-report --limit 10
 docker compose run --rm mini-nexen kg-entity-edges --entity "agentic science" --show-neighbors
-docker compose run --rm mini-nexen kg-export-html --seed "agentic science" --hops 2 --out /app/artifacts/kg.html --no-open
+docker compose run --rm mini-nexen kg-export-html --seed "agentic science" --hops 2 --no-open
 ```
-Open the exported HTML graph from `artifacts/kg.html` on the host after the command finishes.
+```bash
+docker compose run --rm mini-nexen kg-export-html --all --no-open
+```
+Open the generated HTML graph from `artifacts/` on the host after the command finishes.
 
 **CLI Reference**
 
