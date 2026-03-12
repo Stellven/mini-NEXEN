@@ -61,6 +61,16 @@ docker run --rm -it \
   -e REDDIT_USER_AGENT="mini-nexen/0.1" \
   mini-nexen ingest
 ```
+Explicit ingest example:
+```bash
+docker run --rm -it \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  -e GEMINI_API_KEY="your-key" \
+  -e MINI_NEXEN_PROVIDER="gemini" \
+  -e MINI_NEXEN_MODEL="gemini-2.5-flash" \
+  mini-nexen ingest
+```
 3. Run research.
 ```bash
 docker run --rm -it \
@@ -73,6 +83,16 @@ docker run --rm -it \
   -e REDDIT_CLIENT_ID="your-id" \
   -e REDDIT_CLIENT_SECRET="your-secret" \
   -e REDDIT_USER_AGENT="mini-nexen/0.1" \
+  mini-nexen research --topic "從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告" --web-auto
+```
+Run with a different Gemini model:
+```bash
+docker run --rm -it \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  -e GEMINI_API_KEY="your-key" \
+  -e MINI_NEXEN_PROVIDER="gemini" \
+  -e MINI_NEXEN_MODEL="gemini-2.5-pro" \
   mini-nexen research --topic "從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告" --web-auto
 ```
 Notes:
