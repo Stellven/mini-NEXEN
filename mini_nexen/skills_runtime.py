@@ -58,6 +58,7 @@ from .llm import (
 )
 from .planning import (
     PlanDraft,
+    _profile_summary_scope,
     build_profile_signals,
     is_ready,
     llm_build_outline,
@@ -1330,7 +1331,10 @@ def skill_infer_query(ctx: SkillContext) -> SkillContext:
     taxonomy = ctx.methodology_taxonomy or DEFAULT_METHOD_TAXONOMY
     if not ctx.profile_summary:
         store = KGStore()
-        summary = store.get_profile_summary(max_signals=ctx.profile_top_k, scope="local")
+        summary = store.get_profile_summary(
+            max_signals=ctx.profile_top_k,
+            scope=_profile_summary_scope(ctx.output_language),
+        )
         if summary:
             ctx.profile_summary = summary
     understanding = infer_query_understanding(
@@ -1464,7 +1468,10 @@ def skill_load_profile(ctx: SkillContext) -> SkillContext:
     store = KGStore()
     ctx.extracted_interests = store.get_profile_terms(limit=3)
     if not ctx.profile_summary:
-        summary = store.get_profile_summary(max_signals=ctx.profile_top_k, scope="local")
+        summary = store.get_profile_summary(
+            max_signals=ctx.profile_top_k,
+            scope=_profile_summary_scope(ctx.output_language),
+        )
         if summary:
             ctx.profile_summary = summary
         else:
@@ -1476,6 +1483,7 @@ def skill_load_profile(ctx: SkillContext) -> SkillContext:
                     llm=ctx.llm,
                     top_k_docs=ctx.top_k,
                     max_signals=ctx.profile_top_k,
+                    output_language=ctx.output_language,
                     use_cache=False,
                     cache_result=True,
                 )
@@ -2380,6 +2388,7 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
         if validation.get("ok") and (not review or action in {"accept", ""}):
             final_outline = outline
             ctx.outline_review_action = "accept"
+            ctx.outline_revision_feedback = []
             break
         if action == "outline_retry" or not action:
             feedback = []
@@ -2390,6 +2399,9 @@ def skill_build_outline(ctx: SkillContext) -> SkillContext:
                     feedback.append(str(item))
                 for item in review.get("plan_gaps", []) or []:
                     feedback.append(str(item))
+            ctx.outline_review_action = "outline_retry"
+            ctx.outline_review_feedback = list(feedback)
+            ctx.outline_revision_feedback = list(feedback)
             final_outline = outline
             continue
         if action in {"retrieve_more", "plan_retry"}:
@@ -2411,7 +2423,14 @@ def skill_persist_plan(ctx: SkillContext) -> SkillContext:
     if not ctx.plan:
         return ctx
 
-    ctx.plan_md = render_plan_md(ctx.plan, ctx.outline, ctx.interests, ctx.methods, llm=ctx.llm)
+    ctx.plan_md = render_plan_md(
+        ctx.plan,
+        ctx.outline,
+        ctx.interests,
+        ctx.methods,
+        llm=ctx.llm,
+        output_language=ctx.output_language,
+    )
     return ctx
 
 

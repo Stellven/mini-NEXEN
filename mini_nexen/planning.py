@@ -200,10 +200,16 @@ def _prepare_profile_evidence(
     return docs[:max_docs]
 
 
+def _profile_summary_scope(output_language: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "_", (output_language or "chinese").casefold()).strip("_")
+    return f"local:{cleaned or 'chinese'}"
+
+
 def _summarize_profile_bullets(
     llm: LLMClient,
     signals: list[dict],
     max_bullets: int,
+    output_language: str = "Chinese",
 ) -> dict[str, list[str]]:
     payload = []
     for signal in signals:
@@ -221,7 +227,7 @@ def _summarize_profile_bullets(
             "Use ONLY the evidence provided. Do NOT quote text; paraphrase. "
             "Assume the reader is a domain expert and prioritize technical nuance over basic definitions. "
             "Avoid words like 'user', 'interest', or 'focus'. "
-            "Write all natural-language content in Chinese. "
+            f"Write all natural-language content in {output_language}. "
             "Keep paper titles, dataset names, benchmarks, model names, APIs, and acronyms in English. "
             "Return JSON only: "
             "{\"signals\":[{\"signal\":\"...\",\"bullets\":[{\"bullet\":\"...\",\"sources\":[\"title1\",\"title2\"]}]}]}."
@@ -304,13 +310,15 @@ def build_profile_signals(
     max_docs: int = 3,
     max_bullets: int = 7,
     max_snippets: int = 3,
+    output_language: str = "Chinese",
     *,
     use_cache: bool = True,
     cache_result: bool = False,
 ) -> list[dict]:
     store = KGStore()
+    cache_scope = _profile_summary_scope(output_language)
     if use_cache:
-        cached = store.get_profile_summary(max_signals=max_signals, scope="local")
+        cached = store.get_profile_summary(max_signals=max_signals, scope=cache_scope)
         if cached is not None:
             return cached
     profile = store.get_profile(limit=max_signals)
@@ -376,7 +384,12 @@ def build_profile_signals(
 
     if llm:
         try:
-            summaries = _summarize_profile_bullets(llm, signals, max_bullets=max_bullets)
+            summaries = _summarize_profile_bullets(
+                llm,
+                signals,
+                max_bullets=max_bullets,
+                output_language=output_language,
+            )
         except LLMClientError as exc:
             log_task_event(f"Profile signal summarization failed: {exc}")
             summaries = {}
@@ -389,7 +402,7 @@ def build_profile_signals(
                 continue
             signal["bullets"] = bullets
         if cache_result:
-            store.set_profile_summary(signals, scope="local")
+            store.set_profile_summary(signals, scope=cache_scope)
         return signals
 
     for signal in signals:
@@ -403,7 +416,7 @@ def build_profile_signals(
                 break
         signal["bullets"] = bullets
     if cache_result:
-        store.set_profile_summary(signals, scope="local")
+        store.set_profile_summary(signals, scope=cache_scope)
     return signals
 
 
@@ -1868,6 +1881,7 @@ def render_plan_md(
     interests: list[Interest],
     methods: list[Method],
     llm: LLMClient | None = None,
+    output_language: str = "Chinese",
 ) -> str:
     interest_summary = summarize_interests(interests)
     method_summary = summarize_methods(methods)
@@ -1960,6 +1974,7 @@ def render_plan_md(
         llm=llm,
         max_signals=plan.profile_top_k,
         top_k_docs=plan.top_k_docs,
+        output_language=output_language,
     )
     if not signals:
         lines.append(

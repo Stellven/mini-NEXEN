@@ -10,4 +10,5 @@ artifacts/*.html
 artifacts/*.md
 artifacts/*.txt
 artifacts/*.json
-architecture.md
+*.pptx
+

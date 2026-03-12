@@ -15,15 +15,15 @@ Minimal, local-first research backend for generating research plans and detailed
 conda env create -f environment.yml
 conda activate mini-nexen
 ```
-2. Run a research pass (you will be prompted to pick a provider/model if not configured).
+2. Put local source files under `data/local files/` and ingest them into the library + local KG.
 ```bash
-python -m mini_nexen.cli research --topic "Agentic research systems"
+python -m mini_nexen.cli ingest
 ```
-Set the output language for both the plan and outline:
+3. Run research (you will be prompted to pick a provider/model if not configured).
 ```bash
-python -m mini_nexen.cli research --topic "Agentic research systems" --language "English"
+python -m mini_nexen.cli research --topic "從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告" --web-auto
 ```
-Web retrieval is **on by default**. Disable it with `--no-web` or narrow it with `--web-open`, `--web-forum`, or `--web-lit`.
+Common workflow: `ingest` first to build/update the local library, knowledge graph, and profile; then `research` to generate a plan and outline. Web retrieval is **on by default** and `--web-auto` runs it only when KG expansion criteria are met.
 
 **Environment Setup (Detailed)**
 1. Create the conda environment from `environment.yml`.
@@ -47,7 +47,7 @@ python -m mini_nexen.cli --help
 ```bash
 docker build -t mini-nexen .
 ```
-2. Run a research pass (mount `data/` and `artifacts/` so outputs persist).
+2. Ingest local files from `data/local files/` (mount `data/` and `artifacts/` so state persists).
 ```bash
 docker run --rm -it \
   -v "$(pwd)/data:/app/data" \
@@ -59,9 +59,9 @@ docker run --rm -it \
   -e REDDIT_CLIENT_ID="your-id" \
   -e REDDIT_CLIENT_SECRET="your-secret" \
   -e REDDIT_USER_AGENT="mini-nexen/0.1" \
-  mini-nexen research --topic "Agentic research systems"
+  mini-nexen ingest
 ```
-Example (equivalent to local CLI):
+3. Run research.
 ```bash
 docker run --rm -it \
   -v "$(pwd)/data:/app/data" \
@@ -73,7 +73,7 @@ docker run --rm -it \
   -e REDDIT_CLIENT_ID="your-id" \
   -e REDDIT_CLIENT_SECRET="your-secret" \
   -e REDDIT_USER_AGENT="mini-nexen/0.1" \
-  mini-nexen research --topic "AI agent 驱动的 workflow 最近技术分析报告" --web-lit
+  mini-nexen research --topic "從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告" --web-auto
 ```
 Notes:
 - For LM Studio running on the host, use `--network=host` (Linux) or set `LMSTUDIO_BASE_URL` to `http://host.docker.internal:1234/v1`.
@@ -89,9 +89,13 @@ cp .env.example .env
 ```bash
 docker compose up --build
 ```
-3. Run a research pass.
+3. Ingest local files from `data/local files/`.
 ```bash
-docker compose run --rm mini-nexen research --topic "Agentic research systems"
+docker compose run --rm mini-nexen ingest
+```
+4. Run research.
+```bash
+docker compose run --rm mini-nexen research --topic "從五看三定的角度分析AI agent 驱动的 workflow 最近技术分析报告" --web-auto
 ```
 Notes:
 - Edit `.env` to set Gemini/LM Studio keys, Brave Search API key, and optional `MINI_NEXEN_QUERY_EDITOR`.

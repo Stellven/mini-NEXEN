@@ -233,6 +233,7 @@ def build_local_kg(
                 interests=[],
                 llm=llm_client,
                 max_signals=DEFAULT_PROFILE_TOP_K,
+                output_language="Chinese",
                 use_cache=False,
                 cache_result=True,
             )
