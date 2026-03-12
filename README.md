@@ -230,6 +230,34 @@ python -m mini_nexen.cli kg-entity-edges --entity "agentic science" --show-neigh
 ```
 `kg-entity-edges` supports `--min-conf` and `--limit` to filter results, plus `--id` for exact entity lookup.
 
+**View KG with Docker**
+Use the same mounted `data/` and `artifacts/` directories so the container reads your existing library and writes exports back to the host.
+```bash
+docker run --rm -it \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  mini-nexen kg-report --limit 10
+```
+```bash
+docker run --rm -it \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  mini-nexen kg-entity-edges --entity "agentic science" --show-neighbors
+```
+```bash
+docker run --rm -it \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  mini-nexen kg-export-html --seed "agentic science" --hops 2 --out /app/artifacts/kg.html --no-open
+```
+Docker Compose equivalents:
+```bash
+docker compose run --rm mini-nexen kg-report --limit 10
+docker compose run --rm mini-nexen kg-entity-edges --entity "agentic science" --show-neighbors
+docker compose run --rm mini-nexen kg-export-html --seed "agentic science" --hops 2 --out /app/artifacts/kg.html --no-open
+```
+Open the exported HTML graph from `artifacts/kg.html` on the host after the command finishes.
+
 **CLI Reference**
 
 `research` generates a plan and outline.
