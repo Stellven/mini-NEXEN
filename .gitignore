@@ -12,3 +12,4 @@ artifacts/*.txt
 artifacts/*.json
 *.pptx
 
+.env
